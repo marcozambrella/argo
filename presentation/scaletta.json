@@ -1,0 +1,13 @@
+{
+  "_nota": "SEGNAPOSTO DESIGN/CONTENUTI: testi, durate, ordine e musica li decide Marco. Percorsi relativi alla radice del repo.",
+  "risoluzione": [1280, 720],
+  "fps": 25,
+  "scene": [
+    {"tipo": "titolo", "testo": "Roma Safe CCTV", "sottotitolo": "SEGNAPOSTO — sottotitolo", "secondi": 4},
+    {"tipo": "titolo", "testo": "Il problema", "sottotitolo": "SEGNAPOSTO — dati su Roma (fonti da decidere)", "secondi": 5},
+    {"tipo": "titolo", "testo": "Come funziona", "sottotitolo": "pose + tracking > finestre di 40 frame > Graph-Transformer", "secondi": 5},
+    {"tipo": "clip", "percorso": "runs/demo/esempio/video_annotato.mp4", "didascalia": "SEGNAPOSTO — didascalia clip"},
+    {"tipo": "grafico_probabilita", "percorso_csv": "runs/demo/esempio/probabilita.csv", "secondi": 6},
+    {"tipo": "titolo", "testo": "Risultati", "sottotitolo": "SEGNAPOSTO — macro-F1 Graph-Transformer vs ST-GCN", "secondi": 5}
+  ]
+}
