@@ -1,0 +1,33 @@
+/* SEGNAPOSTO DESIGN: palette, font e spaziature neutri e provvisori. */
+:root {
+  --sfondo: #ffffff; --testo: #1a1a1a; --tenue: #666666; --bordo: #dddddd;
+  --accento: #3355cc; --violenza: #e07020; --arma: #cc2222; --scippo: #2a8fd0; --normale: #3a9a4a;
+  --finestra-attiva: rgba(51, 85, 204, 0.25);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --sfondo: #121212; --testo: #eeeeee; --tenue: #a0a0a0; --bordo: #333333; --accento: #7f9bff;
+    --finestra-attiva: rgba(127, 155, 255, 0.3);
+  }
+}
+:root[data-theme="dark"] {
+  --sfondo: #121212; --testo: #eeeeee; --tenue: #a0a0a0; --bordo: #333333; --accento: #7f9bff;
+  --finestra-attiva: rgba(127, 155, 255, 0.3);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--sfondo); color: var(--testo); font: 16px/1.6 system-ui, sans-serif; }
+.testata, main, footer { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
+nav { display: flex; flex-wrap: wrap; gap: 12px; }
+nav a { color: var(--accento); text-decoration: none; }
+section { padding: 32px 0; border-top: 1px solid var(--bordo); }
+.sottotitolo, .pipeline span { color: var(--tenue); }
+.segnaposto { border: 1px dashed var(--tenue); color: var(--tenue); padding: 8px 12px; font-size: 14px; }
+.pipeline { display: grid; gap: 8px; padding-left: 20px; }
+.pipeline li span { display: block; font-size: 14px; }
+svg { width: 100%; height: auto; display: block; }
+.cursore { display: flex; gap: 12px; align-items: center; margin-top: 8px; }
+.cursore input { flex: 1; }
+.interruttori { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.interruttori label { font-size: 14px; border: 1px solid var(--bordo); padding: 4px 8px; border-radius: 4px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+td, th { border: 1px solid var(--bordo); padding: 6px; text-align: right; }
