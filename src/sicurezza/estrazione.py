@@ -136,7 +136,10 @@ def impacchetta_estrazione(righe_persone, righe_armi, numero_frame: int, larghez
 
 
 def estrai_elenco(video_da_estrarre: list[VideoDaEstrarre], cartella_uscita: str | Path, estrattore: Estrattore,
-                  parte: int = 0, parti: int = 1, cartelle_gia_estratte: list[str | Path] = ()) -> None:
+                  parte: int = 0, parti: int = 1, cartelle_gia_estratte: list[str | Path] = (),
+                  secondi_massimi: float | None = None) -> None:
+    """Estrae la propria parte dell'elenco. Con `secondi_massimi` si ferma (pulito) prima di sforare il tempo:
+    le sessioni Kaggle durano al massimo 12 h e quello che manca si riprende nella sessione dopo."""
     cartella_uscita = Path(cartella_uscita)
     cartella_uscita.mkdir(parents=True, exist_ok=True)
     gia_fatti = {file.name for cartella in [cartella_uscita, *map(Path, cartelle_gia_estratte)]
@@ -148,6 +151,10 @@ def estrai_elenco(video_da_estrarre: list[VideoDaEstrarre], cartella_uscita: str
 
     frame_totali, inizio = 0, time.perf_counter()
     for numero, video in enumerate(da_fare, 1):
+        if secondi_massimi is not None and time.perf_counter() - inizio > secondi_massimi:
+            print(f"[parte {parte}] tempo massimo raggiunto: mi fermo, {len(da_fare) - numero + 1} video restano "
+                  f"per la prossima sessione", flush=True)
+            break
         file_finale = cartella_uscita / nome_file_estratto(video.id_clip)
         try:
             dati = estrattore.estrai_video(video)
@@ -175,11 +182,12 @@ def main() -> None:
     parser.add_argument("--modello-pose", default=MODELLO_POSE_PREDEFINITO)
     parser.add_argument("--modello-armi", default=None, help="pesi del detector armi fine-tunato (D4)")
     parser.add_argument("--gia-estratti", nargs="*", default=[], help="cartelle con .npz di sessioni precedenti")
+    parser.add_argument("--ore-massime", type=float, default=None, help="fermati dopo queste ore (sessioni Kaggle)")
     argomenti = parser.parse_args()
 
     estrattore = Estrattore(argomenti.modello_pose, argomenti.modello_armi, argomenti.dispositivo)
     estrai_elenco(leggi_elenco(argomenti.elenco), argomenti.uscita, estrattore, argomenti.parte, argomenti.parti,
-                  argomenti.gia_estratti)
+                  argomenti.gia_estratti, argomenti.ore_massime * 3600 if argomenti.ore_massime else None)
 
 
 if __name__ == "__main__":

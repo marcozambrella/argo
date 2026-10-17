@@ -1,0 +1,21 @@
+{
+  "id": "KAGGLE_UTENTE/roma-safe-cctv-estrazione",
+  "title": "roma-safe-cctv estrazione",
+  "code_file": "estrazione.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "machine_shape": "NvidiaTeslaT4",
+  "dataset_sources": [
+    "vulamnguyen/rwf2000",
+    "mohamedtariki/vsd-cctv-fights",
+    "toluwaniaremu/smartcity-cctv-violence-detection-dataset-scvd",
+    "bypktt/ucf-crimes",
+    "aniketsahu09/chain-snatching-cctv-dataset"
+  ],
+  "kernel_sources": [],
+  "competition_sources": [],
+  "model_sources": []
+}
