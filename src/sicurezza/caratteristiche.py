@@ -35,7 +35,11 @@ class TimelineVideo:
 
 
 def carica_timeline(percorso_npz) -> TimelineVideo:
-    dati = np.load(percorso_npz)
+    return timeline_da_dati(np.load(percorso_npz))
+
+
+def timeline_da_dati(dati) -> TimelineVideo:
+    """Come carica_timeline, ma da un dizionario già in memoria (es. il buffer della demo)."""
     numero_frame = int(dati["numero_frame"])
     keypoint_per_traccia, box_per_traccia = {}, {}
     for id_traccia in np.unique(dati["persone_id_traccia"]):
