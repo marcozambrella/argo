@@ -37,3 +37,13 @@ def estrazione_finta(numero_frame=60, numero_persone=3, con_arma=True, larghezza
             righe_armi.append((frame, {"box": np.empty((0, 4)), "classe": np.empty(0, int),
                                        "confidenza": np.empty(0)}))
     return impacchetta_estrazione(righe_persone, righe_armi, numero_frame, larghezza, altezza, 0.0)
+
+
+def estrazione_finta_con_agitazione(agitazione: float, seme: int, numero_frame=60):
+    """Come estrazione_finta, ma con i polsi che si muovono tanto quanto `agitazione` (finta "violenza")."""
+    dati = estrazione_finta(numero_frame=numero_frame, numero_persone=2, con_arma=False, seme=seme)
+    generatore = np.random.default_rng(seme)
+    keypoint = dati["persone_keypoint"].copy()
+    keypoint[:, 9:11, :2] += generatore.normal(0, agitazione, keypoint[:, 9:11, :2].shape)
+    dati["persone_keypoint"] = keypoint
+    return dati

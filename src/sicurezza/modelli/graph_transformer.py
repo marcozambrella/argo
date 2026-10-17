@@ -116,7 +116,9 @@ class GraphTransformer(nn.Module):
         self.posto_nodo = nn.Embedding(NUMERO_PERSONE + 1, dimensione)        # 4 persone + "posto armi"
         self.classe_arma = nn.Embedding(numero_classi_arma + 1, dimensione)   # 0 = nessuna arma
         self.posizione_temporale = nn.Parameter(torch.zeros(FRAME_PER_FINESTRA, dimensione))
-        nn.init.normal_(self.posizione_temporale, std=0.02)
+        for parametro in (self.posizione_temporale, self.tipo_nodo.weight, self.posto_nodo.weight,
+                          self.classe_arma.weight):
+            nn.init.normal_(parametro, std=0.02)
         self.blocchi = nn.ModuleList(BloccoSpazioTempo(dimensione, teste, dropout) for _ in range(blocchi))
         self.norma_finale = nn.LayerNorm(dimensione)
         self.testa = nn.Sequential(nn.Linear(2 * dimensione, dimensione), nn.GELU(), nn.Dropout(dropout),

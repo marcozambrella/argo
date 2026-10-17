@@ -33,3 +33,5 @@ torchvision = { index = "pytorch-cpu" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["lento: test lunghi su CPU (addestramento vero); si lanciano con: uv run pytest -m lento"]
+addopts = "-m 'not lento'"
