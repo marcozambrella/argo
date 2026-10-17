@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Roma Safe CCTV</title>
+  <meta name="description" content="Riconoscimento di violenza, violenza con arma e scippi da telecamere CCTV.">
+  <link rel="stylesheet" href="stile.css">
+</head>
+<body>
+  <!-- SEGNAPOSTO DESIGN: struttura e testi provvisori. Grafica, palette, font e copy li decide Marco. -->
+  <header class="testata">
+    <p class="segnaposto">SEGNAPOSTO DESIGN — logo / nome del progetto</p>
+    <h1>Roma Safe CCTV</h1>
+    <p class="sottotitolo">Telecamere che riconoscono violenza, armi e scippi mentre accadono.</p>
+    <nav>
+      <a href="#problema">Il problema</a><a href="#come-funziona">Come funziona</a>
+      <a href="#finestre">Finestre</a><a href="#grafo">Il grafo</a><a href="#risultati">Risultati</a><a href="#demo">Demo</a>
+    </nav>
+  </header>
+
+  <main>
+    <section id="problema">
+      <h2>Il problema a Roma</h2>
+      <p class="segnaposto">SEGNAPOSTO CONTENUTI — testo sul problema di violenze, furti e aggressioni a Roma.
+        I dati arriveranno da fonti ufficiali scelte insieme (in <code>dati/roma.json</code>): nessun numero è
+        inserito finché le fonti non sono decise.</p>
+      <div id="grafici-roma" class="grafici"></div>
+    </section>
+
+    <section id="come-funziona">
+      <h2>Come funziona</h2>
+      <ol class="pipeline">
+        <li><strong>Video a 25 fps</strong><span>dalla telecamera</span></li>
+        <li><strong>Pose + tracking</strong><span>YOLO26s-pose, BoT-SORT: 17 punti per persona, ID stabile</span></li>
+        <li><strong>Armi</strong><span>YOLO26s fine-tunato: pistola, coltello, fucile</span></li>
+        <li><strong>Finestre</strong><span>40 frame (1,6 s), una ogni 10 frame</span></li>
+        <li><strong>Graph-Transformer</strong><span>relazioni tra persone e armi</span></li>
+        <li><strong>Decisione</strong><span>normale · violenza · violenza con arma · scippo + WARNING ARMA</span></li>
+      </ol>
+      <p class="segnaposto">SEGNAPOSTO DESIGN — illustrazione della pipeline</p>
+    </section>
+
+    <section id="finestre">
+      <h2>Le finestre scorrevoli</h2>
+      <p>Il modello non guarda un frame alla volta ma 40 frame insieme. Ogni 10 frame parte una nuova finestra:
+        la prima va da 0 a 39, la seconda da 10 a 49, e così via. Muovi il cursore.</p>
+      <svg id="svg-finestre" viewBox="0 0 800 140" role="img" aria-label="Finestre di 40 frame con passo 10"></svg>
+      <label class="cursore">Finestra n. <output id="numero-finestra">1</output>
+        <input id="cursore-finestre" type="range" min="0" max="12" value="0"></label>
+    </section>
+
+    <section id="grafo">
+      <h2>Il grafo tra persone e armi</h2>
+      <p>Ogni frame diventa un grafo: i 17 punti di ogni persona, più le armi trovate. Il modello impara quanto
+        contano le ossa dello scheletro, le relazioni tra persone diverse e la vicinanza arma–polso.</p>
+      <div class="interruttori" id="interruttori-archi"></div>
+      <svg id="svg-grafo" viewBox="0 0 600 360" role="img" aria-label="Grafo di due persone e un'arma"></svg>
+    </section>
+
+    <section id="risultati">
+      <h2>Risultati</h2>
+      <p class="segnaposto">SEGNAPOSTO — tabella Graph-Transformer vs ST-GCN e matrice di confusione, generate da
+        <code>dati/risultati.json</code> dopo l'addestramento.</p>
+      <div id="tabella-risultati"></div>
+    </section>
+
+    <section id="demo">
+      <h2>Demo</h2>
+      <p class="segnaposto">SEGNAPOSTO — video annotati e video presentation (in <code>video/</code>).</p>
+    </section>
+  </main>
+
+  <footer>
+    <p class="segnaposto">SEGNAPOSTO — team, hackathon, crediti dei dataset (RWF-2000, CCTV-Fights, UCF-Crime, UCA,
+      SCVD, Roboflow) e licenze.</p>
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>
