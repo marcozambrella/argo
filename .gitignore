@@ -1,0 +1,20 @@
+# dati e output pesanti: mai nel repo
+data/
+runs/
+*.pt
+*.npz
+*.mp4
+*.avi
+*.webm
+!site/assets/**/*.mp4
+# python
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+# segreti
+kaggle.json
+.env
+
+# diario personale delle decisioni (solo locale)
+DIARIO.md
