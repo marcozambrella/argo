@@ -52,7 +52,7 @@ class Estrattore:
 
     def __init__(self, percorso_modello_pose: str = MODELLO_POSE_PREDEFINITO,
                  percorso_modello_armi: str | None = None, dispositivo: str | int | None = None,
-                 tracker: str = TRACKER_PREDEFINITO, confidenza_minima_persone: float = 0.25,
+                 tracker: str = TRACKER_PREDEFINITO, confidenza_minima_persone: float = 0.1,
                  confidenza_minima_armi: float = 0.25):
         from ultralytics import YOLO  # import qui: i moduli che non estraggono non devono caricare torch
 
@@ -60,6 +60,8 @@ class Estrattore:
         self.modello_armi = YOLO(percorso_modello_armi) if percorso_modello_armi else None
         self.dispositivo = dispositivo
         self.tracker = tracker
+        # 0,1 è il default di Ultralytics per .track (D3): il tracker usa anche le detection poco sicure nel
+        # secondo passaggio. Con 0,25 le tracce in una scena affollata duravano la metà (prova del 2026-10-17).
         self.confidenza_minima_persone = confidenza_minima_persone
         # soglia bassa in estrazione: il filtro vero (≥ 0,5 per il WARNING ARMA) si applica dopo, così si può tarare
         self.confidenza_minima_armi = confidenza_minima_armi
