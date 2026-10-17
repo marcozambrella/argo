@@ -1,9 +1,9 @@
-"""Costanti condivise da estrazione, training e demo (decisioni D2 e D5 nel README)."""
+"""Costanti condivise da estrazione, training e demo (decisioni D2 e D5 nel diario)."""
 
-FPS = 25            # tutti i video vengono letti a 25 fps
-WINDOW = 40         # frame per finestra (1,6 s)
-STRIDE = 10         # passo tra finestre: 0-39, 10-49, 20-59, ...
-MIN_COVERAGE = 20   # frame di evento necessari perché la finestra prenda la classe dell'evento
+FPS_ANALISI = 25                 # tutti i video vengono letti a 25 fps
+FRAME_PER_FINESTRA = 40          # 1,6 secondi
+PASSO_FINESTRE = 10              # finestre 0-39, 10-49, 20-59, ...
+FRAME_MINIMI_EVENTO = 20         # frame di evento necessari perché la finestra prenda la classe dell'evento
 
-CLASSES = ("normale", "violenza", "violenza_con_arma", "scippo")
-CLASS_ID = {name: i for i, name in enumerate(CLASSES)}
+CLASSI = ("normale", "violenza", "violenza_con_arma", "scippo")
+INDICE_CLASSE = {nome: indice for indice, nome in enumerate(CLASSI)}

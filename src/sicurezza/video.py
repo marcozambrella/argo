@@ -7,55 +7,56 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .config import FPS
+from .config import FPS_ANALISI
 
 
 @dataclass(frozen=True)
-class VideoInfo:
-    width: int
-    height: int
-    duration: float  # secondi
+class InfoVideo:
+    larghezza: int
+    altezza: int
+    durata_secondi: float
 
 
-def probe(path: str) -> VideoInfo:
-    out = subprocess.run(
+def leggi_info_video(percorso_video: str) -> InfoVideo:
+    uscita_ffprobe = subprocess.run(
         ["ffprobe", "-v", "error", "-select_streams", "v:0",
          "-show_entries", "stream=width,height,duration:stream_side_data=rotation:format=duration",
-         "-of", "json", str(path)],
+         "-of", "json", str(percorso_video)],
         capture_output=True, text=True, check=True,
     ).stdout
-    info = json.loads(out)
-    stream = info["streams"][0]
-    w, h = int(stream["width"]), int(stream["height"])
+    dati = json.loads(uscita_ffprobe)
+    flusso_video = dati["streams"][0]
+    larghezza, altezza = int(flusso_video["width"]), int(flusso_video["height"])
     # ffmpeg ruota automaticamente i video con metadato di rotazione: le dimensioni in uscita vanno scambiate
-    rotation = next((int(sd["rotation"]) for sd in stream.get("side_data_list", []) if "rotation" in sd), 0)
-    if rotation % 180:
-        w, h = h, w
-    duration = float(stream.get("duration") or info.get("format", {}).get("duration") or 0.0)
-    return VideoInfo(w, h, duration)
+    rotazione = next((int(dato["rotation"]) for dato in flusso_video.get("side_data_list", []) if "rotation" in dato), 0)
+    if rotazione % 180:
+        larghezza, altezza = altezza, larghezza
+    durata = float(flusso_video.get("duration") or dati.get("format", {}).get("duration") or 0.0)
+    return InfoVideo(larghezza, altezza, durata)
 
 
-def iter_frames(path: str, fps: int = FPS, start: float | None = None,
-                end: float | None = None) -> Iterator[np.ndarray]:
-    """Frame BGR (h, w, 3) uint8 a `fps` costanti, opzionalmente solo tra `start` e `end` secondi."""
-    info = probe(path)
-    cmd = ["ffmpeg", "-v", "error", "-nostdin"]
-    if start:
-        cmd += ["-ss", f"{start:.3f}"]
-    cmd += ["-i", str(path)]
-    if end is not None:
-        cmd += ["-t", f"{end - (start or 0):.3f}"]
-    cmd += ["-vf", f"fps={fps}", "-an", "-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
+def leggi_frame(percorso_video: str, fps: int = FPS_ANALISI, inizio_secondi: float | None = None,
+                fine_secondi: float | None = None) -> Iterator[np.ndarray]:
+    """Frame BGR (altezza, larghezza, 3) uint8 a `fps` costanti, opzionalmente solo tra inizio e fine (secondi)."""
+    info = leggi_info_video(percorso_video)
+    comando = ["ffmpeg", "-v", "error", "-nostdin"]
+    if inizio_secondi:
+        comando += ["-ss", f"{inizio_secondi:.3f}"]
+    comando += ["-i", str(percorso_video)]
+    if fine_secondi is not None:
+        comando += ["-t", f"{fine_secondi - (inizio_secondi or 0):.3f}"]
+    comando += ["-vf", f"fps={fps}", "-an", "-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
 
-    frame_bytes = info.width * info.height * 3
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=frame_bytes)
+    byte_per_frame = info.larghezza * info.altezza * 3
+    processo_ffmpeg = subprocess.Popen(comando, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                       bufsize=byte_per_frame)
     try:
         while True:
-            buf = proc.stdout.read(frame_bytes)
-            if len(buf) < frame_bytes:
+            dati_frame = processo_ffmpeg.stdout.read(byte_per_frame)
+            if len(dati_frame) < byte_per_frame:
                 break
-            yield np.frombuffer(buf, np.uint8).reshape(info.height, info.width, 3)
+            yield np.frombuffer(dati_frame, np.uint8).reshape(info.altezza, info.larghezza, 3)
     finally:
-        proc.stdout.close()
-        proc.kill()
-        proc.wait()
+        processo_ffmpeg.stdout.close()
+        processo_ffmpeg.kill()
+        processo_ffmpeg.wait()
