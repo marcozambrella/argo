@@ -11,7 +11,7 @@ import yaml
 from sicurezza.dati import gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
 from sicurezza.demo import confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
-from sicurezza.strumenti import scegli_immagini_coco
+from sicurezza.strumenti import risultati_per_il_sito, scegli_immagini_coco
 from sicurezza.visione import conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
 
 
@@ -691,3 +691,16 @@ def test_falsi_allarmi_contati_per_categoria(tmp_path):
                                                    "classi": {"knife": 1}}
     assert risultato["per_categoria"]["cell_phone"]["con_allarme"] == 0
     assert risultato["immagini_con_allarme"] == [{"immagine": "knife/falso_b.jpg", "armi": [("knife", 0.7, 0.02)]}]
+
+
+@pytest.mark.lento  # un'epoca vera di ST-GCN su CPU: ~50 s
+def test_risultati_per_il_sito_dal_vero_addestramento(dataset_finto, tmp_path):
+    """Il formato letto da site/app.js (nome, macro_f1, latenza_cpu_ms) esce dai risultati.json veri di addestra."""
+    risultati = addestra(dataset_finto, "stgcn", tmp_path / "stgcn", epoche=1, dimensione_lotto=16)
+    taratura = {"migliore": {"soglia": 0.5, "frame_minimi": 5, "margine": 0.5, "f1": 0.8}, "tabella": []}
+    sito = risultati_per_il_sito([json.loads(json.dumps(risultati))], taratura)
+    modello = sito["modelli"][0]
+    assert modello["nome"] == "ST-GCN" and 0 <= modello["macro_f1"] <= 1 and modello["latenza_cpu_ms"] > 0
+    assert sito["classi"] == ["normale", "violenza", "violenza_con_arma", "scippo"]
+    assert modello["finestre_test"] == len(np.load(tmp_path / "stgcn" / "split.npz")["test"])
+    assert sito["warning_arma"]["frame_minimi"] == 5 and risultati_per_il_sito([])["modelli"] == []

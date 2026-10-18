@@ -332,6 +332,53 @@ def comando_scarica_negativi_coco(argomenti: list[str] | None = None) -> None:
 
 
 # ==============================================================================================================
+# esporta_risultati_sito
+# Dai risultati.json dell'addestramento (uno per modello) e dalla taratura del WARNING ARMA (D35) al file che il
+# sito legge: site/dati/risultati.json. Solo numeri misurati sul test set: niente da inventare (regola del sito).
+#
+# Uso:  uv run python -m sicurezza.strumenti esporta-risultati-sito \
+#           --risultati runs/addestramento/graph_transformer/risultati.json runs/addestramento/stgcn/risultati.json \
+#           [--taratura runs/addestramento/taratura_warning.json] [--uscita site/dati/risultati.json]
+# ==============================================================================================================
+
+NOMI_MODELLI_SITO = {"graph_transformer": "Graph-Transformer", "stgcn": "ST-GCN"}
+
+
+def risultati_per_il_sito(risultati_modelli: list[dict], taratura_warning: dict | None = None) -> dict:
+    modelli = []
+    for risultati in risultati_modelli:
+        test = risultati["test"]
+        modelli.append({
+            "nome": NOMI_MODELLI_SITO.get(risultati["modello"], risultati["modello"]),
+            "macro_f1": round(test["macro_f1"], 4), "accuratezza": round(test["accuratezza"], 4),
+            "latenza_cpu_ms": round(risultati["latenza_cpu_ms_per_finestra"], 2),
+            "parametri": risultati["parametri"], "epoca_migliore": risultati["epoca_migliore"],
+            "recall": test["recall"], "precisione": test["precisione"], "f1": test["f1"],
+            "matrice_confusione": test["matrice_confusione"],
+            "finestre_test": int(sum(map(sum, test["matrice_confusione"]))),
+            "macro_f1_val_per_epoca": [round(epoca["macro_f1_val"], 4) for epoca in risultati["storia"]],
+        })
+    uscita = {"_nota": "Generato da `strumenti esporta-risultati-sito`: metriche sul test set (split per video, P4).",
+              "classi": list(modelli[0]["recall"]) if modelli else [], "modelli": modelli}
+    if taratura_warning:
+        uscita["warning_arma"] = taratura_warning["migliore"]
+    return uscita
+
+
+def comando_esporta_risultati_sito(argomenti: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--risultati", nargs="+", required=True, help="risultati.json di ogni modello")
+    parser.add_argument("--taratura", default=None, help="taratura_warning.json (facoltativo)")
+    parser.add_argument("--uscita", default="site/dati/risultati.json")
+    argomenti = parser.parse_args(argomenti)
+    taratura = json.loads(Path(argomenti.taratura).read_text()) if argomenti.taratura else None
+    uscita = risultati_per_il_sito([json.loads(Path(p).read_text()) for p in argomenti.risultati], taratura)
+    Path(argomenti.uscita).write_text(json.dumps(uscita, indent=1, ensure_ascii=False))
+    for modello in uscita["modelli"]:
+        print(f"{modello['nome']:18s} macro-F1 test {modello['macro_f1']:.3f}  {modello['latenza_cpu_ms']:.1f} ms/finestra")
+
+
+# ==============================================================================================================
 # presentation/monta_presentazione
 # Monta la video presentation da presentation/scaletta.json con ffmpeg (D12). Riproducibile: quando il modello
 # migliora si rigenerano i clip annotati e si rilancia questo script.
@@ -428,7 +475,7 @@ def comando_monta_presentazione(argomenti: list[str] | None = None) -> None:
 # ==============================================================================================================
 # riga di comando: python -m sicurezza.strumenti <comando> [opzioni]
 # ==============================================================================================================
-COMANDI = {"annota-scippi": comando_annota_scippi, "scarica-campioni": comando_scarica_campioni, "scarica-negativi-coco": comando_scarica_negativi_coco, "monta-presentazione": comando_monta_presentazione}
+COMANDI = {"annota-scippi": comando_annota_scippi, "scarica-campioni": comando_scarica_campioni, "scarica-negativi-coco": comando_scarica_negativi_coco, "esporta-risultati-sito": comando_esporta_risultati_sito, "monta-presentazione": comando_monta_presentazione}
 
 
 def main(argomenti: list[str] | None = None) -> None:
