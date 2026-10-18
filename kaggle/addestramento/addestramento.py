@@ -12,7 +12,9 @@ if shutil.which("ffprobe") is None:  # il lettore video usa ffmpeg/ffprobe: buil
                    "tar -xJ -C /tmp && cp /tmp/ffmpeg-*-static/ff* /usr/local/bin/", shell=True, check=True)
 # =====
 
-"""Passi 5-6: finestre etichettate dalle estrazioni, poi Graph-Transformer (GPU 0) e ST-GCN (GPU 1) in parallelo."""
+"""Passi 5-6: finestre etichettate dalle estrazioni, poi Graph-Transformer (GPU 0) e ST-GCN (GPU 1) in parallelo,
+poi taratura del WARNING ARMA (D35). Le estrazioni devono venire da UNA sola sorgente (aggiungi-armi se il detector
+è stato riaddestrato, altrimenti estrazione): due cartelle con gli stessi nomi di file si sovrascriverebbero."""
 import subprocess, sys
 from pathlib import Path
 
@@ -27,3 +29,8 @@ processi = [subprocess.Popen([sys.executable, "-m", "sicurezza.modelli", "addest
             for gpu, modello in enumerate(["graph_transformer", "stgcn"])]
 for processo in processi:
     processo.wait()
+
+# D35: taratura del WARNING ARMA sul validation set (stesso split del Graph-Transformer)
+subprocess.run([sys.executable, "-m", "sicurezza.demo", "tara-warning", "--finestre", "/tmp/finestre.npz",
+                "--split", "/kaggle/working/graph_transformer/split.npz", "--estratti", *cartelle_estratti,
+                "--uscita", "/kaggle/working/taratura_warning.json"], check=True, env=ambiente)

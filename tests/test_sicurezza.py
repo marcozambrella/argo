@@ -9,7 +9,7 @@ import torch
 import yaml
 
 from sicurezza.dati import gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
-from sicurezza.demo import analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
+from sicurezza.demo import confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.visione import converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
 
@@ -633,3 +633,22 @@ def test_mock_attack_conversione_e_split_per_sequenza(tmp_path):
     assert len(vuoti) == 30                                     # frame senza armi restano come negativi
     primo = next((tmp_path / "mock").glob("*/labels/*_frame_1.txt")).read_text().split()
     assert primo[0] == "0" and abs(float(primo[1]) - 980 / 1920) < 1e-4  # centro x normalizzato
+
+
+def test_taratura_warning_arma_trova_la_soglia_giusta(tmp_path):
+    """D35: finestre con arma sicura in 8 frame e finestre con un falso positivo debole in 2 frame."""
+    np.savez(tmp_path / "f.npz", **estrazione_finta(con_arma=True))       # arma 0,8 nei frame pari
+    timeline = carica_timeline(tmp_path / "f.npz")
+    confidenze = confidenza_arma_per_frame(timeline, 0, margine=0.5)
+    assert confidenze.shape == (40,) and (confidenze[0::2] > 0.79).all() and not confidenze[1::2].any()
+
+    generatore = np.random.default_rng(0)
+    con_arma = np.zeros((50, 40), np.float32)
+    con_arma[:, :8] = 0.8                                                  # arma vera: 8 frame a 0,8
+    senza_arma = np.zeros((50, 40), np.float32)
+    senza_arma[:, :2] = generatore.uniform(0.3, 0.45, (50, 2))            # rumore: 2 frame deboli
+    risultato = tara_warning_arma({0.5: np.concatenate([con_arma, senza_arma])},
+                                  np.array([True] * 50 + [False] * 50))
+    migliore = risultato["migliore"]
+    assert migliore["f1"] == 1.0 and migliore["precisione"] == 1.0
+    assert len(risultato["tabella"]) == 12 * 15

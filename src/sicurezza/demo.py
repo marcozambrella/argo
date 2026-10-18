@@ -247,9 +247,82 @@ def comando_analizza_video(argomenti: list[str] | None = None) -> None:
     print(f"{len(eventi)} finestre analizzate → {argomenti.uscita}")
 
 # ==============================================================================================================
+# taratura del WARNING ARMA (D35: massimo F1 sul validation set)
+# Riferimento: una finestra "ha un'arma" se la sua etichetta è violenza_con_arma (le altre classi non hanno armi
+# annotate). Per ogni finestra si calcola, per frame, la confidenza massima di un'arma vicina a una persona; poi si
+# provano tutte le combinazioni di soglia di confidenza, frame minimi e margine di vicinanza.
+# ==============================================================================================================
+SOGLIE_DA_PROVARE = tuple(round(0.25 + 0.05 * passo, 2) for passo in range(12))      # 0,25 … 0,80
+FRAME_MINIMI_DA_PROVARE = tuple(range(1, 16))
+MARGINI_DA_PROVARE = (0.25, 0.5, 1.0)
+
+
+def confidenza_arma_per_frame(timeline: TimelineVideo, inizio_finestra: int, margine: float,
+                              frame_per_finestra: int = FRAME_PER_FINESTRA) -> np.ndarray:
+    """[frame_per_finestra]: confidenza massima di un'arma vicina a una persona in ogni frame (0 se nessuna)."""
+    confidenze = np.zeros(frame_per_finestra, np.float32)
+    fine_finestra = inizio_finestra + frame_per_finestra
+    for indice in np.flatnonzero((timeline.armi_frame >= inizio_finestra) & (timeline.armi_frame < fine_finestra)):
+        frame = int(timeline.armi_frame[indice])
+        box_persone = np.array([box[frame] for box in timeline.box_per_traccia.values() if not np.isnan(box[frame, 0])])
+        if arma_vicina_a_persona(timeline.armi_box[indice], box_persone.reshape(-1, 4), margine):
+            posizione = frame - inizio_finestra
+            confidenze[posizione] = max(confidenze[posizione], float(timeline.armi_confidenza[indice]))
+    return confidenze
+
+
+def tara_warning_arma(confidenze_per_margine: dict[float, np.ndarray], arma_vera: np.ndarray) -> dict:
+    """confidenze_per_margine: margine → [finestre, frame]; arma_vera: [finestre] bool. Ritorna la combinazione con
+    F1 massimo e la tabella completa."""
+    tabella = []
+    for margine, confidenze in confidenze_per_margine.items():
+        for soglia in SOGLIE_DA_PROVARE:
+            frame_sopra_soglia = (confidenze >= soglia).sum(axis=1)
+            for frame_minimi in FRAME_MINIMI_DA_PROVARE:
+                previsto = frame_sopra_soglia >= frame_minimi
+                veri_positivi = int((previsto & arma_vera).sum())
+                precisione = veri_positivi / max(int(previsto.sum()), 1)
+                recall = veri_positivi / max(int(arma_vera.sum()), 1)
+                f1 = 2 * precisione * recall / max(precisione + recall, 1e-12)
+                tabella.append({"margine": margine, "soglia_confidenza": soglia, "frame_minimi": frame_minimi,
+                                "precisione": round(precisione, 4), "recall": round(recall, 4), "f1": round(f1, 4)})
+    migliore = max(tabella, key=lambda riga: (riga["f1"], riga["precisione"]))
+    return {"migliore": migliore, "tabella": tabella}
+
+
+def comando_tara_warning(argomenti: list[str] | None = None) -> None:
+    from .modelli import carica_timeline
+    from .dati import INDICE_CLASSE, nome_file_estratto
+
+    parser = argparse.ArgumentParser(description="Taratura del WARNING ARMA (D35) sulle finestre di validazione")
+    parser.add_argument("--finestre", required=True, help="finestre.npz (id_clip, inizio_finestra, etichetta)")
+    parser.add_argument("--split", required=True, help="split.npz prodotto dall'addestramento (indici 'val')")
+    parser.add_argument("--estratti", nargs="+", required=True)
+    parser.add_argument("--uscita", required=True, help="file .json con migliore combinazione e tabella")
+    argomenti = parser.parse_args(argomenti)
+
+    with np.load(argomenti.finestre) as finestre:
+        id_clip, inizi, etichette = finestre["id_clip"], finestre["inizio_finestra"], finestre["etichetta"]
+    indici_val = np.load(argomenti.split)["val"]
+    percorso_per_nome = {file.name: file for cartella in argomenti.estratti for file in Path(cartella).glob("*.npz")}
+    confidenze = {margine: [] for margine in MARGINI_DA_PROVARE}
+    timeline_in_memoria = {}
+    for indice in indici_val:
+        nome = nome_file_estratto(str(id_clip[indice]))
+        if nome not in timeline_in_memoria:
+            timeline_in_memoria = {nome: carica_timeline(percorso_per_nome[nome])}  # una clip alla volta in memoria
+        for margine in MARGINI_DA_PROVARE:
+            confidenze[margine].append(confidenza_arma_per_frame(timeline_in_memoria[nome], int(inizi[indice]), margine))
+    arma_vera = etichette[indici_val] == INDICE_CLASSE["violenza_con_arma"]
+    risultato = tara_warning_arma({m: np.stack(c) for m, c in confidenze.items()}, arma_vera)
+    Path(argomenti.uscita).write_text(json.dumps(risultato, indent=1, ensure_ascii=False))
+    print("migliore:", risultato["migliore"])
+
+
+# ==============================================================================================================
 # riga di comando: python -m sicurezza.demo <comando> [opzioni]
 # ==============================================================================================================
-COMANDI = {"analizza-video": comando_analizza_video}
+COMANDI = {"analizza-video": comando_analizza_video, "tara-warning": comando_tara_warning}
 
 
 def main(argomenti: list[str] | None = None) -> None:
