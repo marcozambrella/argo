@@ -8,6 +8,7 @@ Apre una pagina nel browser con il video e i tasti:
     N       nel video NON si vede uno scippo (verrà escluso)
     Canc    cancella gli eventi di questo video
     Invio   salva e passa al prossimo video da annotare
+    P S     video precedente / successivo (senza salvare: per rivedere o correggere quelli già fatti)
 Ogni salvataggio scrive subito il file JSON: si può chiudere e riprendere quando si vuole.
 
 Uso:
@@ -46,7 +47,8 @@ PAGINA = """<!doctype html>
  (<span class="tasto">Maiusc</span> ±1 s)</span><span><span class="tasto">, .</span> frame</span>
  <span><span class="tasto">1 2 3</span> velocità</span><span><span class="tasto">I</span> inizio</span>
  <span><span class="tasto">F</span> fine</span><span><span class="tasto">N</span> nessuno scippo</span>
- <span><span class="tasto">Canc</span> cancella</span><span><span class="tasto">Invio</span> salva e prossimo</span></div>
+ <span><span class="tasto">Canc</span> cancella</span><span><span class="tasto">Invio</span> salva e prossimo</span>
+ <span><span class="tasto">P S</span> video precedente / successivo</span></div>
 <script>
 const video = document.getElementById("video");
 let elenco = [], annotazioni = {}, indice = 0, inizio = null, eventi = [], nessunoScippo = false;
@@ -106,6 +108,8 @@ document.addEventListener("keydown", (evento) => {
     "n": () => { nessunoScippo = true; eventi = []; disegnaEventi(); },
     "Delete": () => { eventi = []; nessunoScippo = false; disegnaEventi(); },
     "Enter": salvaEProssimo,
+    "p": () => { if (indice > 0) apri(indice - 1); },
+    "s": () => { if (indice < elenco.length - 1) apri(indice + 1); },
   };
   const azione = azioni[evento.key] || azioni[evento.key.toLowerCase()];
   if (azione) { evento.preventDefault(); azione(); }
