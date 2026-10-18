@@ -19,3 +19,6 @@ kaggle.json
 
 # diario personale delle decisioni (solo locale)
 DIARIO.md
+
+# configurazione locale di Claude Code (agente del sito)
+.claude/
