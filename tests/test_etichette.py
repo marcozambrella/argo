@@ -75,3 +75,17 @@ def test_regole_uca_casi_tipici():
     # scippi, ma non strappare un'arma di mano
     assert giudica("The man came in and snatched the child's mobile phone.") == "scippo"
     assert giudica("The man in the hat tried to snatch the gun from the security guard") != "scippo"
+
+
+def test_chain_snatching_usa_solo_i_tempi_annotati(tmp_path):
+    from sicurezza.etichette import chain_snatching
+    crea_file(tmp_path, "Chain_Snatching_Videos/Chain_Snatching01.mp4", "Chain_Snatching_Videos/Chain_Snatching02.mp4",
+              "Chain_Snatching_Videos/Chain_Snatching03.mp4")
+    (tmp_path / "tempi.json").write_text(json.dumps({
+        "Chain_Snatching01.mp4": {"eventi": [[2.0, 3.6]], "nessuno_scippo": False},
+        "Chain_Snatching02.mp4": {"eventi": [], "nessuno_scippo": True}}))
+    clip = chain_snatching.elenca_clip(tmp_path, file_tempi=tmp_path / "tempi.json")
+    assert len(clip) == 3                                   # tutti estratti, anche quelli non annotati
+    assert clip[0].eventi_in_frame(200) == [(50, 90, INDICE_CLASSE["scippo"])]
+    assert clip[1].eventi_secondi == [] and clip[2].eventi_secondi == []
+    assert all(c.classe_sfondo is None for c in clip)      # fuori dallo scippo: finestre scartate
