@@ -12,7 +12,8 @@ if shutil.which("ffprobe") is None:  # il lettore video usa ffmpeg/ffprobe: buil
                    "tar -xJ -C /tmp && cp /tmp/ffmpeg-*-static/ff* /usr/local/bin/", shell=True, check=True)
 # =====
 
-"""Passo 4: estrazione delle timeline da tutte le sorgenti, una parte per GPU (2x T4), max ~11 h.
+"""Passo 4: estrazione delle timeline da tutte le sorgenti, 2 processi per GPU (2x T4, D18/D20), max ~11 h.
+Benchmark v5: ~84 frame/s totali (66 con GMC per i video da cellulare) → ~9,6 h per tutto.
 Se la sessione finisce prima, rilanciare: l'output della sessione precedente va aggiunto come kernel_sources
 e i video già fatti vengono saltati (--gia-estratti)."""
 import subprocess, sys
@@ -28,12 +29,14 @@ opzione_armi = ["--modello-armi", str(pesi_armi[0])] if pesi_armi else []
 print("detector armi:", pesi_armi[0] if pesi_armi else "NESSUNO (solo pose)", flush=True)
 gia_estratti = [str(cartella) for cartella in Path("/kaggle/input").glob("**/estratti") if cartella.is_dir()]
 
+PROCESSI_PER_GPU, NUMERO_GPU = 2, 2
+parti = PROCESSI_PER_GPU * NUMERO_GPU
 processi = [subprocess.Popen([sys.executable, "-m", "sicurezza.estrazione", "--elenco", str(uscita / "elenco.jsonl"),
-                              "--uscita", str(uscita / "estratti"), "--parte", str(gpu), "--parti", "2",
-                              "--dispositivo", str(gpu), "--ore-massime", "11", *opzione_armi,
+                              "--uscita", str(uscita / "estratti"), "--parte", str(parte), "--parti", str(parti),
+                              "--dispositivo", str(parte % NUMERO_GPU), "--ore-massime", "11", *opzione_armi,
                               "--gia-estratti", *gia_estratti],
                              env={**os.environ, "PYTHONPATH": "/tmp/repo/src"})
-            for gpu in (0, 1)]
+            for parte in range(parti)]
 for processo in processi:
     processo.wait()
 print("fatti:", len(list((uscita / "estratti").glob("*.npz"))), "file .npz")
