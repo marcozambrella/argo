@@ -55,6 +55,7 @@ const testo = (id, valore) => document.getElementById(id).textContent = valore;
 async function carica() {
   const risposta = await (await fetch("/elenco")).json();
   elenco = risposta.video; annotazioni = risposta.annotazioni;
+  if (risposta.problema) { testo("avviso", risposta.problema); return; }
   const primoDaFare = elenco.findIndex((nome) => !(nome in annotazioni));
   apri(primoDaFare >= 0 ? primoDaFare : 0);
 }
@@ -63,6 +64,7 @@ function apri(nuovoIndice) {
   const nome = elenco[indice], gia = annotazioni[nome];
   eventi = gia ? gia.eventi.map((e) => [...e]) : []; nessunoScippo = gia ? gia.nessuno_scippo : false; inizio = null;
   video.src = "/video/" + encodeURIComponent(nome); video.playbackRate = 1;
+  video.onerror = () => testo("avviso", "Video non caricato: il disco esterno si è scollegato? Rimontalo e ricarica la pagina.");
   testo("nome", nome); testo("velocita", 1); testo("inizio", "—"); testo("avviso", "");
   testo("avanzamento", `${Object.keys(annotazioni).length}/${elenco.length} annotati · video ${indice + 1}`);
   disegnaEventi();
@@ -140,7 +142,9 @@ def crea_gestore(cartella_video: Path, file_annotazioni: Path):
                 return self.rispondi(200, PAGINA.encode(), "text/html; charset=utf-8")
             if self.path == "/elenco":
                 video = sorted(p.name for p in cartella_video.glob("*.mp4"))
-                corpo = json.dumps({"video": video, "annotazioni": leggi_annotazioni()}).encode()
+                problema = "" if video else (f"Nessun video in {cartella_video}: il disco esterno è montato? "
+                                             "(udisksctl mount -b /dev/sda1, poi ricarica la pagina)")
+                corpo = json.dumps({"video": video, "annotazioni": leggi_annotazioni(), "problema": problema}).encode()
                 return self.rispondi(200, corpo, "application/json")
             if self.path.startswith("/video/"):
                 percorso = cartella_video / Path(unquote(self.path[len("/video/"):])).name

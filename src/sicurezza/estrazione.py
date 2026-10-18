@@ -53,7 +53,7 @@ class Estrattore:
     def __init__(self, percorso_modello_pose: str = MODELLO_POSE_PREDEFINITO,
                  percorso_modello_armi: str | None = None, dispositivo: str | int | None = None,
                  tracker: str = TRACKER_PREDEFINITO, confidenza_minima_persone: float = 0.1,
-                 confidenza_minima_armi: float = 0.25):
+                 confidenza_minima_armi: float = 0.25, mezza_precisione: bool = False):
         from ultralytics import YOLO  # import qui: i moduli che non estraggono non devono caricare torch
 
         self.modello_pose = YOLO(percorso_modello_pose)
@@ -65,12 +65,13 @@ class Estrattore:
         self.confidenza_minima_persone = confidenza_minima_persone
         # soglia bassa in estrazione: il filtro vero (≥ 0,5 per il WARNING ARMA) si applica dopo, così si può tarare
         self.confidenza_minima_armi = confidenza_minima_armi
+        self.mezza_precisione = mezza_precisione  # FP16 su GPU (D18): ~stessi risultati, più veloce
 
     def analizza_frame(self, frame: np.ndarray, primo_frame_del_video: bool) -> tuple[dict, dict]:
         """Persone tracciate e armi di un frame. Al primo frame di ogni video il tracker si azzera."""
         risultato_pose = self.modello_pose.track(
             frame, persist=not primo_frame_del_video, tracker=self.tracker, device=self.dispositivo,
-            conf=self.confidenza_minima_persone, verbose=False)[0]
+            conf=self.confidenza_minima_persone, half=self.mezza_precisione, verbose=False)[0]
         box_persone = risultato_pose.boxes
         if box_persone.id is not None and len(box_persone):
             persone = {
@@ -87,7 +88,7 @@ class Estrattore:
                 "confidenza": np.empty(0, np.float32)}
         if self.modello_armi is not None:
             box_armi = self.modello_armi.predict(frame, device=self.dispositivo, conf=self.confidenza_minima_armi,
-                                                 verbose=False)[0].boxes
+                                                 half=self.mezza_precisione, verbose=False)[0].boxes
             if len(box_armi):
                 armi = {"box": box_armi.xyxy.cpu().numpy(), "classe": box_armi.cls.int().cpu().numpy(),
                         "confidenza": box_armi.conf.cpu().numpy()}
@@ -185,9 +186,11 @@ def main() -> None:
     parser.add_argument("--modello-armi", default=None, help="pesi del detector armi fine-tunato (D4)")
     parser.add_argument("--gia-estratti", nargs="*", default=[], help="cartelle con .npz di sessioni precedenti")
     parser.add_argument("--ore-massime", type=float, default=None, help="fermati dopo queste ore (sessioni Kaggle)")
+    parser.add_argument("--mezza-precisione", action="store_true", help="FP16 su GPU (D18)")
     argomenti = parser.parse_args()
 
-    estrattore = Estrattore(argomenti.modello_pose, argomenti.modello_armi, argomenti.dispositivo)
+    estrattore = Estrattore(argomenti.modello_pose, argomenti.modello_armi, argomenti.dispositivo,
+                            mezza_precisione=argomenti.mezza_precisione)
     estrai_elenco(leggi_elenco(argomenti.elenco), argomenti.uscita, estrattore, argomenti.parte, argomenti.parti,
                   argomenti.gia_estratti, argomenti.ore_massime * 3600 if argomenti.ore_massime else None)
 
