@@ -56,3 +56,22 @@ def test_annotazioni_andata_e_ritorno(tmp_path):
     clip = rwf2000.elenca_clip(tmp_path)
     scrivi_annotazioni(clip, tmp_path / "a.jsonl")
     assert leggi_annotazioni(tmp_path / "a.jsonl") == clip
+
+
+def test_regole_uca_casi_tipici():
+    giudica = ucf_uca.classe_da_frase
+    # violenza su persone
+    assert giudica("Someone knocked down the man in white with one punch.") == "violenza"
+    assert giudica("The man pushed the blonde woman to the ground.") == "violenza"
+    assert giudica("Two men clashed and fought on the bus.") == "violenza"
+    # oggetti e veicoli: non sono violenza
+    assert giudica("The green taxi hit a tricycle while reversing and stopped.") is None
+    assert giudica("The man kicked open the door and entered the room.") is None
+    assert giudica("Two people pushed a stretcher cart and walked to the man in white.") is None
+    assert giudica("Several women pushed the sofa to the door, and the two robbers ran away") is None
+    # armi
+    assert giudica("A man opened the door and pointed a gun at the clerk.") == "violenza_con_arma"
+    assert giudica("The man in the blue hat threatened two store clerks with a knife.") == "violenza_con_arma"
+    # scippi, ma non strappare un'arma di mano
+    assert giudica("The man came in and snatched the child's mobile phone.") == "scippo"
+    assert giudica("The man in the hat tried to snatch the gun from the security guard") != "scippo"
