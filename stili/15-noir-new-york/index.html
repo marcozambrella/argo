@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Noir New York · Roma Safe CCTV</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Six+Caps&family=Cutive+Mono&family=Playfair+Display:ital,wght@1,700&display=swap" rel="stylesheet">
+<style>
+/* 15 · Noir New York — anni '40: bianco e nero, ombre delle veneziane, pioggia, fascicolo battuto a macchina. */
+:root { --notte: #0b0b0b; --fumo: #d9d4c7; --grigio: #8a867d; --sodio: #e8c46a; --sangue: #b3261e; --sughero: #3a3027; --cartoncino: #e9e2cf;
+  --condensato: "Six Caps", sans-serif; --macchina: "Cutive Mono", monospace; --corsivo: "Playfair Display", serif; }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --notte: #e9e5da; --fumo: #121212; --grigio: #555049; --sodio: #8a5a00; --sughero: #b8a582; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--notte); color: var(--fumo); font: 18px/1.55 var(--macchina); }
+body::after { content: ""; position: fixed; inset: -50%; pointer-events: none; z-index: 40; opacity: .09;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)'/%3E%3C/svg%3E");
+  animation: grana .5s steps(4) infinite; }
+@keyframes grana { 0% { translate: 0 0; } 25% { translate: -3% 2%; } 50% { translate: 2% -3%; } 75% { translate: -2% -1%; } }
+a { color: var(--sodio); }
+:focus-visible { outline: 2px solid var(--sodio); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { body::after, .pioggia { animation: none !important; } }
+
+.scena { position: relative; height: 100vh; min-height: 600px; overflow: hidden; background: #000; color: #e9e2cf; }
+.scena video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: grayscale(1) contrast(1.45) brightness(.8); }
+.veneziane { position: absolute; inset: -20%; rotate: -24deg; pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,.72) 0 38px, transparent 38px 64px); mask-image: radial-gradient(ellipse at 70% 40%, #000 30%, transparent 75%); }
+.pioggia { position: absolute; inset: 0; pointer-events: none; opacity: .25;
+  background-image: repeating-linear-gradient(100deg, transparent 0 22px, rgba(255,255,255,.5) 22px 23px, transparent 23px 47px);
+  background-size: 100% 200px; animation: piove .5s linear infinite; }
+@keyframes piove { to { background-position: -40px 200px; } }
+.vignetta { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 35%, rgba(0,0,0,.92)); }
+.cartello { position: absolute; left: 6vw; bottom: 10vh; max-width: 760px; }
+.cartello .sopra { font: italic 700 clamp(20px, 2.4vw, 30px) var(--corsivo); color: #e8c46a; }
+.cartello h1 { font: 400 clamp(110px, 20vw, 300px)/.8 var(--condensato); margin: 6px 0 14px; letter-spacing: .02em; text-shadow: 0 10px 40px #000; }
+.segnaposto { border: 1px dashed var(--sodio); color: var(--sodio); padding: 8px 12px; margin: 8px 0; background: color-mix(in srgb, var(--notte) 80%, transparent); font: 15px/1.4 var(--macchina); }
+.scena .segnaposto { color: #e8c46a; border-color: #e8c46a; background: rgba(0,0,0,.6); }
+.nav-noir { position: absolute; top: 20px; left: 6vw; right: 6vw; display: flex; justify-content: space-between; z-index: 3; font-size: 14px; letter-spacing: .2em; text-transform: uppercase; }
+.nav-noir a { color: #e9e2cf; text-decoration: none; margin-left: 18px; }
+
+/* la bacheca del detective */
+.bacheca-sezione { padding: 100px 6vw 60px; }
+.titolo-noir { font: 400 clamp(72px, 11vw, 160px)/.85 var(--condensato); margin: 0; letter-spacing: .02em; }
+.sottotitolo-noir { font: italic 700 22px var(--corpo, var(--corsivo)); color: var(--sodio); margin: 0 0 14px; }
+.bacheca { position: relative; margin-top: 30px; background: var(--sughero); padding: 40px 30px 50px; min-height: 620px;
+  background-image: radial-gradient(rgba(0,0,0,.25) 1px, transparent 1.5px), radial-gradient(rgba(255,255,255,.06) 1px, transparent 1.5px); background-size: 7px 7px, 11px 11px; box-shadow: inset 0 0 60px rgba(0,0,0,.6); }
+.filo { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.reperti { list-style: none; margin: 0; padding: 0; position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 46px 34px; }
+.reperto { position: relative; background: var(--cartoncino); color: #1a1a1a; padding: 26px 16px 16px; box-shadow: 4px 6px 14px rgba(0,0,0,.5); }
+.reperto:nth-child(odd) { rotate: -2deg; } .reperto:nth-child(even) { rotate: 1.6deg; }
+.reperto:nth-child(5) { grid-column: 2; }
+.puntina { position: absolute; top: 6px; left: 50%; width: 14px; height: 14px; border-radius: 50%; background: var(--sangue); translate: -50% 0; box-shadow: 0 2px 3px rgba(0,0,0,.5); }
+.reperto .etichetta { font: 13px var(--macchina); letter-spacing: .2em; color: #6b645a; }
+.reperto b { display: block; font: 400 40px/1 var(--condensato); letter-spacing: .03em; margin: 4px 0 6px; }
+.reperto .dettaglio { font-size: 15px; line-height: 1.35; }
+.reperto .tecnica { display: block; margin-top: 8px; font-size: 13px; border-top: 1px dashed #6b645a; padding-top: 4px; }
+.reperto.allarme { background: #f2e6c2; }
+.reperto.allarme::after { content: "PERICOLO"; position: absolute; right: 8px; bottom: 30px; font: 700 18px var(--macchina); color: var(--sangue); border: 3px solid var(--sangue); padding: 2px 8px; rotate: -14deg; opacity: .8; }
+
+/* pellicola */
+.pellicola-sezione { padding: 80px 6vw 60px; }
+.pellicola { position: relative; background: #111; padding: 18px 0; margin-top: 26px; border-top: 1px solid #333; border-bottom: 1px solid #333; }
+.pellicola::before, .pellicola::after { content: ""; position: absolute; left: 0; right: 0; height: 10px;
+  background: repeating-linear-gradient(90deg, transparent 0 8px, #d9d4c7 8px 16px, transparent 16px 24px); opacity: .5; }
+.pellicola::before { top: 4px; } .pellicola::after { bottom: 4px; }
+.fotogrammi { display: grid; grid-template-columns: repeat(80, 1fr); gap: 2px; padding: 0 4px; }
+.fotogrammi i { height: 46px; background: #2a2a2a; }
+.fotogrammi i.dentro { background: #e9e2cf; box-shadow: 0 0 14px rgba(233,226,207,.6); }
+.fascio { height: 60px; margin: 0 4px; position: relative; }
+.fascio span { position: absolute; top: 0; height: 100%; background: linear-gradient(180deg, rgba(232,196,106,.45), transparent); clip-path: polygon(0 0, 100% 0, 85% 100%, 15% 100%); transition: left .3s; }
+.verbale { display: flex; gap: 40px; flex-wrap: wrap; font-size: 15px; color: var(--grigio); }
+.verbale b { display: block; font: 400 56px/1 var(--condensato); color: var(--fumo); letter-spacing: .03em; }
+.comando { display: flex; gap: 14px; align-items: center; margin-top: 14px; letter-spacing: .2em; text-transform: uppercase; font-size: 14px; }
+.comando input { flex: 1; accent-color: var(--sodio); height: 30px; }
+.fine { text-align: center; padding: 70px 0 50px; }
+.fine p { font: 400 120px/1 var(--condensato); margin: 0; letter-spacing: .1em; }
+.fine span { font-size: 14px; letter-spacing: .2em; color: var(--grigio); }
+@media (max-width: 900px) {
+  .reperti { grid-template-columns: 1fr 1fr; gap: 34px 18px; }
+  .reperto:nth-child(5) { grid-column: auto; }
+  .filo { display: none; }
+  .fotogrammi { grid-template-columns: repeat(40, 1fr); }
+}
+@media (max-width: 520px) {
+  .reperti { grid-template-columns: 1fr; }
+  .bacheca { padding: 30px 16px; }
+  .nav-noir a { margin-left: 10px; font-size: 12px; }
+  .nav-noir { letter-spacing: .1em; }
+}
+</style>
+</head>
+<body>
+<header class="scena">
+  <nav class="nav-noir" aria-label="Sezioni"><span>Fascicolo RSC</span><span><a href="#prove">Le prove</a><a href="#pellicola">La pellicola</a></span></nav>
+  <video src="../condivisi/hero.mp4" poster="../condivisi/hero-poster.jpg" autoplay muted loop playsinline
+    aria-label="Montaggio dei casi d'uso con le rilevazioni vere della rete, in bianco e nero"></video>
+  <div class="veneziane" aria-hidden="true"></div><div class="pioggia" aria-hidden="true"></div><div class="vignetta" aria-hidden="true"></div>
+  <div class="cartello">
+    <span class="sopra">Roma, 2026.</span>
+    <h1>Roma Safe CCTV</h1>
+    <p class="segnaposto" data-segnaposto="titoloHero"></p>
+    <p class="segnaposto" data-segnaposto="sottotitoloHero"></p>
+  </div>
+</header>
+<main>
+  <section class="bacheca-sezione" id="prove" aria-labelledby="titolo-prove">
+    <h2 class="titolo-noir" id="titolo-prove">Come funziona</h2>
+    <p class="segnaposto" data-segnaposto="introPipeline"></p>
+    <div class="bacheca">
+      <svg class="filo" id="filo" aria-hidden="true"></svg>
+      <ol class="reperti" id="reperti"></ol>
+    </div>
+  </section>
+  <section class="pellicola-sezione" id="pellicola" aria-labelledby="titolo-pellicola">
+    <h2 class="titolo-noir" id="titolo-pellicola">Finestre scorrevoli</h2>
+    <p class="segnaposto" data-segnaposto="introFinestre"></p>
+    <div class="fascio" aria-hidden="true"><span id="fascio"></span></div>
+    <div class="pellicola" aria-hidden="true"><div class="fotogrammi" id="fotogrammi"></div></div>
+    <div class="verbale" aria-live="polite" style="margin-top: 20px">
+      <div>Finestra<b id="numero-finestra">1</b></div><div>Fotogrammi<b id="frame-finestra">0–39</b></div><div>Secondi<b id="secondi-finestra">0,0–1,6</b></div>
+    </div>
+    <label class="comando">Sposta <input type="range" id="cursore-finestre" min="0" value="0"></label>
+  </section>
+  <div class="fine"><p>FINE</p><span>Demo di stile 15 / 15 · Noir New York · <a href="../">tutte le demo</a></span></div>
+</main>
+<script type="module">
+import { FINESTRE, NUMERO_FINESTRE, PASSI_PIPELINE, formattaSecondi, riempiSegnaposto, statoFinestra } from "../condivisi/progetto.js";
+riempiSegnaposto();
+const reperti = document.getElementById("reperti");
+for (const passo of PASSI_PIPELINE) {
+  const voce = document.createElement("li");
+  voce.className = "reperto" + (passo.nome === "WARNING ARMA" ? " allarme" : "");
+  voce.innerHTML = `<span class="puntina" aria-hidden="true"></span><span class="etichetta">REPERTO N. ${passo.numero}</span>
+    <b>${passo.nome}</b><span class="dettaglio">${passo.dettaglio}</span><span class="tecnica">${passo.tecnica}</span>`;
+  reperti.appendChild(voce);
+}
+// filo rosso tra le puntine, nell'ordine della pipeline
+const filo = document.getElementById("filo");
+function tendiFilo() {
+  const bacheca = filo.getBoundingClientRect();
+  const punti = [...reperti.querySelectorAll(".puntina")].map((puntina) => {
+    const r = puntina.getBoundingClientRect();
+    return [r.left - bacheca.left + r.width / 2, r.top - bacheca.top + r.height / 2];
+  });
+  filo.innerHTML = `<polyline points="${punti.map((p) => p.join(",")).join(" ")}" fill="none" stroke="#b3261e" stroke-width="2.5" opacity=".9"/>`;
+}
+addEventListener("resize", tendiFilo);
+addEventListener("load", tendiFilo);
+setTimeout(tendiFilo, 300);
+
+const fotogrammi = document.getElementById("fotogrammi");
+const celle = [];
+for (let frame = 0; frame < FINESTRE.frameTotaliMostrati; frame += 2) celle.push(fotogrammi.appendChild(document.createElement("i")));
+const cursore = document.getElementById("cursore-finestre");
+cursore.max = NUMERO_FINESTRE - 1;
+function aggiorna() {
+  const stato = statoFinestra(Number(cursore.value));
+  celle.forEach((cella, numero) => cella.classList.toggle("dentro", numero * 2 >= stato.primoFrame && numero * 2 <= stato.ultimoFrame));
+  const strette = matchMedia("(max-width: 900px)").matches;
+  const totale = strette ? FINESTRE.frameTotaliMostrati / 2 : FINESTRE.frameTotaliMostrati;
+  const fascio = document.getElementById("fascio");
+  fascio.style.left = `${((stato.primoFrame % totale) / totale) * 100}%`;
+  fascio.style.width = `${(FINESTRE.framePerFinestra / totale) * 100}%`;
+  document.getElementById("numero-finestra").textContent = stato.indice + 1;
+  document.getElementById("frame-finestra").textContent = `${stato.primoFrame}–${stato.ultimoFrame}`;
+  document.getElementById("secondi-finestra").textContent = `${formattaSecondi(stato.secondoInizio)}–${formattaSecondi(stato.secondoFine)}`;
+}
+cursore.addEventListener("input", aggiorna);
+addEventListener("resize", aggiorna);
+aggiorna();
+</script>
+</body>
+</html>
