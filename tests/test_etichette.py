@@ -35,6 +35,7 @@ def test_cctv_fights_eventi_e_fonti(tmp_path):
     tutte = cctv_fights.elenca_clip(tmp_path)
     assert len(tutte) == 2 and tutte[0].eventi_in_frame(500) == [(25, 75, INDICE_CLASSE["violenza"])]
     assert len(cctv_fights.elenca_clip(tmp_path, fonti_ammesse=("CCTV",))) == 1
+    assert [c.da_estrarre().telecamera_mobile for c in tutte] == [False, True]   # CCTV fissa, cellulare mobile
 
 
 def test_ucf_segmenti_uniti_con_margine(tmp_path):

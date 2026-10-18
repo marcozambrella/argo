@@ -12,50 +12,35 @@ if shutil.which("ffprobe") is None:  # il lettore video usa ffmpeg/ffprobe: buil
                    "tar -xJ -C /tmp && cp /tmp/ffmpeg-*-static/ff* /usr/local/bin/", shell=True, check=True)
 # =====
 
-"""Passo 2 del piano, v4: profilo delle fasi su T4 (la v3 ha mostrato che il limite è la CPU, non la GPU)."""
+"""Passo 2 del piano, v5: pipeline nuova (D20 lotti + D21 TrackTrack, GMC spenta per telecamere fisse)."""
 import json, os, subprocess, sys, time
 from pathlib import Path
-import cv2, numpy as np, ultralytics
-from ultralytics import YOLO
-from sicurezza.video import leggi_frame
+import numpy as np
+from sicurezza.estrazione import VideoDaEstrarre, scrivi_elenco
 
-video = sorted(Path("/kaggle/input").glob("**/RWF-2000/val/Fight/*.avi"))[:6]
-frame_pieni = [f for percorso in video for f in leggi_frame(str(percorso))][:600]
-frame_640 = [cv2.resize(f, (640, int(f.shape[0] * 640 / f.shape[1]))) for f in frame_pieni]
-cartella_tracker = Path(ultralytics.__file__).parent / "cfg" / "trackers"
-senza_gmc = Path("/tmp/botsort_senza_gmc.yaml")
-senza_gmc.write_text((cartella_tracker / "botsort.yaml").read_text().replace("gmc_method: sparseOptFlow", "gmc_method: none"))
-risultati = {"cpu": os.cpu_count(), "frame": len(frame_pieni), "risoluzione": list(frame_pieni[0].shape[:2])}
+video = sorted(Path("/kaggle/input").glob("**/RWF-2000/val/*/*.avi"))[:48]
+ambiente = {**os.environ, "PYTHONPATH": "/tmp/repo/src"}
+risultati = {"video": len(video)}
 
-def ms_per_frame(funzione, frame):
-    funzione(frame[:5])
-    inizio = time.perf_counter(); funzione(frame); return (time.perf_counter() - inizio) / len(frame) * 1000
+def misura(nome, processi_per_gpu, telecamera_mobile):
+    elenco = Path(f"/tmp/elenco_{nome}.jsonl")
+    scrivi_elenco([VideoDaEstrarre(f"{nome}/{p.stem}", str(p), telecamera_mobile=telecamera_mobile) for p in video], elenco)
+    uscita, parti = Path(f"/tmp/{nome}"), 2 * processi_per_gpu
+    inizio = time.perf_counter()
+    lanciati = [subprocess.Popen([sys.executable, "-m", "sicurezza.estrazione", "--elenco", str(elenco), "--uscita",
+                                  str(uscita), "--parte", str(parte), "--parti", str(parti), "--dispositivo",
+                                  str(parte % 2), "--modello-armi", "yolo26s.pt"], env=ambiente,
+                                 stdout=subprocess.DEVNULL) for parte in range(parti)]
+    for processo in lanciati:
+        processo.wait()
+    secondi = time.perf_counter() - inizio
+    frame = sum(int(np.load(f)["numero_frame"]) for f in uscita.glob("*.npz"))
+    risultati[nome] = round(frame / secondi, 1)
+    print(nome, risultati[nome], "fps totali", flush=True)
 
-inizio = time.perf_counter()
-for percorso in video:
-    for _ in leggi_frame(str(percorso)): pass
-risultati["decodifica_ms"] = (time.perf_counter() - inizio) / len(frame_pieni) * 1000
-
-pose = YOLO("yolo26s-pose.pt"); armi = YOLO("yolo26s.pt")
-def predici(modello, lotto=1):
-    def esegui(frame):
-        for indice in range(0, len(frame), lotto):
-            modello.predict(frame[indice:indice + lotto], device=0, verbose=False)
-    return esegui
-def traccia(tracker):
-    def esegui(frame):
-        for indice, f in enumerate(frame):
-            pose.track(f, persist=indice > 0, tracker=tracker, device=0, conf=0.1, verbose=False)
-    return esegui
-
-risultati["pose_predict_pieni_ms"] = ms_per_frame(predici(pose), frame_pieni)
-risultati["pose_predict_640_ms"] = ms_per_frame(predici(pose), frame_640)
-risultati["pose_predict_lotto8_pieni_ms"] = ms_per_frame(predici(pose, 8), frame_pieni)
-risultati["pose_track_gmc_pieni_ms"] = ms_per_frame(traccia("botsort.yaml"), frame_pieni)
-risultati["pose_track_senza_gmc_pieni_ms"] = ms_per_frame(traccia(str(senza_gmc)), frame_pieni)
-risultati["pose_track_gmc_640_ms"] = ms_per_frame(traccia("botsort.yaml"), frame_640)
-risultati["pose_track_senza_gmc_640_ms"] = ms_per_frame(traccia(str(senza_gmc)), frame_640)
-risultati["armi_predict_pieni_ms"] = ms_per_frame(predici(armi), frame_pieni)
-risultati["armi_predict_lotto8_pieni_ms"] = ms_per_frame(predici(armi, 8), frame_pieni)
+subprocess.run([sys.executable, "-c", "from ultralytics import YOLO; YOLO('yolo26s-pose.pt'); YOLO('yolo26s.pt')"], env=ambiente)
+misura("lotti_tracktrack_senza_gmc_1_per_gpu", 1, False)
+misura("lotti_tracktrack_senza_gmc_2_per_gpu", 2, False)
+misura("lotti_tracktrack_con_gmc_2_per_gpu", 2, True)
 print(json.dumps(risultati, indent=2))
 Path("/kaggle/working/benchmark.json").write_text(json.dumps(risultati, indent=2))

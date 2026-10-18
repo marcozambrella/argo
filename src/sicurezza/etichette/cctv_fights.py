@@ -29,5 +29,6 @@ def elenca_clip(radice_dataset: str | Path, percorso_groundtruth: str | Path | N
         clip.append(ClipAnnotata(
             id_clip=f"cctv_fights/{id_video}", sorgente="cctv_fights", gruppo=f"cctv_fights/{id_video}",
             percorso_video=str(percorso_per_id[id_video]), eventi_secondi=eventi, classe_sfondo="normale",
-            split_originale=dati.get("subset"), note=f"fonte={dati.get('source')}"))
+            split_originale=dati.get("subset"), telecamera_mobile=dati.get("source") != "CCTV",
+            note=f"fonte={dati.get('source')}"))
     return clip

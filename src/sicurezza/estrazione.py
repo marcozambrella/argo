@@ -20,7 +20,7 @@ from .config import FPS_ANALISI
 from .video import leggi_frame, leggi_info_video
 
 MODELLO_POSE_PREDEFINITO = "yolo26s-pose.pt"   # D3
-TRACKER_PREDEFINITO = "botsort.yaml"           # tracker di default di Ultralytics (D3)
+TRACKER_PREDEFINITO = "tracktrack.yaml"        # D21: il vero default di .track in Ultralytics 8.4 (D3)
 
 
 @dataclass
@@ -30,6 +30,7 @@ class VideoDaEstrarre:
     percorso_video: str
     inizio_secondi: float | None = None
     fine_secondi: float | None = None
+    telecamera_mobile: bool = False   # D20: la compensazione del movimento (GMC) del tracker serve solo qui
 
 
 def leggi_elenco(percorso_elenco: str | Path) -> list[VideoDaEstrarre]:
@@ -47,65 +48,110 @@ def nome_file_estratto(id_clip: str) -> str:
     return id_clip.replace("/", "__") + ".npz"
 
 
+PERSONE_VUOTE = {"id_traccia": np.empty(0, np.int32), "box": np.empty((0, 4), np.float32),
+                 "confidenza": np.empty(0, np.float32), "keypoint": np.empty((0, 17, 3), np.float32)}
+ARMI_VUOTE = {"box": np.empty((0, 4), np.float32), "classe": np.empty(0, np.int32),
+              "confidenza": np.empty(0, np.float32)}
+
+
 class Estrattore:
-    """Tiene caricati i modelli e produce i dati grezzi di un video, frame per frame."""
+    """Tiene caricati i modelli e produce i dati grezzi di un video.
+
+    D20: pose e armi vengono calcolate a lotti di frame (la GPU lavora meglio), il tracker (TrackTrack, D21) invece
+    riceve le detection frame per frame esattamente come fa `.track` di Ultralytics (stesso risultato, test
+    in tests/test_estrazione.py). Per i modelli pose TrackTrack non usa le predizioni grezze pre-NMS (Ultralytics
+    attiva quell'aggancio solo per detect/obb), quindi riceve esattamente gli stessi dati. La compensazione del movimento della telecamera (GMC) del tracker costa
+    ~11 ms a frame: si accende solo per i video con telecamera_mobile=True.
+    """
 
     def __init__(self, percorso_modello_pose: str = MODELLO_POSE_PREDEFINITO,
                  percorso_modello_armi: str | None = None, dispositivo: str | int | None = None,
                  tracker: str = TRACKER_PREDEFINITO, confidenza_minima_persone: float = 0.1,
-                 confidenza_minima_armi: float = 0.25, mezza_precisione: bool = False):
+                 confidenza_minima_armi: float = 0.25, mezza_precisione: bool = False, dimensione_lotto: int = 8):
         from ultralytics import YOLO  # import qui: i moduli che non estraggono non devono caricare torch
 
         self.modello_pose = YOLO(percorso_modello_pose)
         self.modello_armi = YOLO(percorso_modello_armi) if percorso_modello_armi else None
         self.dispositivo = dispositivo
-        self.tracker = tracker
+        self.percorso_tracker = tracker
         # 0,1 è il default di Ultralytics per .track (D3): il tracker usa anche le detection poco sicure nel
         # secondo passaggio. Con 0,25 le tracce in una scena affollata duravano la metà (prova del 2026-10-17).
         self.confidenza_minima_persone = confidenza_minima_persone
         # soglia bassa in estrazione: il filtro vero (≥ 0,5 per il WARNING ARMA) si applica dopo, così si può tarare
         self.confidenza_minima_armi = confidenza_minima_armi
-        self.mezza_precisione = mezza_precisione  # FP16 su GPU (D18): ~stessi risultati, più veloce
+        self.mezza_precisione = mezza_precisione  # D18 rivista: FP16 più lento (limite CPU), spento di default
+        self.dimensione_lotto = dimensione_lotto
+        self.tracker = None
 
-    def analizza_frame(self, frame: np.ndarray, primo_frame_del_video: bool) -> tuple[dict, dict]:
-        """Persone tracciate e armi di un frame. Al primo frame di ogni video il tracker si azzera."""
-        risultato_pose = self.modello_pose.track(
-            frame, persist=not primo_frame_del_video, tracker=self.tracker, device=self.dispositivo,
-            conf=self.confidenza_minima_persone, half=self.mezza_precisione, verbose=False)[0]
-        box_persone = risultato_pose.boxes
-        if box_persone.id is not None and len(box_persone):
-            persone = {
-                "id_traccia": box_persone.id.int().cpu().numpy(),
-                "box": box_persone.xyxy.cpu().numpy(),
-                "confidenza": box_persone.conf.cpu().numpy(),
-                "keypoint": risultato_pose.keypoints.data.cpu().numpy(),  # (persone, 17, 3): x, y, confidenza
-            }
-        else:  # nessuna persona tracciata in questo frame
-            persone = {"id_traccia": np.empty(0, np.int32), "box": np.empty((0, 4), np.float32),
-                       "confidenza": np.empty(0, np.float32), "keypoint": np.empty((0, 17, 3), np.float32)}
+    def nuovo_video(self, telecamera_mobile: bool = False) -> None:
+        """Tracker nuovo per ogni video (come `.track` con persist=False al primo frame)."""
+        from ultralytics.trackers.track import TRACKER_MAP
+        from ultralytics.utils import YAML, IterableSimpleNamespace
+        from ultralytics.utils.checks import check_yaml
 
-        armi = {"box": np.empty((0, 4), np.float32), "classe": np.empty(0, np.int32),
-                "confidenza": np.empty(0, np.float32)}
-        if self.modello_armi is not None:
-            box_armi = self.modello_armi.predict(frame, device=self.dispositivo, conf=self.confidenza_minima_armi,
-                                                 half=self.mezza_precisione, verbose=False)[0].boxes
-            if len(box_armi):
-                armi = {"box": box_armi.xyxy.cpu().numpy(), "classe": box_armi.cls.int().cpu().numpy(),
-                        "confidenza": box_armi.conf.cpu().numpy()}
-        return persone, armi
+        configurazione = IterableSimpleNamespace(**YAML.load(check_yaml(self.percorso_tracker)))
+        configurazione.device = self.dispositivo  # come .track (serve solo se si attiva la ReID)
+        if not telecamera_mobile and hasattr(configurazione, "gmc_method"):
+            configurazione.gmc_method = "none"
+        self.tracker = TRACKER_MAP[configurazione.tracker_type](args=configurazione)
+
+    def analizza_lotto(self, frame: list[np.ndarray]) -> list[tuple[dict, dict]]:
+        """Persone tracciate e armi per ogni frame del lotto, nell'ordine. Richiede nuovo_video() prima."""
+        import torch
+
+        if self.tracker is None:
+            self.nuovo_video()
+        risultati_pose = self.modello_pose.predict(frame, device=self.dispositivo, conf=self.confidenza_minima_persone,
+                                                   half=self.mezza_precisione, verbose=False)
+        risultati_armi = (self.modello_armi.predict(frame, device=self.dispositivo, conf=self.confidenza_minima_armi,
+                                                    half=self.mezza_precisione, verbose=False)
+                          if self.modello_armi is not None else [None] * len(frame))
+        analisi = []
+        for risultato_pose, risultato_armi in zip(risultati_pose, risultati_armi):
+            # stessa logica di ultralytics.trackers.track.on_predict_postprocess_end
+            tracce = self.tracker.update(risultato_pose.boxes.cpu().numpy(), risultato_pose.orig_img)
+            persone = PERSONE_VUOTE
+            if len(tracce):
+                tracciate = risultato_pose[tracce[:, -1].astype(int)]
+                tracciate.update(boxes=torch.as_tensor(tracce[:, :-1], device=risultato_pose.boxes.data.device))
+                persone = {"id_traccia": tracciate.boxes.id.int().cpu().numpy(),
+                           "box": tracciate.boxes.xyxy.cpu().numpy(),
+                           "confidenza": tracciate.boxes.conf.cpu().numpy(),
+                           "keypoint": tracciate.keypoints.data.cpu().numpy()}  # (persone, 17, 3)
+            armi = ARMI_VUOTE
+            if risultato_armi is not None and len(risultato_armi.boxes):
+                armi = {"box": risultato_armi.boxes.xyxy.cpu().numpy(),
+                        "classe": risultato_armi.boxes.cls.int().cpu().numpy(),
+                        "confidenza": risultato_armi.boxes.conf.cpu().numpy()}
+            analisi.append((persone, armi))
+        return analisi
+
+    def analizza_frame(self, frame: np.ndarray, primo_frame_del_video: bool,
+                       telecamera_mobile: bool = False) -> tuple[dict, dict]:
+        """Un frame alla volta (demo dal vivo): stesso tracker e stessa logica dell'estrazione."""
+        if primo_frame_del_video:
+            self.nuovo_video(telecamera_mobile)
+        return self.analizza_lotto([frame])[0]
 
     def estrai_video(self, video: VideoDaEstrarre) -> dict[str, np.ndarray]:
         """Tutti i frame del video a 25 fps → array "lunghi" (una riga per persona o arma per frame)."""
         info = leggi_info_video(video.percorso_video)
-        righe_persone, righe_armi = [], []
-        numero_frame = 0
-        for indice_frame, frame in enumerate(leggi_frame(video.percorso_video, FPS_ANALISI,
-                                                         video.inizio_secondi, video.fine_secondi)):
-            persone, armi = self.analizza_frame(frame, primo_frame_del_video=indice_frame == 0)
-            righe_persone.append((indice_frame, persone))
-            righe_armi.append((indice_frame, armi))
-            numero_frame = indice_frame + 1
-        return impacchetta_estrazione(righe_persone, righe_armi, numero_frame, info.larghezza, info.altezza,
+        self.nuovo_video(video.telecamera_mobile)
+        righe_persone, righe_armi, lotto = [], [], []
+
+        def elabora_lotto():
+            for persone, armi in self.analizza_lotto(lotto):
+                righe_persone.append((len(righe_persone), persone))
+                righe_armi.append((len(righe_armi), armi))
+            lotto.clear()
+
+        for frame in leggi_frame(video.percorso_video, FPS_ANALISI, video.inizio_secondi, video.fine_secondi):
+            lotto.append(frame)
+            if len(lotto) == self.dimensione_lotto:
+                elabora_lotto()
+        if lotto:
+            elabora_lotto()
+        return impacchetta_estrazione(righe_persone, righe_armi, len(righe_persone), info.larghezza, info.altezza,
                                       video.inizio_secondi or 0.0)
 
 

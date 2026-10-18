@@ -25,10 +25,12 @@ class ClipAnnotata:
     classe_intera: str | None = None    # tutta la clip ha questa classe (dataset già tagliati)
     classe_sfondo: str | None = None    # classe delle finestre senza eventi (None = scartarle)
     split_originale: str | None = None
+    telecamera_mobile: bool = False     # D20: accende la compensazione del movimento nel tracker
     note: str = ""
 
     def da_estrarre(self) -> VideoDaEstrarre:
-        return VideoDaEstrarre(self.id_clip, self.percorso_video, self.inizio_secondi, self.fine_secondi)
+        return VideoDaEstrarre(self.id_clip, self.percorso_video, self.inizio_secondi, self.fine_secondi,
+                               self.telecamera_mobile)
 
     def eventi_in_frame(self, numero_frame: int) -> list[Evento]:
         if self.classe_intera is not None:
