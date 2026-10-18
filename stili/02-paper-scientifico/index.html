@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Paper scientifico · Roma Safe CCTV</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="stile.css">
+</head>
+<body>
+  <article class="foglio">
+    <header class="frontespizio">
+      <p class="rivista">Neighborhood Hacks 2026 · Safety &amp; Emergency Response</p>
+      <h1>Roma Safe CCTV: <span class="segnaposto" data-segnaposto="titoloHero"></span></h1>
+      <p class="autori"><span class="segnaposto">[TESTO DI MARCO — autori e scuola]</span></p>
+      <section class="abstract" aria-labelledby="titolo-abstract">
+        <h2 id="titolo-abstract">Sommario</h2>
+        <p class="segnaposto" data-segnaposto="sottotitoloHero"></p>
+        <p class="parole-chiave"><b>Parole chiave:</b> stima della posa, tracking multi-oggetto, rete neurale a grafo,
+          Graph-Transformer, ST-GCN, videosorveglianza.</p>
+      </section>
+    </header>
+
+    <figure class="figura figura-larga" id="fig-1">
+      <video src="../condivisi/hero.mp4" poster="../condivisi/hero-poster.jpg" autoplay muted loop playsinline controls
+        aria-label="Montaggio dei casi d'uso con le rilevazioni vere della rete"></video>
+      <figcaption><b>Figura 1.</b> Uscita reale della pipeline su clip di repertorio (Pexels): box e 17 punti per persona
+        (YOLO26s-pose), ID di traccia (TrackTrack), finestra corrente di 40 frame. I titoli dei casi d'uso sono capitoli
+        del montaggio, non uscite del classificatore.</figcaption>
+    </figure>
+
+    <div class="colonne">
+      <section id="metodo" aria-labelledby="titolo-metodo">
+        <h2 id="titolo-metodo"><span class="num-sez">1</span> Metodo</h2>
+        <p class="segnaposto" data-segnaposto="introPipeline"></p>
+
+        <div class="algoritmo" role="group" aria-labelledby="titolo-algoritmo">
+          <p id="titolo-algoritmo" class="titolo-algoritmo"><b>Algoritmo 1</b> Dalla telecamera alla decisione</p>
+          <ol id="passi-algoritmo"></ol>
+        </div>
+
+        <p>Nel Graph-Transformer, l'attenzione spaziale della testa <i>h</i> tra i nodi <i>i</i> e <i>j</i> dello stesso
+          frame aggiunge al prodotto scalare un bias appreso per tipo di arco τ(<i>i</i>,<i>j</i>) e una penalità di
+          distanza sugli archi tra entità diverse (persone diverse, arma–corpo):</p>
+        <div class="equazione">
+          <math display="block" aria-label="formula dell'attenzione spaziale">
+            <mrow>
+              <msub><mi>α</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub><mo>=</mo>
+              <msub><mi>softmax</mi><mi>j</mi></msub>
+              <mrow><mo>(</mo>
+                <mfrac><mrow><msub><mi>q</mi><mi>i</mi></msub><mo>·</mo><msub><mi>k</mi><mi>j</mi></msub></mrow>
+                  <msqrt><msub><mi>d</mi><mi>h</mi></msub></msqrt></mfrac>
+                <mo>+</mo><msub><mi>b</mi><mi>h</mi></msub><mo stretchy="false">[</mo><mi>τ</mi><mo stretchy="false">(</mo><mi>i</mi><mo>,</mo><mi>j</mi><mo stretchy="false">)</mo><mo stretchy="false">]</mo>
+                <mo>−</mo><mi>softplus</mi><mo stretchy="false">(</mo><msub><mi>w</mi><mi>h</mi></msub><mo stretchy="false">)</mo>
+                <mo>·</mo><msub><mi>d</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub>
+                <mo>·</mo><msub><mn>𝟙</mn><mrow><mi>τ</mi><mo>∈</mo><mi>E</mi></mrow></msub>
+              <mo>)</mo></mrow>
+            </mrow>
+          </math>
+          <span class="num-eq">(1)</span>
+        </div>
+        <p class="nota-fonte">Da <code>src/sicurezza/modelli.py</code>, <code>BloccoSpazioTempo</code>: 7 tipi di arco;
+          ogni blocco alterna attenzione spaziale (70 nodi) e temporale (40 frame).</p>
+      </section>
+
+      <section id="finestre" aria-labelledby="titolo-finestre">
+        <h2 id="titolo-finestre"><span class="num-sez">2</span> Finestre temporali</h2>
+        <p class="segnaposto" data-segnaposto="introFinestre"></p>
+        <figure class="figura" id="fig-2">
+          <svg id="grafico-finestre" viewBox="0 0 460 210" role="img" aria-labelledby="didascalia-fig-2"></svg>
+          <label class="cursore">Finestra <output id="numero-finestra">1</output>
+            <input type="range" id="cursore-finestre" min="0" value="0"></label>
+          <figcaption id="didascalia-fig-2"><b>Figura 2.</b> Finestre di <i>W</i> = 40 frame con passo <i>S</i> = 10 su
+            160 frame a 25 fps. In nero la finestra selezionata: <span id="descrizione-finestra"></span>.</figcaption>
+        </figure>
+
+        <table class="tabella">
+          <caption><b>Tabella 1.</b> Parametri della pipeline (da <code>src/sicurezza/dati.py</code> e <code>demo.py</code>).</caption>
+          <thead><tr><th scope="col">Parametro</th><th scope="col">Valore</th></tr></thead>
+          <tbody>
+            <tr><td>Frequenza di analisi</td><td>25 fps</td></tr>
+            <tr><td>Finestra <i>W</i> / passo <i>S</i></td><td>40 / 10 frame</td></tr>
+            <tr><td>Durata della finestra</td><td>1,6 s</td></tr>
+            <tr><td>Nodi per frame</td><td>4 × 17 + 2 = 70</td></tr>
+            <tr><td>Classi</td><td>4</td></tr>
+            <tr><td>WARNING ARMA</td><td>≥ 5 frame su 40, confidenza ≥ 0,5</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </div>
+
+    <section class="riferimenti" aria-labelledby="titolo-riferimenti">
+      <h2 id="titolo-riferimenti">Dati</h2>
+      <ol>
+        <li>RWF-2000 (solo uso accademico, non ridistribuito).</li>
+        <li>CCTV-Fights.</li>
+        <li>SCVD — Smart-City CCTV Violence Detection.</li>
+        <li>UCF-Crime con annotazioni temporali UCA (Apache 2.0).</li>
+        <li>Chain-snatching CCTV, istanti dello scippo annotati a mano.</li>
+        <li>Master_Weapon_CCTV e CCTV Weapon Detect, Roboflow (CC BY 4.0).</li>
+      </ol>
+    </section>
+
+    <footer class="piede"><span>Demo di stile 02 / 15 · Paper scientifico</span> <a href="../">← tutte le demo</a></footer>
+  </article>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

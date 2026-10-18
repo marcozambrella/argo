@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brutalista · Roma Safe CCTV</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<style>
+/* 12 · Brutalista — HTML crudo, bordi spessi, giallo e nero, tutto enorme. */
+:root { --giallo: #ffe600; --nero: #000; --bianco: #fff; --enorme: "Anton", Impact, sans-serif; --macchina: "Courier Prime", Courier, monospace; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --giallo: #000; --nero: #ffe600; --bianco: #111; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--giallo); color: var(--nero); font: 700 18px/1.4 var(--macchina); }
+a { color: var(--nero); text-decoration-thickness: 4px; }
+a:hover { background: var(--nero); color: var(--giallo); }
+:focus-visible { outline: 6px solid var(--nero); outline-offset: 0; }
+.barra { display: flex; border-bottom: 6px solid var(--nero); }
+.barra a, .barra span { padding: 14px 18px; border-right: 6px solid var(--nero); text-decoration: none; text-transform: uppercase; }
+.barra span { flex: 1; }
+h1 { font: 400 clamp(72px, 19vw, 300px)/.8 var(--enorme); margin: 0; padding: 20px 18px 10px; text-transform: uppercase; letter-spacing: -.01em; border-bottom: 6px solid var(--nero); word-break: break-word; }
+.segnaposto { border: 6px dashed var(--nero); padding: 14px 16px; margin: 0; background: var(--bianco); font-size: 18px; }
+.griglia-hero { display: grid; grid-template-columns: 2fr 1fr; border-bottom: 6px solid var(--nero); }
+.griglia-hero video { width: 100%; display: block; border-right: 6px solid var(--nero); filter: contrast(1.2); }
+.colonna { display: flex; flex-direction: column; }
+.colonna .segnaposto { border-width: 0 0 6px 0; border-style: solid; }
+.numeroni { display: grid; grid-template-columns: 1fr 1fr; flex: 1; }
+.numeroni div { border-bottom: 6px solid var(--nero); border-right: 6px solid var(--nero); padding: 10px 14px; }
+.numeroni div:nth-child(even) { border-right: 0; }
+.numeroni b { display: block; font: 400 clamp(56px, 7vw, 104px)/.9 var(--enorme); }
+h2 { font: 400 clamp(56px, 11vw, 168px)/.85 var(--enorme); text-transform: uppercase; margin: 0; padding: 18px 18px 8px; border-bottom: 6px solid var(--nero); }
+section { border-bottom: 6px solid var(--nero); }
+section > .segnaposto { border-width: 0 0 6px 0; border-style: dashed; }
+.passi { list-style: none; margin: 0; padding: 0; }
+.passi li { display: grid; grid-template-columns: 160px 1fr 1fr; border-bottom: 6px solid var(--nero); }
+.passi li:last-child { border-bottom: 0; }
+.passi li > * { padding: 12px 18px; }
+.passi .cifra { font: 400 120px/.85 var(--enorme); border-right: 6px solid var(--nero); text-align: center; }
+.passi .nome { font: 400 clamp(32px, 4vw, 56px)/1 var(--enorme); text-transform: uppercase; display: block; }
+.passi .tecnica { border-left: 6px solid var(--nero); align-self: stretch; display: flex; align-items: center; text-transform: uppercase; }
+.passi li:hover { background: var(--nero); color: var(--giallo); }
+.passi li:hover .cifra, .passi li:hover .tecnica { border-color: var(--giallo); }
+.passi li.allarme { background: var(--nero); color: var(--giallo); }
+.passi li.allarme .cifra, .passi li.allarme .tecnica { border-color: var(--giallo); }
+.contenitore-tabella { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 15px; }
+caption { text-align: left; padding: 12px 18px; font-size: 22px; border-bottom: 6px solid var(--nero); }
+th, td { border: 3px solid var(--nero); padding: 6px 4px; text-align: center; }
+th { background: var(--nero); color: var(--giallo); }
+td.dentro { background: var(--nero); color: var(--giallo); }
+tr.attiva td.dentro { background: var(--bianco); color: var(--nero); outline: 4px solid var(--nero); outline-offset: -4px; }
+tr.attiva th { background: var(--bianco); color: var(--nero); }
+.comando { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0; border-top: 6px solid var(--nero); }
+.comando button { font: 400 40px/1 var(--enorme); background: var(--nero); color: var(--giallo); border: 0; padding: 10px 24px; cursor: pointer; }
+.comando output { font: 400 clamp(28px, 4vw, 52px)/1 var(--enorme); padding: 12px 18px; text-transform: uppercase; }
+.piede { display: flex; justify-content: space-between; padding: 14px 18px; text-transform: uppercase; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 760px) {
+  .griglia-hero { grid-template-columns: 1fr; }
+  .griglia-hero video { border-right: 0; border-bottom: 6px solid var(--nero); }
+  .passi li { grid-template-columns: 80px 1fr; }
+  .passi .cifra { font-size: 64px; grid-row: span 2; }
+  .passi .tecnica { border-left: 0; border-top: 3px solid currentColor; }
+  .comando button { font-size: 28px; padding: 10px 14px; }
+  .barra a, .barra span { padding: 10px; font-size: 14px; }
+}
+</style>
+</head>
+<body>
+<nav class="barra" aria-label="Sezioni"><span>RSC</span><a href="#come">COME</a><a href="#finestre">FINESTRE</a><a href="../">INDICE</a></nav>
+<h1>Roma Safe CCTV</h1>
+<div class="griglia-hero">
+  <video src="../condivisi/hero.mp4" poster="../condivisi/hero-poster.jpg" autoplay muted loop playsinline controls
+    aria-label="Montaggio dei casi d'uso con le rilevazioni vere della rete"></video>
+  <div class="colonna">
+    <p class="segnaposto" data-segnaposto="titoloHero"></p>
+    <p class="segnaposto" data-segnaposto="sottotitoloHero"></p>
+    <div class="numeroni">
+      <div><b>25</b>FPS</div><div><b>17</b>PUNTI</div><div><b>40</b>FRAME</div><div><b>4</b>CLASSI</div>
+    </div>
+  </div>
+</div>
+<section id="come" aria-labelledby="titolo-come">
+  <h2 id="titolo-come">Come funziona</h2>
+  <p class="segnaposto" data-segnaposto="introPipeline"></p>
+  <ol class="passi" id="passi"></ol>
+</section>
+<section id="finestre" aria-labelledby="titolo-finestre">
+  <h2 id="titolo-finestre">Finestre</h2>
+  <p class="segnaposto" data-segnaposto="introFinestre"></p>
+  <div class="contenitore-tabella"><table id="tabella-finestre"></table></div>
+  <div class="comando">
+    <button type="button" id="indietro" aria-label="Finestra precedente">←</button>
+    <output id="stato-finestra" aria-live="polite"></output>
+    <button type="button" id="avanti" aria-label="Finestra successiva">→</button>
+  </div>
+</section>
+<footer class="piede"><span>Demo di stile 12 / 15 · Brutalista</span><a href="../">Tutte le demo</a></footer>
+<script type="module">
+import { FINESTRE, NUMERO_FINESTRE, PASSI_PIPELINE, formattaSecondi, riempiSegnaposto, statoFinestra } from "../condivisi/progetto.js";
+riempiSegnaposto();
+const passi = document.getElementById("passi");
+for (const passo of PASSI_PIPELINE) {
+  const voce = document.createElement("li");
+  if (passo.nome === "WARNING ARMA") voce.classList.add("allarme");
+  voce.innerHTML = `<span class="cifra" aria-hidden="true">${passo.numero}</span><div><span class="nome">${passo.nome}</span>${passo.dettaglio}</div><span class="tecnica">${passo.tecnica}</span>`;
+  passi.appendChild(voce);
+}
+// una vera tabella: righe = finestre, colonne = blocchi di 10 frame
+const tabella = document.getElementById("tabella-finestre");
+const BLOCCHI = FINESTRE.frameTotaliMostrati / FINESTRE.passo;
+let html = `<caption>Righe: finestre. Colonne: blocchi di 10 frame. Nero = il blocco è dentro la finestra.</caption><thead><tr><th scope="col">FIN.</th>`;
+for (let blocco = 0; blocco < BLOCCHI; blocco++) html += `<th scope="col">${blocco * 10}</th>`;
+html += "</tr></thead><tbody>";
+for (let indice = 0; indice < NUMERO_FINESTRE; indice++) {
+  const finestra = statoFinestra(indice);
+  html += `<tr data-indice="${indice}"><th scope="row">${indice + 1}</th>`;
+  for (let blocco = 0; blocco < BLOCCHI; blocco++) {
+    const dentro = blocco * 10 >= finestra.primoFrame && blocco * 10 <= finestra.ultimoFrame;
+    html += dentro ? `<td class="dentro">■</td>` : "<td></td>";
+  }
+  html += "</tr>";
+}
+tabella.innerHTML = html + "</tbody>";
+let attiva = 0;
+function aggiorna() {
+  const stato = statoFinestra(attiva);
+  tabella.querySelectorAll("tbody tr").forEach((riga) => riga.classList.toggle("attiva", Number(riga.dataset.indice) === attiva));
+  document.getElementById("stato-finestra").textContent =
+    `FIN. ${attiva + 1} · FRAME ${stato.primoFrame}–${stato.ultimoFrame} · ${formattaSecondi(stato.secondoInizio)}–${formattaSecondi(stato.secondoFine)} S`;
+}
+document.getElementById("indietro").addEventListener("click", () => { attiva = Math.max(0, attiva - 1); aggiorna(); });
+document.getElementById("avanti").addEventListener("click", () => { attiva = Math.min(NUMERO_FINESTRE - 1, attiva + 1); aggiorna(); });
+tabella.addEventListener("click", (evento) => { const riga = evento.target.closest("tbody tr"); if (riga) { attiva = Number(riga.dataset.indice); aggiorna(); } });
+aggiorna();
+</script>
+</body>
+</html>

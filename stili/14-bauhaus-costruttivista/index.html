@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bauhaus costruttivista · Roma Safe CCTV</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@700;900&family=Jost:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* 14 · Bauhaus costruttivista — forme geometriche, colori primari, diagonali, composizione da manifesto. */
+:root { --carta: #f1ebdd; --nero: #161616; --rosso: #d7262b; --blu: #1f4fa0; --giallo: #f3bf1d;
+  --titolo: "League Spartan", sans-serif; --corpo: "Jost", sans-serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --carta: #141414; --nero: #f1ebdd; --rosso: #ff4a4f; --blu: #5b8cff; --giallo: #ffd447; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--carta); color: var(--nero); font: 500 18px/1.5 var(--corpo); overflow-x: hidden; }
+a { color: var(--nero); }
+:focus-visible { outline: 4px solid var(--blu); outline-offset: 3px; }
+.manifesto { position: relative; min-height: 100vh; overflow: hidden; padding: 24px; display: grid; grid-template-columns: repeat(12, 1fr); grid-template-rows: auto 1fr auto; gap: 16px; }
+.cerchio-grande { position: absolute; width: 62vmin; height: 62vmin; border-radius: 50%; background: var(--rosso); right: -8vmin; top: 6vmin; }
+.barra-nera { position: absolute; left: -10vw; right: -10vw; height: 46px; background: var(--nero); top: 47%; rotate: -8deg; }
+.quadrato-blu { position: absolute; width: 20vmin; height: 20vmin; background: var(--blu); right: 7vw; bottom: 5vh; rotate: 8deg; }
+.triangolo { position: absolute; width: 0; height: 0; border-left: 9vmin solid transparent; border-right: 9vmin solid transparent; border-bottom: 16vmin solid var(--giallo); left: 46vw; bottom: 12vh; rotate: -18deg; }
+.testata { grid-column: 1 / -1; display: flex; justify-content: space-between; position: relative; z-index: 2; font: 700 14px var(--titolo); letter-spacing: .2em; text-transform: uppercase; flex-wrap: wrap; gap: 10px; }
+.testata nav { display: flex; gap: 18px; }
+h1 { grid-column: 1 / 8; grid-row: 2; align-self: start; margin-top: 6vh !important; position: relative; z-index: 2; margin: 0; font: 900 clamp(64px, 11vw, 168px)/.82 var(--titolo); text-transform: uppercase; rotate: -8deg; transform-origin: left top; letter-spacing: -.02em; }
+h1 span { display: block; }
+h1 span:nth-child(2) { color: var(--rosso); margin-left: .6em; }
+h1 span:nth-child(3) { background: var(--giallo); color: #161616; display: inline-block; padding: 0 .12em; margin-left: .2em; }
+.finestra-video { grid-column: 7 / 13; grid-row: 2; align-self: center; position: relative; z-index: 3; clip-path: polygon(6% 0, 100% 0, 94% 100%, 0 100%); border: 0; }
+.finestra-video video { width: 100%; display: block; filter: grayscale(.6) contrast(1.2); }
+.blocco-testi { grid-column: 1 / 7; grid-row: 3; position: relative; z-index: 3; }
+.segnaposto { border: 3px dashed var(--nero); padding: 10px 14px; margin: 8px 0; background: var(--carta); font-size: 15px; }
+
+section { position: relative; padding: 110px 24px 40px; max-width: 1240px; margin: 0 auto; }
+h2 { font: 900 clamp(46px, 8vw, 120px)/.85 var(--titolo); text-transform: uppercase; margin: 0 0 20px; }
+h2 .punto { display: inline-block; width: .6em; height: .6em; border-radius: 50%; background: var(--rosso); margin-left: .1em; }
+.diagonale { list-style: none; padding: 0; margin: 40px 0 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 14px; align-items: end; }
+.diagonale li { position: relative; }
+.forma { width: 100%; aspect-ratio: 1; display: grid; place-items: center; font: 900 clamp(34px, 4vw, 64px)/1 var(--titolo); color: #f1ebdd; margin-bottom: 12px; }
+.forma.cerchio { border-radius: 50%; background: var(--rosso); }
+.forma.quadrato { background: var(--blu); }
+.forma.triangolo-forma { background: var(--giallo); clip-path: polygon(50% 0, 100% 100%, 0 100%); color: #161616; place-items: end center; padding-bottom: 8%; }
+.diagonale b { font: 900 18px/1.1 var(--titolo); text-transform: uppercase; display: block; }
+.diagonale span { font-size: 15px; line-height: 1.35; display: block; margin-top: 4px; }
+.diagonale em { display: block; font-style: normal; font-weight: 700; font-size: 13px; margin-top: 6px; border-top: 3px solid var(--nero); padding-top: 4px; }
+.diagonale li.allarme .forma { background: var(--nero); color: var(--rosso); }
+
+.composizione { position: relative; height: 260px; margin-top: 30px; border-left: 6px solid var(--nero); border-bottom: 6px solid var(--nero); }
+.composizione i { position: absolute; height: 70px; mix-blend-mode: multiply; transition: background .2s, opacity .2s; opacity: .55; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .composizione i { mix-blend-mode: screen; } }
+.composizione i.attiva { opacity: 1; z-index: 2; background: var(--rosso) !important; }
+.scala-frame { display: flex; justify-content: space-between; font: 700 14px var(--titolo); margin-top: 6px; }
+.dati-finestra { display: flex; gap: 36px; flex-wrap: wrap; margin-top: 20px; }
+.dati-finestra div { border-top: 6px solid var(--nero); padding-top: 6px; min-width: 140px; }
+.dati-finestra b { display: block; font: 900 44px/1 var(--titolo); }
+.comando { display: flex; gap: 14px; align-items: center; margin-top: 20px; font: 900 16px var(--titolo); text-transform: uppercase; }
+.comando input { flex: 1; accent-color: var(--rosso); height: 30px; }
+.piede { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 20px 24px; background: var(--nero); color: var(--carta); font: 700 14px var(--titolo); text-transform: uppercase; letter-spacing: .1em; margin-top: 80px; }
+.piede a { color: var(--carta); }
+@media (max-width: 860px) {
+  .manifesto { grid-template-columns: 1fr; min-height: auto; padding: 16px; }
+  h1, .finestra-video, .blocco-testi { grid-column: 1; grid-row: auto; }
+  h1 { margin: 40px 0 60px; }
+  .diagonale { grid-template-columns: repeat(2, 1fr); }
+  .diagonale li { margin-top: 0 !important; }
+  section { padding: 70px 16px 30px; }
+  .composizione { height: 200px; }
+  .composizione i { height: 50px; }
+}
+</style>
+</head>
+<body>
+<header class="manifesto">
+  <div class="cerchio-grande" aria-hidden="true"></div><div class="barra-nera" aria-hidden="true"></div>
+  <div class="quadrato-blu" aria-hidden="true"></div><div class="triangolo" aria-hidden="true"></div>
+  <div class="testata"><span>RSC · 2026</span><nav aria-label="Sezioni"><a href="#come">Come</a><a href="#finestre">Finestre</a></nav></div>
+  <h1><span>Roma</span><span>Safe</span><span>CCTV</span></h1>
+  <figure class="finestra-video" style="margin:0">
+    <video src="../condivisi/hero.mp4" poster="../condivisi/hero-poster.jpg" autoplay muted loop playsinline
+      aria-label="Montaggio dei casi d'uso con le rilevazioni vere della rete"></video>
+  </figure>
+  <div class="blocco-testi">
+    <p class="segnaposto" data-segnaposto="titoloHero"></p>
+    <p class="segnaposto" data-segnaposto="sottotitoloHero"></p>
+  </div>
+</header>
+<main>
+  <section id="come" aria-labelledby="titolo-come">
+    <h2 id="titolo-come">Come funziona<span class="punto" aria-hidden="true"></span></h2>
+    <p class="segnaposto" data-segnaposto="introPipeline"></p>
+    <ol class="diagonale" id="diagonale"></ol>
+  </section>
+  <section id="finestre" aria-labelledby="titolo-finestre">
+    <h2 id="titolo-finestre">Finestre<span class="punto" aria-hidden="true"></span></h2>
+    <p class="segnaposto" data-segnaposto="introFinestre"></p>
+    <div class="composizione" id="composizione" aria-hidden="true"></div>
+    <div class="scala-frame" aria-hidden="true"><span>0</span><span>40</span><span>80</span><span>120</span><span>160</span></div>
+    <div class="dati-finestra" aria-live="polite">
+      <div><b id="numero-finestra">1</b>finestra</div><div><b id="frame-finestra">0–39</b>frame</div><div><b id="secondi-finestra">0,0–1,6</b>secondi</div>
+    </div>
+    <label class="comando">Sposta <input type="range" id="cursore-finestre" min="0" value="0"></label>
+  </section>
+</main>
+<footer class="piede"><span>Demo di stile 14 / 15 · Bauhaus costruttivista</span><a href="../">Tutte le demo</a></footer>
+<script type="module">
+import { FINESTRE, NUMERO_FINESTRE, PASSI_PIPELINE, formattaSecondi, riempiSegnaposto, statoFinestra } from "../condivisi/progetto.js";
+riempiSegnaposto();
+const FORME = ["cerchio", "quadrato", "triangolo-forma"];
+const diagonale = document.getElementById("diagonale");
+const largo = matchMedia("(min-width: 861px)").matches;
+PASSI_PIPELINE.forEach((passo, indice) => {
+  const voce = document.createElement("li");
+  if (passo.nome === "WARNING ARMA") voce.classList.add("allarme");
+  if (largo) voce.style.marginTop = `${(6 - indice) * 34}px`;   // scalinata diagonale
+  voce.innerHTML = `<div class="forma ${FORME[indice % 3]}" aria-hidden="true">${passo.numero}</div><b>${passo.nome}</b><span>${passo.dettaglio}</span><em>${passo.tecnica}</em>`;
+  diagonale.appendChild(voce);
+});
+const COLORI = ["var(--blu)", "var(--giallo)", "var(--nero)", "var(--blu)"];
+const composizione = document.getElementById("composizione");
+const forme = Array.from({ length: NUMERO_FINESTRE }, (_, indice) => {
+  const forma = document.createElement("i");
+  const finestra = statoFinestra(indice);
+  forma.style.left = `${(finestra.primoFrame / FINESTRE.frameTotaliMostrati) * 100}%`;
+  forma.style.width = `calc(${(FINESTRE.framePerFinestra / FINESTRE.frameTotaliMostrati) * 100}% - 6px)`;
+  forma.style.bottom = `${(indice % 4) * 22}%`;
+  forma.style.background = COLORI[indice % 4];
+  composizione.appendChild(forma);
+  return forma;
+});
+const cursore = document.getElementById("cursore-finestre");
+cursore.max = NUMERO_FINESTRE - 1;
+function aggiorna() {
+  const stato = statoFinestra(Number(cursore.value));
+  forme.forEach((forma, indice) => forma.classList.toggle("attiva", indice === stato.indice));
+  document.getElementById("numero-finestra").textContent = stato.indice + 1;
+  document.getElementById("frame-finestra").textContent = `${stato.primoFrame}–${stato.ultimoFrame}`;
+  document.getElementById("secondi-finestra").textContent = `${formattaSecondi(stato.secondoInizio)}–${formattaSecondi(stato.secondoFine)}`;
+}
+cursore.addEventListener("input", aggiorna);
+aggiorna();
+</script>
+</body>
+</html>

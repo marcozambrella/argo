@@ -1,0 +1,121 @@
+/* 01 · Sala di controllo — interfaccia tattica scura, ispirata ai giochi di sorveglianza (nessun asset originale). */
+:root {
+  --sfondo: #05080a; --pannello: #0b1216; --linea: #1d2b33; --testo: #d8eef5; --tenue: #7f9aa5;
+  --ciano: #38d6f5; --allarme: #ff3b3b; --ambra: #ffb020;
+  --mono: "Share Tech Mono", ui-monospace, monospace; --titoli: "Rajdhani", sans-serif;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --sfondo: #e9eef0; --pannello: #f7fafb; --linea: #c2d0d6; --testo: #0b1a20; --tenue: #4a6470; --ciano: #00748c;
+    --allarme: #c40000; --ambra: #8a5a00;
+  }
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--sfondo); color: var(--testo); font: 16px/1.55 var(--mono);
+  background-image: linear-gradient(var(--linea) 1px, transparent 1px), linear-gradient(90deg, var(--linea) 1px, transparent 1px);
+  background-size: 48px 48px; background-attachment: fixed;
+}
+body::after { /* scanline */
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 50; opacity: .08;
+  background: repeating-linear-gradient(0deg, #000 0 1px, transparent 1px 3px);
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { animation: none !important; } }
+a { color: var(--ciano); }
+:focus-visible { outline: 2px solid var(--ambra); outline-offset: 3px; }
+.salta { position: absolute; left: -999px; } .salta:focus { left: 16px; top: 16px; z-index: 99; background: var(--pannello); padding: 8px; }
+
+.barra-sistema {
+  position: sticky; top: 0; z-index: 40; display: flex; align-items: center; gap: 24px; justify-content: space-between;
+  padding: 10px 24px; background: color-mix(in srgb, var(--sfondo) 88%, transparent); border-bottom: 1px solid var(--linea);
+  backdrop-filter: blur(6px); font-size: 13px; letter-spacing: .12em;
+}
+.sigla { color: var(--ciano); }
+.barra-sistema nav { display: flex; gap: 18px; flex-wrap: wrap; }
+.barra-sistema nav a { color: var(--testo); text-decoration: none; opacity: .75; }
+.barra-sistema nav a:hover { opacity: 1; color: var(--ciano); }
+.orologio { color: var(--tenue); }
+
+main { max-width: 1240px; margin: 0 auto; padding: 0 24px; }
+section { padding: 72px 0; }
+
+.monitor { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr); gap: 24px; padding-top: 32px; }
+.schermo { position: relative; border: 1px solid var(--linea); background: #000; aspect-ratio: 16 / 9; }
+.video-hero { width: 100%; height: 100%; object-fit: cover; display: block; }
+.angoli i { position: absolute; width: 22px; height: 22px; border: 2px solid var(--ciano); }
+.angoli i:nth-child(1) { left: -6px; top: -6px; border-right: 0; border-bottom: 0; }
+.angoli i:nth-child(2) { right: -6px; top: -6px; border-left: 0; border-bottom: 0; }
+.angoli i:nth-child(3) { right: -6px; bottom: -6px; border-left: 0; border-top: 0; }
+.angoli i:nth-child(4) { left: -6px; bottom: -6px; border-right: 0; border-top: 0; }
+.pannello-hero { background: var(--pannello); border: 1px solid var(--linea); padding: 22px; display: flex; flex-direction: column; gap: 14px; }
+.etichetta { margin: 0; color: var(--ciano); letter-spacing: .2em; font-size: 13px; }
+h1, h2 { font-family: var(--titoli); font-weight: 700; letter-spacing: .08em; margin: 0; }
+h1 { font-size: clamp(30px, 3.4vw, 46px); line-height: 1.05; }
+.telemetria { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--linea); margin: auto 0 0; border: 1px solid var(--linea); }
+.telemetria div { background: var(--sfondo); padding: 10px; }
+.telemetria dt { font-size: 11px; color: var(--tenue); letter-spacing: .12em; }
+.telemetria dd { margin: 2px 0 0; font-size: 18px; color: var(--ciano); }
+
+.segnaposto {
+  border: 1px dashed var(--ambra); color: var(--ambra); padding: 10px 12px; font-family: var(--mono);
+  font-size: 14px; letter-spacing: .02em; background: color-mix(in srgb, var(--ambra) 6%, transparent); margin: 0;
+}
+h1.segnaposto { font-size: 18px; letter-spacing: .04em; }
+
+.intestazione-sezione { display: flex; align-items: baseline; gap: 16px; border-bottom: 1px solid var(--linea); padding-bottom: 12px; margin-bottom: 24px; }
+.numero-sezione { color: var(--ciano); font-size: 14px; }
+h2 { font-size: clamp(30px, 4vw, 52px); }
+.stato { margin-left: auto; font-size: 12px; color: var(--sfondo); background: var(--ciano); padding: 2px 8px; letter-spacing: .14em; }
+
+.catena { list-style: none; margin: 28px 0 0; padding: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0; counter-reset: passo; }
+.catena li {
+  position: relative; padding: 16px 14px 18px; border: 1px solid var(--linea); background: var(--pannello); margin-right: -1px;
+  min-height: 210px; display: flex; flex-direction: column; gap: 8px; opacity: 0; translate: 0 16px;
+  transition: opacity .5s, translate .5s, border-color .3s;
+}
+.catena li.visibile { opacity: 1; translate: 0 0; }
+@media (prefers-reduced-motion: reduce) { .catena li { opacity: 1; translate: 0 0; } }
+.catena li:hover { border-color: var(--ciano); z-index: 1; }
+.catena .num { font-size: 12px; color: var(--tenue); }
+.catena .nome { font-family: var(--titoli); font-weight: 700; font-size: 20px; line-height: 1.1; letter-spacing: .05em; }
+.catena .dettaglio { font-size: 13px; color: var(--tenue); }
+.catena .tecnica { margin-top: auto; font-size: 11px; color: var(--ciano); border-top: 1px solid var(--linea); padding-top: 8px; }
+.catena li.allarme .nome, .catena li.allarme .tecnica { color: var(--allarme); }
+.catena li::after { /* pacchetto di dati che scorre verso il passo successivo */
+  content: ""; position: absolute; right: -4px; top: 50%; width: 7px; height: 7px; background: var(--ciano); z-index: 2;
+  animation: impulso 2.4s infinite; animation-delay: calc(var(--passo) * .3s);
+}
+.catena li:last-child::after { display: none; }
+@keyframes impulso { 0%, 70% { opacity: 0; } 80% { opacity: 1; } 100% { opacity: 0; } }
+
+.registratore { margin-top: 28px; background: var(--pannello); border: 1px solid var(--linea); padding: 20px; }
+.lettura { display: flex; flex-wrap: wrap; gap: 8px 28px; font-size: 14px; color: var(--tenue); margin-bottom: 16px; }
+.lettura b { color: var(--ciano); font-weight: 400; font-size: 18px; }
+.nastro { display: grid; grid-template-columns: repeat(160, 1fr); gap: 1px; height: 46px; }
+.nastro span { background: var(--linea); }
+.nastro span.dentro { background: var(--ciano); }
+.nastro span.decina { box-shadow: inset 0 -6px 0 color-mix(in srgb, var(--testo) 30%, transparent); }
+.corsie { position: relative; height: 72px; margin-top: 10px; }
+.corsie span { position: absolute; height: 12px; border: 1px solid var(--ciano); opacity: .35; transition: opacity .2s, background .2s; }
+.corsie span.attiva { opacity: 1; background: var(--ciano); }
+.comando { display: flex; align-items: center; gap: 16px; margin-top: 12px; font-size: 13px; letter-spacing: .14em; }
+.comando input { flex: 1; accent-color: var(--ciano); height: 32px; }
+.nota { font-size: 12px; color: var(--tenue); margin: 6px 0 0; }
+
+.piede { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 24px; border-top: 1px solid var(--linea); font-size: 12px; color: var(--tenue); letter-spacing: .1em; }
+
+@media (max-width: 980px) {
+  .monitor { grid-template-columns: 1fr; }
+  .catena { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .catena li { margin: 0; min-height: 0; }
+  .catena li::after { display: none; }
+}
+@media (max-width: 560px) {
+  .barra-sistema { padding: 10px 16px; gap: 10px; } .orologio { display: none; }
+  .barra-sistema nav { gap: 10px; font-size: 11px; }
+  main { padding: 0 16px; }
+  section { padding: 48px 0; }
+  .catena { grid-template-columns: 1fr; }
+  .nastro { height: 34px; }
+}

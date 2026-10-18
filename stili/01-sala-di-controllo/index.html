@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sala di controllo · Roma Safe CCTV</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="stile.css">
+</head>
+<body>
+  <a class="salta" href="#contenuto">Vai al contenuto</a>
+  <header class="barra-sistema">
+    <span class="sigla">RSC//CTRL</span>
+    <nav aria-label="Sezioni">
+      <a href="#monitor">01 MONITOR</a><a href="#pipeline">02 PIPELINE</a><a href="#finestre">03 FINESTRE</a>
+    </nav>
+    <span class="orologio" aria-hidden="true">SYS <span id="contatore-sistema">000000</span></span>
+  </header>
+
+  <main id="contenuto">
+    <section id="monitor" class="monitor" aria-labelledby="titolo-hero">
+      <div class="schermo">
+        <video class="video-hero" src="../condivisi/hero.mp4" poster="../condivisi/hero-poster.jpg" autoplay muted loop playsinline
+          aria-label="Montaggio dei casi d'uso con le rilevazioni vere della rete: scheletri, ID delle persone e finestra di 40 frame"></video>
+        <div class="angoli" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      </div>
+      <div class="pannello-hero">
+        <p class="etichetta">// ROMA SAFE CCTV</p>
+        <h1 id="titolo-hero" class="segnaposto" data-segnaposto="titoloHero"></h1>
+        <p class="segnaposto" data-segnaposto="sottotitoloHero"></p>
+        <dl class="telemetria">
+          <div><dt>INGRESSO</dt><dd>25 FPS</dd></div>
+          <div><dt>PUNTI/PERSONA</dt><dd>17</dd></div>
+          <div><dt>FINESTRA</dt><dd>40 FR · 1,6 s</dd></div>
+          <div><dt>CLASSI</dt><dd>4 + WARNING</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section id="pipeline" aria-labelledby="titolo-pipeline">
+      <header class="intestazione-sezione">
+        <span class="numero-sezione">02</span>
+        <h2 id="titolo-pipeline">PIPELINE</h2>
+        <span class="stato">ONLINE</span>
+      </header>
+      <p class="segnaposto" data-segnaposto="introPipeline"></p>
+      <ol class="catena" id="catena-pipeline"></ol>
+    </section>
+
+    <section id="finestre" aria-labelledby="titolo-finestre">
+      <header class="intestazione-sezione">
+        <span class="numero-sezione">03</span>
+        <h2 id="titolo-finestre">FINESTRE SCORREVOLI</h2>
+        <span class="stato">INTERATTIVO</span>
+      </header>
+      <p class="segnaposto" data-segnaposto="introFinestre"></p>
+      <div class="registratore">
+        <div class="lettura" aria-live="polite">
+          <span>FINESTRA <b id="numero-finestra">01</b></span>
+          <span>FRAME <b id="frame-finestra">0–39</b></span>
+          <span>T <b id="secondi-finestra">0,0–1,6 s</b></span>
+        </div>
+        <div class="nastro" id="nastro-frame" aria-hidden="true"></div>
+        <div class="corsie" id="corsie-finestre" aria-hidden="true"></div>
+        <label class="comando">
+          <span>SCORRI</span>
+          <input type="range" id="cursore-finestre" min="0" value="0" aria-describedby="spiega-cursore">
+        </label>
+        <p id="spiega-cursore" class="nota">Frecce ← → per spostare la finestra di 10 frame.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="piede">
+    <span>DEMO DI STILE 01 / 15 · SALA DI CONTROLLO</span>
+    <a href="../">← tutte le demo</a>
+  </footer>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fanzine di quartiere · Roma Safe CCTV</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Bowlby+One&family=Rubik+Mono+One&family=Permanent+Marker&display=swap" rel="stylesheet">
+<style>
+/* 10 · Fanzine di quartiere — fotocopia, collage, nastro adesivo, evidenziatore: un volantino fatto a mano. */
+:root { --carta: #f4f1ea; --toner: #141414; --giallo: #ffe94d; --rosa: #ff5fa2; --nastro: rgba(232, 214, 160, .78);
+  --macchina: "Special Elite", monospace; --ritaglio: "Bowlby One", sans-serif; --ritaglio2: "Rubik Mono One", sans-serif; --pennarello: "Permanent Marker", cursive; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --carta: #1b1a18; --toner: #efece4; --giallo: #c9b400; --rosa: #ff6fae; --nastro: rgba(120, 108, 80, .8); }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--carta); color: var(--toner); font: 18px/1.5 var(--macchina); overflow-x: hidden; }
+body::before { /* grana da fotocopiatrice */
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 30; opacity: .22; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1.4 -.5'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23g)'/%3E%3C/svg%3E"); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) body::before { mix-blend-mode: screen; opacity: .12; } }
+a { color: var(--toner); }
+:focus-visible { outline: 3px solid var(--rosa); outline-offset: 3px; }
+.foglio { max-width: 1060px; margin: 0 auto; padding: 32px 20px 60px; position: relative; }
+.nastro { position: absolute; width: 110px; height: 30px; background: var(--nastro); z-index: 3; box-shadow: 0 1px 2px rgba(0,0,0,.15); }
+.testata { display: flex; justify-content: space-between; font-size: 14px; border-bottom: 3px solid var(--toner); padding-bottom: 6px; flex-wrap: wrap; gap: 8px; }
+.testata nav { display: flex; gap: 14px; }
+
+/* titolo a lettere ritagliate */
+.ritagli { display: flex; flex-wrap: wrap; gap: 6px 4px; margin: 36px 0 18px; align-items: center; }
+.ritagli .parola > span { display: inline-block; padding: 2px 8px; font-size: clamp(36px, 8vw, 92px); line-height: 1; border: 2px solid var(--toner); }
+.ritagli .parola { display: inline-flex; gap: 4px; white-space: nowrap; margin-right: 22px; border: 0; padding: 0; font-size: inherit; }
+.ritagli .parola span { font-size: clamp(30px, 8vw, 92px); }
+.segnaposto { font-family: var(--macchina); border: 2px dashed var(--toner); padding: 8px 12px; margin: 10px 0; background: var(--giallo); color: #141414; display: inline-block; max-width: 100%; rotate: -.6deg; }
+.hero { display: grid; grid-template-columns: 1.4fr 1fr; gap: 28px; align-items: start; }
+.polaroid { position: relative; background: #fff; padding: 12px 12px 46px; rotate: -2deg; box-shadow: 3px 4px 0 var(--toner); margin-top: 16px; }
+.polaroid video { width: 100%; display: block; filter: grayscale(1) contrast(1.6) brightness(1.05); }
+.polaroid .scritta { position: absolute; left: 16px; right: 12px; bottom: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--pennarello); font-size: 20px; color: #141414; }
+.timbro { display: inline-block; font-family: var(--ritaglio2); font-size: 15px; color: var(--rosa); border: 3px solid var(--rosa); padding: 4px 10px; rotate: 8deg; margin: 18px 0; letter-spacing: .05em; }
+.dati-volantino { list-style: none; padding: 0; margin: 10px 0; }
+.dati-volantino li { font-size: 20px; padding: 4px 0; border-bottom: 2px dotted var(--toner); }
+.dati-volantino b { font-family: var(--ritaglio); font-size: 26px; font-weight: 400; margin-right: 8px; }
+
+h2 { font-family: var(--ritaglio); font-weight: 400; font-size: clamp(40px, 7vw, 76px); line-height: .95; margin: 0; display: inline-block; background: var(--toner); color: var(--carta); padding: 4px 14px; rotate: -1.5deg; }
+section { margin-top: 90px; position: relative; }
+.collage { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 28px 22px; margin-top: 36px; }
+.ritaglio-passo { position: relative; background: var(--carta); border: 2px solid var(--toner); padding: 34px 16px 18px; box-shadow: 4px 4px 0 var(--toner); }
+.ritaglio-passo:nth-child(3n+1) { rotate: -1.8deg; } .ritaglio-passo:nth-child(3n+2) { rotate: 1.2deg; } .ritaglio-passo:nth-child(3n) { rotate: -.6deg; }
+.ritaglio-passo:hover { rotate: 0deg; z-index: 2; }
+.ritaglio-passo .cerchio { position: absolute; left: -14px; top: -18px; width: 54px; height: 54px; border-radius: 50%; border: 3px solid var(--rosa);
+  font-family: var(--pennarello); font-size: 28px; display: grid; place-items: center; background: var(--carta); color: var(--rosa); rotate: -8deg; }
+.ritaglio-passo .nome { font-family: var(--ritaglio2); font-size: 17px; line-height: 1.2; display: block; margin-bottom: 8px; }
+.ritaglio-passo .tecnica { display: inline-block; margin-top: 10px; background: var(--giallo); color: #141414; padding: 0 6px; font-size: 15px; }
+.ritaglio-passo.allarme { background: var(--rosa); color: #141414; }
+.ritaglio-passo.allarme .cerchio { border-color: #141414; color: #141414; }
+.ritaglio-passo .nastro { top: -14px; right: 20px; rotate: 6deg; width: 80px; height: 24px; }
+
+.striscia { margin-top: 36px; position: relative; padding: 18px 0; }
+.biglietti { display: grid; grid-template-columns: repeat(80, 1fr); gap: 2px; }
+.biglietti i { height: 34px; border: 1.5px solid var(--toner); border-radius: 2px; }
+.biglietti i.decina { background: repeating-linear-gradient(45deg, var(--toner) 0 2px, transparent 2px 5px); }
+.evidenziatore { position: absolute; top: 10px; height: 52px; background: var(--giallo); mix-blend-mode: multiply; opacity: .85; border-radius: 6px 10px 4px 12px; rotate: -.8deg; transition: left .25s; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .evidenziatore { mix-blend-mode: screen; opacity: .5; } }
+.freccia-scritta { font-family: var(--pennarello); font-size: 24px; margin-top: 8px; color: var(--rosa); }
+.comando { display: flex; gap: 12px; align-items: center; margin-top: 16px; font-family: var(--ritaglio2); font-size: 14px; }
+.comando input { flex: 1; accent-color: var(--rosa); height: 32px; }
+.piede { margin-top: 80px; border-top: 3px solid var(--toner); padding-top: 8px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; font-size: 14px; }
+@media (max-width: 800px) {
+  .hero { grid-template-columns: 1fr; }
+  .biglietti { grid-template-columns: repeat(40, 1fr); }
+  .biglietti i { height: 26px; }
+}
+</style>
+</head>
+<body>
+<div class="foglio">
+  <header class="testata"><span>N° 1 · OTTOBRE 2026 · ROMA</span>
+    <nav aria-label="Sezioni"><a href="#come">come funziona</a><a href="#finestre">le finestre</a></nav></header>
+
+  <h1 class="ritagli" aria-label="Roma Safe CCTV" id="titolo-ritagliato"></h1>
+
+  <div class="hero">
+    <div>
+      <figure class="polaroid">
+        <span class="nastro" style="left: -20px; top: -10px; rotate: -30deg;" aria-hidden="true"></span>
+        <span class="nastro" style="right: -24px; top: -6px; rotate: 35deg;" aria-hidden="true"></span>
+        <video src="../condivisi/hero.mp4" poster="../condivisi/hero-poster.jpg" autoplay muted loop playsinline
+          aria-label="Montaggio dei casi d'uso con le rilevazioni vere della rete"></video>
+        <figcaption class="scritta">rilevazioni vere · clip Pexels</figcaption>
+      </figure>
+    </div>
+    <div>
+      <p class="segnaposto" data-segnaposto="titoloHero"></p>
+      <p class="segnaposto" data-segnaposto="sottotitoloHero"></p>
+      <span class="timbro" aria-hidden="true">NEIGHBORHOOD HACKS 2026</span>
+      <ul class="dati-volantino">
+        <li><b>25</b>fotogrammi al secondo</li>
+        <li><b>17</b>punti del corpo a persona</li>
+        <li><b>40</b>frame per decidere (1,6 s)</li>
+        <li><b>4</b>classi + WARNING ARMA</li>
+      </ul>
+    </div>
+  </div>
+
+  <section id="come" aria-labelledby="titolo-come">
+    <h2 id="titolo-come">COME FUNZIONA</h2>
+    <p class="segnaposto" data-segnaposto="introPipeline"></p>
+    <ol class="collage" id="collage" style="list-style: none; padding: 0;"></ol>
+  </section>
+
+  <section id="finestre" aria-labelledby="titolo-finestre">
+    <h2 id="titolo-finestre">LE FINESTRE</h2>
+    <p class="segnaposto" data-segnaposto="introFinestre"></p>
+    <div class="striscia">
+      <div class="evidenziatore" id="evidenziatore" aria-hidden="true"></div>
+      <div class="biglietti" id="biglietti" aria-hidden="true"></div>
+    </div>
+    <p class="freccia-scritta" id="scritta-finestra" aria-live="polite"></p>
+    <label class="comando">SPOSTA → <input type="range" id="cursore-finestre" min="0" value="0"></label>
+  </section>
+
+  <footer class="piede"><span>demo di stile 10/15 · fanzine di quartiere</span><a href="../">← tutte le demo</a></footer>
+</div>
+<script type="module">
+import { FINESTRE, NUMERO_FINESTRE, PASSI_PIPELINE, formattaSecondi, riempiSegnaposto, statoFinestra } from "../condivisi/progetto.js";
+riempiSegnaposto();
+// titolo a lettere ritagliate: rotazioni e caratteri alternati, deterministici
+const titolo = document.getElementById("titolo-ritagliato");
+const STILI = [["var(--ritaglio)", "var(--toner)", "var(--carta)"], ["var(--ritaglio2)", "var(--carta)", "var(--toner)"],
+  ["var(--macchina)", "var(--giallo)", "#141414"], ["var(--ritaglio)", "var(--rosa)", "#141414"]];
+let indice = 0;
+for (const parola of "ROMA SAFE CCTV".split(" ")) {
+  const gruppo = document.createElement("span");
+  gruppo.className = "parola";
+  for (const lettera of parola) {
+    const pezzo = document.createElement("span");
+    pezzo.setAttribute("aria-hidden", "true");
+    const [font, sfondo, testo] = STILI[(indice * 7) % STILI.length];
+    Object.assign(pezzo.style, { fontFamily: font, background: sfondo, color: testo, rotate: `${((indice * 37) % 11) - 5}deg` });
+    pezzo.textContent = lettera;
+    gruppo.appendChild(pezzo);
+    indice++;
+  }
+  titolo.appendChild(gruppo);
+}
+const collage = document.getElementById("collage");
+for (const passo of PASSI_PIPELINE) {
+  const voce = document.createElement("li");
+  voce.className = "ritaglio-passo" + (passo.nome === "WARNING ARMA" ? " allarme" : "");
+  voce.innerHTML = `<span class="nastro" aria-hidden="true"></span><span class="cerchio" aria-hidden="true">${passo.numero}</span>
+    <span class="nome">${passo.nome}</span>${passo.dettaglio}<br><span class="tecnica">${passo.tecnica}</span>`;
+  collage.appendChild(voce);
+}
+const biglietti = document.getElementById("biglietti");
+const evidenziatore = document.getElementById("evidenziatore");
+for (let frame = 0; frame < FINESTRE.frameTotaliMostrati; frame += 2) {
+  const biglietto = document.createElement("i");
+  if (frame % 10 === 0) biglietto.classList.add("decina");
+  biglietti.appendChild(biglietto);
+}
+const cursore = document.getElementById("cursore-finestre");
+cursore.max = NUMERO_FINESTRE - 1;
+function aggiorna() {
+  const stato = statoFinestra(Number(cursore.value));
+  const strette = matchMedia("(max-width: 800px)").matches;
+  // da telefono la striscia va su due righe: l'evidenziatore segue solo la prima metà (frame 0–79) per semplicità
+  const totale = strette ? FINESTRE.frameTotaliMostrati / 2 : FINESTRE.frameTotaliMostrati;
+  const inizio = strette ? stato.primoFrame % totale : stato.primoFrame;
+  evidenziatore.style.left = `${(inizio / totale) * 100}%`;
+  evidenziatore.style.width = `${(FINESTRE.framePerFinestra / totale) * 100}%`;
+  evidenziatore.style.top = strette && stato.primoFrame >= totale ? "38px" : "10px";
+  document.getElementById("scritta-finestra").textContent =
+    `↑ finestra ${stato.indice + 1}: frame ${stato.primoFrame}–${stato.ultimoFrame} = ${formattaSecondi(stato.secondoInizio)}–${formattaSecondi(stato.secondoFine)} s`;
+}
+cursore.addEventListener("input", aggiorna);
+addEventListener("resize", aggiorna);
+aggiorna();
+</script>
+</body>
+</html>

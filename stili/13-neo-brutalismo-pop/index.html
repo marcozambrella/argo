@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neo-brutalismo pop · Roma Safe CCTV</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
+<style>
+/* 13 · Neo-brutalismo pop — blocchi pastello, contorni neri spessi, ombre sfalsate, adesivi. */
+:root { --fondo: #fff8e7; --nero: #111; --lilla: #c9b6ff; --menta: #a8f0cf; --pesca: #ffbe85; --limone: #ffe45c; --rosa: #ff9ccf; --rosso: #ff5a4e;
+  --font: "Bricolage Grotesque", sans-serif; --mono: "Space Mono", monospace; --ombra: 6px 6px 0 var(--nero); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --fondo: #1a1726; --nero: #0b0a10; --lilla: #8b72e8; --menta: #3fbf8f; --pesca: #e98a4a; --limone: #e6c82e; --rosa: #e2629f; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--fondo); color: #111; font: 500 18px/1.5 var(--font);
+  background-image: radial-gradient(color-mix(in srgb, var(--nero) 18%, transparent) 1.4px, transparent 1.4px); background-size: 22px 22px; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) body { color: #f5f2ff; } }
+a { color: inherit; }
+:focus-visible { outline: 4px solid var(--rosso); outline-offset: 3px; }
+.blocco { border: 3px solid var(--nero); box-shadow: var(--ombra); border-radius: 18px; background: #fff; color: #111; }
+.contenitore { max-width: 1160px; margin: 0 auto; padding: 20px; }
+.barra { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--limone); flex-wrap: wrap; gap: 10px; }
+.barra nav { display: flex; gap: 10px; }
+.bottone { display: inline-block; border: 3px solid var(--nero); border-radius: 999px; padding: 6px 16px; background: #fff; color: #111; font-weight: 800; text-decoration: none; box-shadow: 3px 3px 0 var(--nero); transition: translate .1s, box-shadow .1s; cursor: pointer; font-family: var(--font); font-size: 16px; }
+.bottone:hover { translate: 2px 2px; box-shadow: 1px 1px 0 var(--nero); }
+.marchio { font-weight: 800; font-size: 20px; }
+
+.hero { display: grid; grid-template-columns: 1.05fr 1fr; gap: 28px; margin-top: 28px; align-items: center; }
+h1 { font: 800 clamp(56px, 8.5vw, 120px)/.9 var(--font); margin: 0; letter-spacing: -.03em; }
+h1 .evidenza { background: var(--rosa); border: 3px solid var(--nero); border-radius: 16px; padding: 0 12px; box-shadow: var(--ombra); display: inline-block; rotate: -2deg; }
+.segnaposto { border: 3px dashed var(--nero); border-radius: 12px; padding: 10px 14px; background: #fff; color: #111; margin: 14px 0 0; font-family: var(--mono); font-size: 14px; }
+.cornice-video { position: relative; padding: 10px; background: var(--lilla); }
+.cornice-video video { width: 100%; display: block; border-radius: 10px; border: 3px solid var(--nero); }
+.adesivo { position: absolute; border: 3px solid var(--nero); border-radius: 999px; padding: 6px 14px; font: 700 15px var(--mono); box-shadow: 3px 3px 0 var(--nero); color: #111; }
+.adesivo.a1 { background: var(--limone); top: -18px; left: -14px; rotate: -10deg; }
+.adesivo.a2 { background: var(--menta); bottom: -16px; right: 26px; rotate: 6deg; }
+.adesivo.a3 { background: var(--pesca); top: 40%; right: -22px; rotate: 12deg; }
+
+section { margin-top: 90px; }
+h2 { font: 800 clamp(40px, 6vw, 76px)/.95 var(--font); margin: 0 0 6px; letter-spacing: -.02em; }
+.bento { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; margin-top: 28px; }
+.carta { padding: 18px; display: flex; flex-direction: column; gap: 6px; transition: translate .15s, box-shadow .15s; }
+.carta:hover { translate: -3px -3px; box-shadow: 9px 9px 0 var(--nero); }
+.carta .numero { width: 44px; height: 44px; border-radius: 50%; border: 3px solid var(--nero); background: #fff; display: grid; place-items: center; font: 700 18px var(--mono); }
+.carta b { font-size: 24px; line-height: 1.1; }
+.carta .tecnica { margin-top: auto; font: 700 13px var(--mono); background: #fff; border: 2px solid var(--nero); border-radius: 8px; padding: 2px 8px; align-self: flex-start; }
+.carta.larga { grid-column: span 2; }
+.carta.allarme { background: var(--rosso); grid-column: 1 / -1; }
+
+.giocattolo { margin-top: 28px; padding: 22px; background: var(--menta); }
+.pillole { position: relative; height: 170px; margin-top: 10px; }
+.pillola { position: absolute; height: 24px; border: 3px solid var(--nero); border-radius: 999px; background: #fff; transition: background .2s, translate .2s; }
+.pillola.attiva { background: var(--rosa); translate: 0 -3px; box-shadow: 3px 3px 0 var(--nero); }
+.righello { display: flex; justify-content: space-between; font: 700 13px var(--mono); border-top: 3px solid var(--nero); padding-top: 4px; }
+.contatori { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 16px; }
+.contatori div { background: #fff; padding: 8px 14px; }
+.contatori b { display: block; font-size: 32px; line-height: 1; }
+.comandi { display: flex; gap: 12px; align-items: center; margin-top: 16px; }
+.comandi input { flex: 1; accent-color: #111; height: 30px; }
+.piede { margin-top: 70px; padding: 14px 18px; background: var(--pesca); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 900px) {
+  .hero { grid-template-columns: 1fr; }
+  .bento { grid-template-columns: 1fr 1fr; }
+  .carta.larga { grid-column: span 2; }
+}
+@media (max-width: 520px) {
+  .bento { grid-template-columns: 1fr; }
+  .carta.larga { grid-column: auto; }
+  .adesivo.a3 { right: -6px; }
+  .pillole { height: 150px; }
+}
+@media (prefers-reduced-motion: reduce) { .carta, .bottone, .pillola { transition: none; } }
+</style>
+</head>
+<body>
+<div class="contenitore">
+  <header class="barra blocco"><span class="marchio">RSC ✦</span>
+    <nav aria-label="Sezioni"><a class="bottone" href="#come">Come funziona</a><a class="bottone" href="#finestre">Finestre</a></nav></header>
+  <div class="hero">
+    <div>
+      <h1>Roma <span class="evidenza">Safe</span> CCTV</h1>
+      <p class="segnaposto" data-segnaposto="titoloHero"></p>
+      <p class="segnaposto" data-segnaposto="sottotitoloHero"></p>
+    </div>
+    <div class="cornice-video blocco">
+      <span class="adesivo a1">25 fps</span><span class="adesivo a2">17 punti / persona</span><span class="adesivo a3">40 frame</span>
+      <video src="../condivisi/hero.mp4" poster="../condivisi/hero-poster.jpg" autoplay muted loop playsinline
+        aria-label="Montaggio dei casi d'uso con le rilevazioni vere della rete"></video>
+    </div>
+  </div>
+
+  <section id="come" aria-labelledby="titolo-come">
+    <h2 id="titolo-come">Come funziona</h2>
+    <p class="segnaposto" data-segnaposto="introPipeline"></p>
+    <ol class="bento" id="bento" style="list-style:none; padding:0;"></ol>
+  </section>
+
+  <section id="finestre" aria-labelledby="titolo-finestre">
+    <h2 id="titolo-finestre">Finestre scorrevoli</h2>
+    <p class="segnaposto" data-segnaposto="introFinestre"></p>
+    <div class="giocattolo blocco">
+      <div class="pillole" id="pillole" aria-hidden="true"></div>
+      <div class="righello" aria-hidden="true"><span>0</span><span>40</span><span>80</span><span>120</span><span>160</span></div>
+      <div class="contatori" aria-live="polite">
+        <div class="blocco"><b id="numero-finestra">1</b>finestra</div>
+        <div class="blocco"><b id="frame-finestra">0–39</b>frame</div>
+        <div class="blocco"><b id="secondi-finestra">0,0–1,6</b>secondi</div>
+      </div>
+      <div class="comandi">
+        <button class="bottone" type="button" id="indietro" aria-label="Finestra precedente">◀</button>
+        <input type="range" id="cursore-finestre" min="0" value="0" aria-label="Finestra">
+        <button class="bottone" type="button" id="avanti" aria-label="Finestra successiva">▶</button>
+      </div>
+    </div>
+  </section>
+  <footer class="piede blocco"><span>Demo di stile 13 / 15 · Neo-brutalismo pop</span><a href="../">Tutte le demo ↗</a></footer>
+</div>
+<script type="module">
+import { FINESTRE, NUMERO_FINESTRE, PASSI_PIPELINE, formattaSecondi, riempiSegnaposto, statoFinestra } from "../condivisi/progetto.js";
+riempiSegnaposto();
+const COLORI = ["var(--limone)", "var(--lilla)", "var(--pesca)", "var(--menta)", "var(--rosa)", "var(--lilla)", "var(--rosso)"];
+const bento = document.getElementById("bento");
+PASSI_PIPELINE.forEach((passo, indice) => {
+  const carta = document.createElement("li");
+  carta.className = "carta blocco" + (indice === 1 || indice === 4 ? " larga" : "") + (passo.nome === "WARNING ARMA" ? " allarme" : "");
+  carta.style.background = COLORI[indice];
+  carta.innerHTML = `<span class="numero">${passo.numero}</span><b>${passo.nome}</b><span>${passo.dettaglio}</span><span class="tecnica">${passo.tecnica}</span>`;
+  bento.appendChild(carta);
+});
+const contenitore = document.getElementById("pillole");
+const pillole = Array.from({ length: NUMERO_FINESTRE }, (_, indice) => {
+  const pillola = document.createElement("span");
+  pillola.className = "pillola";
+  const finestra = statoFinestra(indice);
+  pillola.style.left = `${(finestra.primoFrame / FINESTRE.frameTotaliMostrati) * 100}%`;
+  pillola.style.width = `${(FINESTRE.framePerFinestra / FINESTRE.frameTotaliMostrati) * 100}%`;
+  pillola.style.top = `${(indice % 4) * 25 + 4}%`;
+  contenitore.appendChild(pillola);
+  return pillola;
+});
+const cursore = document.getElementById("cursore-finestre");
+cursore.max = NUMERO_FINESTRE - 1;
+function aggiorna() {
+  const stato = statoFinestra(Number(cursore.value));
+  pillole.forEach((pillola, indice) => pillola.classList.toggle("attiva", indice === stato.indice));
+  document.getElementById("numero-finestra").textContent = stato.indice + 1;
+  document.getElementById("frame-finestra").textContent = `${stato.primoFrame}–${stato.ultimoFrame}`;
+  document.getElementById("secondi-finestra").textContent = `${formattaSecondi(stato.secondoInizio)}–${formattaSecondi(stato.secondoFine)}`;
+}
+cursore.addEventListener("input", aggiorna);
+document.getElementById("indietro").addEventListener("click", () => { cursore.value = Math.max(0, Number(cursore.value) - 1); aggiorna(); });
+document.getElementById("avanti").addEventListener("click", () => { cursore.value = Math.min(NUMERO_FINESTRE - 1, Number(cursore.value) + 1); aggiorna(); });
+aggiorna();
+</script>
+</body>
+</html>

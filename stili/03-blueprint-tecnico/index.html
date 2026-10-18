@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blueprint tecnico · Roma Safe CCTV</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Stencil+Text:wght@500;800&family=Overpass+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* 03 · Blueprint tecnico — tavola da disegno tecnico: cianografia (scuro) o "whiteprint" (chiaro). */
+:root {
+  --carta: #f3f6fa; --linea: #1d4f91; --linea-tenue: rgba(29,79,145,.18); --testo: #0f2c55; --evidenza: #c2410c;
+  --stencil: "Big Shoulders Stencil Text", sans-serif; --mono: "Overpass Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --carta: #0d3466; --linea: #e8f1ff; --linea-tenue: rgba(232,241,255,.13); --testo: #e8f1ff; --evidenza: #ffd166;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background-color: var(--carta); color: var(--testo); font: 15px/1.6 var(--mono);
+  background-image:
+    linear-gradient(var(--linea-tenue) 1px, transparent 1px), linear-gradient(90deg, var(--linea-tenue) 1px, transparent 1px),
+    linear-gradient(var(--linea-tenue) 1px, transparent 1px), linear-gradient(90deg, var(--linea-tenue) 1px, transparent 1px);
+  background-size: 100px 100px, 100px 100px, 20px 20px, 20px 20px;
+}
+a { color: var(--testo); }
+:focus-visible { outline: 2px dashed var(--evidenza); outline-offset: 3px; }
+.tavola { max-width: 1180px; margin: 24px auto; border: 2px solid var(--linea); position: relative; padding: 40px 48px 0; }
+.tavola::before { content: ""; position: absolute; inset: 8px; border: 1px solid var(--linea); pointer-events: none; }
+h1, h2 { font-family: var(--stencil); font-weight: 800; text-transform: uppercase; letter-spacing: .04em; margin: 0; line-height: .95; }
+h1 { font-size: clamp(54px, 9vw, 128px); }
+h2 { font-size: clamp(36px, 5vw, 64px); }
+.etichetta { font-size: 12px; letter-spacing: .2em; text-transform: uppercase; }
+.segnaposto { border: 1px dashed var(--evidenza); color: var(--evidenza); padding: 8px 12px; font-size: 13px; margin: 12px 0; }
+.richiamo { color: var(--evidenza); }
+
+.testata { display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: end; padding-bottom: 28px; border-bottom: 1px solid var(--linea); }
+.testata nav { display: flex; gap: 18px; font-size: 12px; letter-spacing: .15em; }
+
+/* video con quote */
+.quotato { position: relative; margin: 56px 40px 64px 56px; }
+.quotato video { width: 100%; display: block; border: 1.5px solid var(--linea); filter: grayscale(.35) contrast(1.05); }
+.quota { position: absolute; font-size: 11px; display: flex; align-items: center; justify-content: center; }
+.quota-orizzontale { left: 0; right: 0; top: -30px; height: 14px; border-left: 1px solid var(--linea); border-right: 1px solid var(--linea); }
+.quota-orizzontale::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid var(--linea); }
+.quota-verticale { top: 0; bottom: 0; left: -36px; width: 14px; border-top: 1px solid var(--linea); border-bottom: 1px solid var(--linea); }
+.quota-verticale::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; border-left: 1px solid var(--linea); }
+.quota span { background: var(--carta); padding: 0 6px; position: relative; }
+.quota-verticale span { writing-mode: vertical-rl; rotate: 180deg; padding: 6px 0; }
+.nota-video { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border: 1px solid var(--linea); margin: 0 40px 0 56px; }
+.nota-video div { padding: 10px 14px; border-right: 1px solid var(--linea); font-size: 12px; }
+.nota-video div:last-child { border-right: 0; }
+.nota-video b { display: block; font-family: var(--stencil); font-size: 26px; font-weight: 500; }
+
+section { padding: 56px 0; border-bottom: 1px solid var(--linea); }
+.schema { width: 100%; height: auto; display: block; margin-top: 28px; }
+.schema text { fill: var(--testo); font-family: var(--mono); }
+.schema .titolo-blocco { font-family: var(--stencil); font-weight: 800; font-size: 20px; text-transform: uppercase; }
+.lista-schema { display: none; }
+
+.sezione-finestre { display: grid; grid-template-columns: 1fr 2fr; gap: 40px; align-items: start; }
+#disegno-finestre { width: 100%; height: auto; display: block; }
+#disegno-finestre text { fill: var(--testo); font-family: var(--mono); }
+.controllo { display: flex; gap: 14px; align-items: center; margin-top: 10px; font-size: 13px; }
+.controllo input { flex: 1; accent-color: var(--evidenza); height: 30px; }
+.misure { list-style: none; padding: 0; margin: 18px 0 0; border-top: 1px solid var(--linea); }
+.misure li { display: flex; justify-content: space-between; border-bottom: 1px solid var(--linea); padding: 6px 0; font-size: 13px; }
+.misure b { font-weight: 600; }
+
+.cartiglio { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; border-top: 2px solid var(--linea); margin: 0 -48px; font-size: 11px; }
+.cartiglio div { padding: 8px 14px; border-right: 1px solid var(--linea); }
+.cartiglio div:last-child { border-right: 0; }
+.cartiglio b { display: block; font-size: 15px; font-family: var(--stencil); font-weight: 800; letter-spacing: .05em; }
+
+@media (max-width: 860px) {
+  .tavola { margin: 0; padding: 28px 16px 0; border-width: 0; }
+  .tavola::before { display: none; }
+  .testata { grid-template-columns: 1fr; }
+  .quotato { margin: 44px 0 30px 30px; }
+  .quota-verticale { left: -28px; }
+  .nota-video { margin: 0; grid-template-columns: 1fr; }
+  .nota-video div { border-right: 0; border-bottom: 1px solid var(--linea); }
+  .schema { display: none; }
+  .lista-schema { display: block; list-style: none; padding: 0; margin: 20px 0 0; counter-reset: blocco; }
+  .lista-schema li { border: 1.5px solid var(--linea); padding: 10px 12px; margin-bottom: 22px; position: relative; }
+  .lista-schema li:not(:last-child)::after { content: "▼"; position: absolute; left: 50%; bottom: -21px; font-size: 12px; translate: -50% 0; }
+  .lista-schema b { font-family: var(--stencil); font-size: 20px; text-transform: uppercase; display: block; }
+  .sezione-finestre { grid-template-columns: 1fr; gap: 12px; }
+  .cartiglio { margin: 0 -16px; grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="tavola">
+  <header class="testata">
+    <div>
+      <p class="etichetta">Tavola 01 · Sistema di riconoscimento da CCTV</p>
+      <h1>Roma Safe<br>CCTV</h1>
+      <p class="segnaposto" data-segnaposto="titoloHero"></p>
+      <p class="segnaposto" data-segnaposto="sottotitoloHero"></p>
+    </div>
+    <nav aria-label="Sezioni"><a href="#vista">A · Vista</a><a href="#schema">B · Schema</a><a href="#sezione-finestre">C · Finestre</a></nav>
+  </header>
+
+  <div id="vista">
+    <div class="quotato">
+      <span class="quota quota-orizzontale" aria-hidden="true"><span>1280 px</span></span>
+      <span class="quota quota-verticale" aria-hidden="true"><span>720 px</span></span>
+      <video src="../condivisi/hero.mp4" poster="../condivisi/hero-poster.jpg" autoplay muted loop playsinline
+        aria-label="Montaggio dei casi d'uso con le rilevazioni vere della rete"></video>
+    </div>
+    <div class="nota-video">
+      <div><b>25 fps</b>frequenza di analisi</div>
+      <div><b>17 punti</b>per persona · YOLO26s-pose</div>
+      <div><b>ID stabile</b>tracker TrackTrack</div>
+    </div>
+  </div>
+
+  <section id="schema" aria-labelledby="titolo-schema">
+    <p class="etichetta">Vista B · Schema funzionale</p>
+    <h2 id="titolo-schema">Dalla telecamera alla decisione</h2>
+    <p class="segnaposto" data-segnaposto="introPipeline"></p>
+    <svg class="schema" id="schema-pipeline" viewBox="0 0 1080 420" role="img" aria-label="Schema a blocchi della pipeline in 7 passi"></svg>
+    <ol class="lista-schema" id="lista-schema"></ol>
+  </section>
+
+  <section id="sezione-finestre" class="sezione-finestre" aria-labelledby="titolo-finestre">
+    <div>
+      <p class="etichetta">Vista C · Sezione temporale</p>
+      <h2 id="titolo-finestre">Finestre<br>scorrevoli</h2>
+      <p class="segnaposto" data-segnaposto="introFinestre"></p>
+      <ul class="misure">
+        <li><span>Finestra</span><b id="misura-numero">1</b></li>
+        <li><span>Frame</span><b id="misura-frame">0–39</b></li>
+        <li><span>Tempo</span><b id="misura-secondi">0,0–1,6 s</b></li>
+        <li><span>Finestre per frame</span><b>fino a 4</b></li>
+      </ul>
+    </div>
+    <div>
+      <svg id="disegno-finestre" viewBox="0 0 700 300" role="img" aria-label="Sezione: 160 frame, finestre di 40 frame con passo 10"></svg>
+      <label class="controllo">Sposta la finestra <input type="range" id="cursore-finestre" min="0" value="0"></label>
+    </div>
+  </section>
+
+  <footer class="cartiglio">
+    <div>Titolo<b>Roma Safe CCTV — demo di stile 03 / 15</b></div>
+    <div>Scala<b>1 : 1</b></div>
+    <div>Foglio<b>1 / 1</b></div>
+    <div>Indice<b><a href="../">tutte le demo</a></b></div>
+  </footer>
+</div>
+<script type="module">
+import { FINESTRE, NUMERO_FINESTRE, PASSI_PIPELINE, formattaSecondi, riempiSegnaposto, statoFinestra } from "../condivisi/progetto.js";
+riempiSegnaposto();
+const NS = "http://www.w3.org/2000/svg";
+const colore = (nome) => getComputedStyle(document.documentElement).getPropertyValue(nome).trim();
+const crea = (padre, nome, attributi, testo) => {
+  const elemento = document.createElementNS(NS, nome);
+  for (const [chiave, valore] of Object.entries(attributi)) elemento.setAttribute(chiave, valore);
+  if (testo !== undefined) elemento.textContent = testo;
+  padre.appendChild(elemento);
+  return elemento;
+};
+
+// Schema B: blocchi su due righe, collegati da frecce; il WARNING ARMA è un ramo parallelo
+function disegnaSchema() {
+  const svg = document.getElementById("schema-pipeline");
+  svg.replaceChildren();
+  const linea = colore("--linea"), evidenza = colore("--evidenza");
+  const defs = crea(svg, "defs", {});
+  const freccia = crea(defs, "marker", { id: "freccia", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 8, markerHeight: 8, orient: "auto" });
+  crea(freccia, "path", { d: "M0,0 L10,5 L0,10 z", fill: linea });
+  const posizioni = [[20, 40], [290, 40], [560, 40], [830, 40], [830, 250], [560, 250], [290, 250]];
+  PASSI_PIPELINE.forEach((passo, indice) => {
+    const [x, y] = posizioni[indice];
+    const allarme = passo.nome === "WARNING ARMA";
+    const g = crea(svg, "g", {});
+    crea(g, "rect", { x, y, width: 230, height: 130, fill: "none", stroke: allarme ? evidenza : linea, "stroke-width": 1.5,
+      "stroke-dasharray": allarme ? "6 4" : "" });
+    crea(g, "text", { x: x + 10, y: y + 18, "font-size": 11 }, `B.${passo.numero}`);
+    crea(g, "text", { x: x + 10, y: y + 46, class: "titolo-blocco", fill: allarme ? evidenza : "" }, passo.nome);
+    const parole = passo.dettaglio.split(" ");
+    let riga = "", numeroRiga = 0;
+    for (const parola of parole) {
+      if ((riga + parola).length > 32) { crea(g, "text", { x: x + 10, y: y + 70 + numeroRiga * 15, "font-size": 11 }, riga); riga = ""; numeroRiga++; }
+      riga += parola + " ";
+    }
+    crea(g, "text", { x: x + 10, y: y + 70 + numeroRiga * 15, "font-size": 11 }, riga);
+    crea(g, "text", { x: x + 10, y: y + 122, "font-size": 10, fill: evidenza }, passo.tecnica);
+  });
+  const collega = (x1, y1, x2, y2) => crea(svg, "line", { x1, y1, x2, y2, stroke: linea, "stroke-width": 1.2, "marker-end": "url(#freccia)" });
+  collega(250, 105, 288, 105); collega(520, 105, 558, 105); collega(790, 105, 828, 105);
+  collega(945, 170, 945, 248); collega(828, 315, 792, 315); collega(558, 315, 522, 315);
+  // il detector armi (B.3) alimenta anche la regola del WARNING ARMA (B.7), indipendente dal classificatore
+  crea(svg, "path", { d: "M675,170 L675,215 L405,215 L405,248", fill: "none", stroke: evidenza, "stroke-width": 1.2,
+    "stroke-dasharray": "6 4", "marker-end": "url(#freccia)" });
+  crea(svg, "text", { x: 420, y: 208, "font-size": 10, fill: evidenza }, "ramo indipendente dal classificatore");
+}
+disegnaSchema();
+
+const lista = document.getElementById("lista-schema");
+for (const passo of PASSI_PIPELINE) {
+  const voce = document.createElement("li");
+  voce.innerHTML = `<span class="etichetta">B.${passo.numero}</span><b>${passo.nome}</b>${passo.dettaglio}<br><span class="richiamo">${passo.tecnica}</span>`;
+  lista.appendChild(voce);
+}
+
+// Vista C: sezione con quote
+const svgFinestre = document.getElementById("disegno-finestre");
+const cursore = document.getElementById("cursore-finestre");
+cursore.max = NUMERO_FINESTRE - 1;
+const SINISTRA = 20, LARGHEZZA = 660;
+const x = (frame) => SINISTRA + (frame / FINESTRE.frameTotaliMostrati) * LARGHEZZA;
+function disegnaFinestre() {
+  svgFinestre.replaceChildren();
+  const linea = colore("--linea"), evidenza = colore("--evidenza");
+  const stato = statoFinestra(Number(cursore.value));
+  const defs = crea(svgFinestre, "defs", {});
+  const tratteggio = crea(defs, "pattern", { id: "tratteggio", width: 6, height: 6, patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" });
+  crea(tratteggio, "line", { x1: 0, y1: 0, x2: 0, y2: 6, stroke: evidenza, "stroke-width": 1.5 });
+  // asse dei frame
+  for (let frame = 0; frame <= FINESTRE.frameTotaliMostrati; frame++) {
+    const alta = frame % 10 === 0;
+    crea(svgFinestre, "line", { x1: x(frame), y1: 150, x2: x(frame), y2: alta ? 138 : 144, stroke: linea, "stroke-width": alta ? 1 : .5 });
+    if (frame % 40 === 0) crea(svgFinestre, "text", { x: x(frame), y: 168, "font-size": 11, "text-anchor": "middle" }, frame);
+  }
+  crea(svgFinestre, "line", { x1: SINISTRA, y1: 150, x2: SINISTRA + LARGHEZZA, y2: 150, stroke: linea });
+  // tutte le finestre in pianta, la selezionata tratteggiata
+  for (let indice = 0; indice < NUMERO_FINESTRE; indice++) {
+    const finestra = statoFinestra(indice);
+    const selezionata = indice === stato.indice;
+    crea(svgFinestre, "rect", { x: x(finestra.primoFrame), y: 190 + (indice % 4) * 22, width: x(40) - SINISTRA, height: 14,
+      fill: selezionata ? "url(#tratteggio)" : "none", stroke: selezionata ? evidenza : linea, "stroke-width": selezionata ? 1.6 : .7 });
+  }
+  // quote della finestra selezionata
+  const x1 = x(stato.primoFrame), x2 = x(stato.ultimoFrame + 1), xPasso = x(stato.primoFrame + FINESTRE.passo);
+  crea(svgFinestre, "rect", { x: x1, y: 70, width: x2 - x1, height: 60, fill: "url(#tratteggio)", stroke: evidenza, "stroke-width": 1.6 });
+  const quota = (a, b, y, testo) => {
+    crea(svgFinestre, "line", { x1: a, y1: y, x2: b, y2: y, stroke: linea });
+    crea(svgFinestre, "line", { x1: a, y1: y - 6, x2: a, y2: y + 6, stroke: linea });
+    crea(svgFinestre, "line", { x1: b, y1: y - 6, x2: b, y2: y + 6, stroke: linea });
+    crea(svgFinestre, "text", { x: (a + b) / 2, y: y - 6, "font-size": 12, "text-anchor": "middle" }, testo);
+  };
+  quota(x1, x2, 40, "W = 40 frame = 1,6 s");
+  quota(x1, xPasso, 60, "S = 10");
+  document.getElementById("misura-numero").textContent = stato.indice + 1;
+  document.getElementById("misura-frame").textContent = `${stato.primoFrame}–${stato.ultimoFrame}`;
+  document.getElementById("misura-secondi").textContent = `${formattaSecondi(stato.secondoInizio)}–${formattaSecondi(stato.secondoFine)} s`;
+}
+cursore.addEventListener("input", disegnaFinestre);
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { disegnaSchema(); disegnaFinestre(); });
+disegnaFinestre();
+</script>
+</body>
+</html>
