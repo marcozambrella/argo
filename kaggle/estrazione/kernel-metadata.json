@@ -15,7 +15,9 @@
     "bypktt/ucf-crimes",
     "aniketsahu09/chain-snatching-cctv-dataset"
   ],
-  "kernel_sources": [],
+  "kernel_sources": [
+    "KAGGLE_UTENTE/roma-safe-cctv-detector-armi"
+  ],
   "competition_sources": [],
   "model_sources": []
 }
