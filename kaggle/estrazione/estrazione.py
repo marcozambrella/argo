@@ -23,7 +23,7 @@ uscita = Path("/kaggle/working")
 subprocess.run([sys.executable, "-m", "sicurezza.dati", "prepara-elenchi", "--input", "/kaggle/input", "--uscita",
                 str(uscita)], check=True, env={**os.environ, "PYTHONPATH": "/tmp/repo/src"})
 
-# detector armi fine-tunato, se il kernel del detector è tra le sorgenti (DA DECIDERE: aspettarlo o no)
+# detector armi fine-tunato dal kernel del detector (D16: prima il detector, poi l estrazione)
 pesi_armi = sorted(Path("/kaggle/input").glob("**/yolo26s_armi/weights/best.pt"))
 opzione_armi = ["--modello-armi", str(pesi_armi[0])] if pesi_armi else []
 print("detector armi:", pesi_armi[0] if pesi_armi else "NESSUNO (solo pose)", flush=True)
