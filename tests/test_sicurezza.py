@@ -11,7 +11,8 @@ import yaml
 from sicurezza.dati import gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
 from sicurezza.demo import confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
-from sicurezza.visione import converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
+from sicurezza.strumenti import scegli_immagini_coco
+from sicurezza.visione import conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
 
 
 # ==============================================================================================================
@@ -652,3 +653,40 @@ def test_taratura_warning_arma_trova_la_soglia_giusta(tmp_path):
     migliore = risultato["migliore"]
     assert migliore["f1"] == 1.0 and migliore["precisione"] == 1.0
     assert len(risultato["tabella"]) == 12 * 15
+
+
+def test_negativi_coco_senza_doppioni_e_sempre_gli_stessi():
+    annotazioni = {"categories": [{"id": 49, "name": "knife"}, {"id": 77, "name": "cell phone"},
+                                  {"id": 87, "name": "scissors"}, {"id": 28, "name": "umbrella"}],
+                   "images": [{"id": i, "file_name": f"{i:012d}.jpg"} for i in range(1, 8)],
+                   "annotations": [{"image_id": i, "category_id": c} for i, c in
+                                   [(5, 49), (3, 49), (3, 77), (1, 49), (7, 77), (6, 28), (6, 28)]]}
+    scelte = scegli_immagini_coco(annotazioni, per_categoria=2)
+    assert scelte["knife"] == ["000000000001.jpg", "000000000003.jpg"]   # le prime per id
+    assert scelte["cell phone"] == ["000000000007.jpg"]                  # la 3 è già tra i coltelli
+    assert scelte["scissors"] == [] and scelte["umbrella"] == ["000000000006.jpg"]
+
+
+def test_falsi_allarmi_contati_per_categoria(tmp_path):
+    class RisultatoFinto:
+        def __init__(self, armi):
+            self.boxes = type("Box", (), {"cls": torch.tensor([classe for classe, _ in armi], dtype=torch.float32),
+                                          "conf": torch.tensor([confidenza for _, confidenza in armi])})()
+
+    class DetectorFinto:  # "trova" un coltello solo nelle immagini col nome che inizia per "falso"
+        def __init__(self):
+            self.names = {0: "pistol", 1: "knife", 2: "rifle"}
+
+        def predict(self, percorsi, conf, **_):
+            return [RisultatoFinto([(1, 0.7)] if Path(p).name.startswith("falso") else []) for p in percorsi]
+
+    for categoria, nomi in {"knife": ["a.jpg", "falso_b.jpg", "c.jpg"], "cell_phone": ["d.png", "e.jpg"]}.items():
+        (tmp_path / categoria).mkdir()
+        for nome in nomi:
+            (tmp_path / categoria / nome).write_bytes(b"")
+    (tmp_path / "instances_val2017.json").write_text("{}")             # non è un'immagine: ignorato
+    risultato = conta_falsi_allarmi(DetectorFinto(), tmp_path, dimensione_lotto=2)
+    assert risultato["per_categoria"]["knife"] == {"immagini": 3, "con_allarme": 1, "frazione": 0.3333,
+                                                   "classi": {"knife": 1}}
+    assert risultato["per_categoria"]["cell_phone"]["con_allarme"] == 0
+    assert risultato["immagini_con_allarme"] == [{"immagine": "knife/falso_b.jpg", "armi": [("knife", 0.7)]}]

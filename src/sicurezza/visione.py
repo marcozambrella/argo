@@ -3,6 +3,7 @@
 from collections import Counter
 from pathlib import Path
 import argparse
+import json
 import os
 import shutil
 import sys
@@ -482,16 +483,77 @@ def comando_addestra_detector(argomenti: list[str] | None = None) -> None:
                                  dispositivo=argomenti.dispositivo)
     print(f"mAP50 {metriche.box.map50:.4f}  mAP50-95 {metriche.box.map:.4f}")
 
+
+# ==============================================================================================================
+# armi/falsi_allarmi
+# Verifica del piano: il detector non deve scattare su oggetti innocui (coltelli da cucina posati, telefoni, forbici,
+# ombrelli). È il motivo per cui non usiamo il "knife" di COCO (D4). Su immagini SENZA armi impugnate conta quelle in
+# cui il detector trova qualcosa sopra soglia, divise per categoria (= nome della sottocartella).
+# Una sola immagine è il caso peggiore: il WARNING ARMA vuole l'arma in più frame vicino a una persona (D6).
+# Le immagini di prova si scaricano con `python -m sicurezza.strumenti scarica-negativi-coco`.
+#
+# Uso:
+#     python -m sicurezza.visione falsi-allarmi --immagini data/negativi_coco --modello-armi best.pt --uscita falsi.json
+# ==============================================================================================================
+
+ESTENSIONI_IMMAGINE = {".jpg", ".jpeg", ".png"}
+
+
+def conta_falsi_allarmi(modello_armi, cartella_immagini: Path, soglia_confidenza: float = 0.5, dispositivo=None,
+                        dimensione_lotto: int = 8) -> dict:
+    percorsi = sorted(p for p in cartella_immagini.rglob("*") if p.suffix.lower() in ESTENSIONI_IMMAGINE)
+    immagini_per_categoria, allarmi_per_categoria = Counter(), Counter()
+    classi_per_categoria: dict[str, Counter] = {}
+    immagini_con_allarme = []
+    for inizio in range(0, len(percorsi), dimensione_lotto):
+        lotto = percorsi[inizio:inizio + dimensione_lotto]
+        risultati = modello_armi.predict([str(p) for p in lotto], device=dispositivo, conf=soglia_confidenza,
+                                         verbose=False)
+        for percorso, risultato in zip(lotto, risultati):
+            categoria = percorso.parent.name
+            immagini_per_categoria[categoria] += 1
+            armi = [(modello_armi.names[int(classe)], round(float(confidenza), 3))
+                    for classe, confidenza in zip(risultato.boxes.cls, risultato.boxes.conf)]
+            if armi:
+                allarmi_per_categoria[categoria] += 1
+                classi_per_categoria.setdefault(categoria, Counter()).update(nome for nome, _ in armi)
+                immagini_con_allarme.append({"immagine": str(percorso.relative_to(cartella_immagini)), "armi": armi})
+    per_categoria = {categoria: {"immagini": numero, "con_allarme": allarmi_per_categoria[categoria],
+                                 "frazione": round(allarmi_per_categoria[categoria] / numero, 4),
+                                 "classi": dict(classi_per_categoria.get(categoria, {}))}
+                     for categoria, numero in sorted(immagini_per_categoria.items())}
+    return {"soglia_confidenza": soglia_confidenza, "per_categoria": per_categoria,
+            "immagini_con_allarme": immagini_con_allarme}
+
+
+def comando_falsi_allarmi(argomenti: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--immagini", required=True, help="cartella con una sottocartella per categoria")
+    parser.add_argument("--modello-armi", required=True)
+    parser.add_argument("--soglia", type=float, default=0.5, help="come SOGLIA_CONFIDENZA_ARMA della demo (D6)")
+    parser.add_argument("--uscita", default=None, help="file .json con il dettaglio (facoltativo)")
+    parser.add_argument("--dispositivo", default=None)
+    argomenti = parser.parse_args(argomenti)
+
+    from ultralytics import YOLO
+    risultato = conta_falsi_allarmi(YOLO(argomenti.modello_armi), Path(argomenti.immagini), argomenti.soglia,
+                                    argomenti.dispositivo)
+    for categoria, conteggi in risultato["per_categoria"].items():
+        print(f"{categoria:12s} {conteggi['con_allarme']:4d} / {conteggi['immagini']:4d} immagini con allarme  "
+              f"{conteggi['classi']}")
+    if argomenti.uscita:
+        Path(argomenti.uscita).write_text(json.dumps(risultato, indent=1, ensure_ascii=False))
+
 # ==============================================================================================================
 # riga di comando: python -m sicurezza.visione <comando> [opzioni]
 # ==============================================================================================================
-COMANDI = {"estrai": comando_estrai, "aggiungi-armi": comando_aggiungi_armi, "unisci-armi": comando_unisci_armi, "converti-mock-attack": comando_converti_mock_attack, "addestra-detector": comando_addestra_detector}
+COMANDI = {"estrai": comando_estrai, "aggiungi-armi": comando_aggiungi_armi, "unisci-armi": comando_unisci_armi, "converti-mock-attack": comando_converti_mock_attack, "addestra-detector": comando_addestra_detector, "falsi-allarmi": comando_falsi_allarmi}
 
 
 def main(argomenti: list[str] | None = None) -> None:
     argomenti = sys.argv[1:] if argomenti is None else argomenti
     if not argomenti or argomenti[0] not in COMANDI:
-        print("uso: python -m sicurezza.visione {estrai|aggiungi-armi|unisci-armi|addestra-detector} [opzioni]  (--help dopo il comando)")
+        print("uso: python -m sicurezza.visione {" + "|".join(COMANDI) + "} [opzioni]  (--help dopo il comando)")
         raise SystemExit(2)
     COMANDI[argomenti[0]](argomenti[1:])
 

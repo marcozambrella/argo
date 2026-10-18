@@ -279,6 +279,59 @@ def comando_scarica_campioni(argomenti: list[str] | None = None) -> None:
 
 
 # ==============================================================================================================
+# scarica_negativi_coco
+# Immagini di prova SENZA armi impugnate per `visione falsi-allarmi`: coltelli da cucina, telefoni, forbici, ombrelli
+# dal validation set di COCO 2017. Per categoria le prime N in ordine di id (sempre le stesse), e ogni immagine in una
+# sola categoria. Servono solo per la verifica in locale: non vanno nel repo (foto Flickr con licenze varie).
+#
+# Uso:  uv run python -m sicurezza.strumenti scarica-negativi-coco [--cartella data/negativi_coco] [--per-categoria 100]
+# ==============================================================================================================
+
+URL_ANNOTAZIONI_COCO = "http://images.cocodataset.org/annotations/annotations_trainval2017.zip"
+URL_IMMAGINI_COCO = "http://images.cocodataset.org/val2017/"
+CATEGORIE_NEGATIVE_COCO = ("knife", "cell phone", "scissors", "umbrella")
+
+
+def scegli_immagini_coco(annotazioni: dict, categorie=CATEGORIE_NEGATIVE_COCO, per_categoria: int = 100
+                         ) -> dict[str, list[str]]:
+    id_categoria = {categoria["name"]: categoria["id"] for categoria in annotazioni["categories"]}
+    immagini_con_categoria: dict[int, set[int]] = {}
+    for oggetto in annotazioni["annotations"]:
+        immagini_con_categoria.setdefault(oggetto["category_id"], set()).add(oggetto["image_id"])
+    nome_file = {immagine["id"]: immagine["file_name"] for immagine in annotazioni["images"]}
+    gia_prese, scelte = set(), {}
+    for categoria in categorie:
+        candidate = sorted(immagini_con_categoria.get(id_categoria[categoria], set()) - gia_prese)[:per_categoria]
+        gia_prese.update(candidate)
+        scelte[categoria] = [nome_file[id_immagine] for id_immagine in candidate]
+    return scelte
+
+
+def comando_scarica_negativi_coco(argomenti: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cartella", default="data/negativi_coco")
+    parser.add_argument("--per-categoria", type=int, default=100)
+    argomenti = parser.parse_args(argomenti)
+    cartella = Path(argomenti.cartella)
+    cartella.mkdir(parents=True, exist_ok=True)
+    file_annotazioni = cartella / "instances_val2017.json"
+    if not file_annotazioni.exists():  # lo zip (241 MB) serve solo per estrarre questo file (25 MB)
+        archivio_zip = cartella / "annotations_trainval2017.zip"
+        urllib.request.urlretrieve(URL_ANNOTAZIONI_COCO, archivio_zip)
+        with zipfile.ZipFile(archivio_zip) as archivio:
+            file_annotazioni.write_bytes(archivio.read("annotations/instances_val2017.json"))
+        archivio_zip.unlink()
+    scelte = scegli_immagini_coco(json.loads(file_annotazioni.read_text()), per_categoria=argomenti.per_categoria)
+    for categoria, nomi_file in scelte.items():
+        sottocartella = cartella / categoria.replace(" ", "_")
+        sottocartella.mkdir(exist_ok=True)
+        for nome in nomi_file:
+            if not (sottocartella / nome).exists():
+                urllib.request.urlretrieve(URL_IMMAGINI_COCO + nome, sottocartella / nome)
+        print(f"{categoria:12s} {len(nomi_file)} immagini in {sottocartella}")
+
+
+# ==============================================================================================================
 # presentation/monta_presentazione
 # Monta la video presentation da presentation/scaletta.json con ffmpeg (D12). Riproducibile: quando il modello
 # migliora si rigenerano i clip annotati e si rilancia questo script.
@@ -375,13 +428,13 @@ def comando_monta_presentazione(argomenti: list[str] | None = None) -> None:
 # ==============================================================================================================
 # riga di comando: python -m sicurezza.strumenti <comando> [opzioni]
 # ==============================================================================================================
-COMANDI = {"annota-scippi": comando_annota_scippi, "scarica-campioni": comando_scarica_campioni, "monta-presentazione": comando_monta_presentazione}
+COMANDI = {"annota-scippi": comando_annota_scippi, "scarica-campioni": comando_scarica_campioni, "scarica-negativi-coco": comando_scarica_negativi_coco, "monta-presentazione": comando_monta_presentazione}
 
 
 def main(argomenti: list[str] | None = None) -> None:
     argomenti = sys.argv[1:] if argomenti is None else argomenti
     if not argomenti or argomenti[0] not in COMANDI:
-        print("uso: python -m sicurezza.strumenti {annota-scippi|scarica-campioni|monta-presentazione} [opzioni]  (--help dopo il comando)")
+        print("uso: python -m sicurezza.strumenti {" + "|".join(COMANDI) + "} [opzioni]  (--help dopo il comando)")
         raise SystemExit(2)
     COMANDI[argomenti[0]](argomenti[1:])
 
