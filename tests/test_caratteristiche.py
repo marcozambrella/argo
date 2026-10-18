@@ -44,3 +44,22 @@ def test_finestra_senza_persone(tmp_path):
     timeline = carica_timeline(salva(tmp_path, numero_persone=0, con_arma=False))
     nodi, maschera, _ = costruisci_finestra(timeline, 0)
     assert not maschera.any() and not nodi.any()
+
+
+def test_ricucitura_unisce_frammenti_ma_non_persone_diverse():
+    from sicurezza.caratteristiche import ricuci_tracce
+    frame = 60
+
+    def traccia(dal, al, centro_x):
+        box = np.full((frame, 4), np.nan, np.float32)
+        box[dal:al] = [centro_x - 40, 100, centro_x + 40, 300]   # persona alta 200 px
+        keypoint = np.full((frame, 17, 3), np.nan, np.float32)
+        keypoint[dal:al] = 1.0
+        return keypoint, box
+
+    tracce = {1: traccia(0, 20, 100), 2: traccia(25, 60, 110),    # stessa persona: buco di 5 frame, 10 px più in là
+              3: traccia(0, 60, 400),                              # un'altra persona, presente per tutto il tempo
+              4: traccia(28, 60, 700)}                             # parte lontano: non è il seguito di nessuno
+    keypoint, box = ricuci_tracce({k: v[0] for k, v in tracce.items()}, {k: v[1] for k, v in tracce.items()})
+    assert sorted(box) == [1, 3, 4]
+    assert (~np.isnan(box[1][:, 0])).sum() == 55 and not np.isnan(keypoint[1][59]).any()

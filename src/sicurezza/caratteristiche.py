@@ -34,11 +34,11 @@ class TimelineVideo:
     armi_confidenza: np.ndarray
 
 
-def carica_timeline(percorso_npz) -> TimelineVideo:
-    return timeline_da_dati(np.load(percorso_npz))
+def carica_timeline(percorso_npz, ricuci: bool = True) -> TimelineVideo:
+    return timeline_da_dati(np.load(percorso_npz), ricuci)
 
 
-def timeline_da_dati(dati) -> TimelineVideo:
+def timeline_da_dati(dati, ricuci: bool = True) -> TimelineVideo:
     """Come carica_timeline, ma da un dizionario già in memoria (es. il buffer della demo)."""
     numero_frame = int(dati["numero_frame"])
     keypoint_per_traccia, box_per_traccia = {}, {}
@@ -51,9 +51,62 @@ def timeline_da_dati(dati) -> TimelineVideo:
         box[frame_traccia] = dati["persone_box"][righe]
         keypoint_per_traccia[int(id_traccia)] = keypoint
         box_per_traccia[int(id_traccia)] = box
+    if ricuci:
+        keypoint_per_traccia, box_per_traccia = ricuci_tracce(keypoint_per_traccia, box_per_traccia)
     return TimelineVideo(numero_frame, int(dati["larghezza"]), int(dati["altezza"]), keypoint_per_traccia,
                          box_per_traccia, dati["armi_frame"], dati["armi_box"], dati["armi_classe"],
                          dati["armi_confidenza"].astype(np.float32))
+
+
+BUCO_MASSIMO_FRAME = 15            # PROVVISORIO: 0,6 s senza la persona al massimo
+DISTANZA_MASSIMA_ALTEZZE = 0.5     # PROVVISORIO: il nuovo frammento deve partire entro mezza altezza-corpo
+RAPPORTO_ALTEZZE_MASSIMO = 1.5     # PROVVISORIO: stessa persona = altezza del box simile
+
+
+def ricuci_tracce(keypoint_per_traccia: dict, box_per_traccia: dict, buco_massimo: int = BUCO_MASSIMO_FRAME,
+                  distanza_massima: float = DISTANZA_MASSIMA_ALTEZZE,
+                  rapporto_altezze_massimo: float = RAPPORTO_ALTEZZE_MASSIMO):
+    """D17: unisce i frammenti di traccia della stessa persona.
+
+    Una traccia B continua una traccia A se B inizia dopo la fine di A (mai sovrapposte nel tempo), entro
+    `buco_massimo` frame, vicino all'ultimo box di A e con altezza simile. Tra più candidate si sceglie la più vicina.
+    """
+    def estremi(box):
+        presenti = np.flatnonzero(~np.isnan(box[:, 0]))
+        return presenti[0], presenti[-1]
+
+    def centro_e_altezza(riga_box):
+        return np.array([(riga_box[0] + riga_box[2]) / 2, (riga_box[1] + riga_box[3]) / 2]), riga_box[3] - riga_box[1]
+
+    keypoint_per_traccia = dict(keypoint_per_traccia)
+    box_per_traccia = {id_traccia: box.copy() for id_traccia, box in box_per_traccia.items()}
+    ordine_per_inizio = sorted(box_per_traccia, key=lambda id_traccia: estremi(box_per_traccia[id_traccia])[0])
+    for id_nuova in ordine_per_inizio:
+        if id_nuova not in box_per_traccia:
+            continue
+        inizio_nuova, _ = estremi(box_per_traccia[id_nuova])
+        centro_nuova, altezza_nuova = centro_e_altezza(box_per_traccia[id_nuova][inizio_nuova])
+        migliore, distanza_migliore = None, np.inf
+        for id_vecchia, box_vecchia in box_per_traccia.items():
+            if id_vecchia == id_nuova:
+                continue
+            _, fine_vecchia = estremi(box_vecchia)
+            if not (0 < inizio_nuova - fine_vecchia <= buco_massimo):
+                continue
+            centro_vecchia, altezza_vecchia = centro_e_altezza(box_vecchia[fine_vecchia])
+            if max(altezza_vecchia, altezza_nuova) > rapporto_altezze_massimo * max(min(altezza_vecchia, altezza_nuova), 1):
+                continue
+            distanza = np.linalg.norm(centro_nuova - centro_vecchia) / max(altezza_vecchia, 1)
+            if distanza <= distanza_massima and distanza < distanza_migliore:
+                migliore, distanza_migliore = id_vecchia, distanza
+        if migliore is not None:  # la traccia nuova diventa il seguito di quella vecchia
+            presenti = ~np.isnan(box_per_traccia[id_nuova][:, 0])
+            box_per_traccia[migliore][presenti] = box_per_traccia[id_nuova][presenti]
+            keypoint_unito = keypoint_per_traccia[migliore].copy()
+            keypoint_unito[presenti] = keypoint_per_traccia[id_nuova][presenti]
+            keypoint_per_traccia[migliore] = keypoint_unito
+            del box_per_traccia[id_nuova], keypoint_per_traccia[id_nuova]
+    return keypoint_per_traccia, box_per_traccia
 
 
 def punteggio_presenza_e_movimento(keypoint: np.ndarray, box: np.ndarray) -> float:
