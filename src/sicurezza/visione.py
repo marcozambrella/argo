@@ -233,19 +233,33 @@ def comando_estrai(argomenti: list[str] | None = None) -> None:
 #     python -m sicurezza.visione aggiungi-armi --elenco elenco.jsonl --estratti estratti/ --uscita estratti_con_armi/         --modello-armi best.pt --parte 0 --parti 2 --dispositivo 0
 # ==============================================================================================================
 
-def armi_di_un_video(modello_armi, video, dispositivo, confidenza_minima: float = 0.25) -> dict[str, np.ndarray]:
-    frame_armi, box, classi, confidenze = [], [], [], []
+def armi_di_un_video(modello_armi, video, dispositivo, confidenza_minima: float = 0.25,
+                     dimensione_lotto: int = 8) -> dict[str, np.ndarray]:
+    """Solo il detector armi su tutti i frame (a lotti, come l'estrazione: D20)."""
+    frame_armi, box, classi, confidenze, lotto = [], [], [], [], []
+
+    def elabora_lotto(primo_indice):
+        for scostamento, risultato in enumerate(modello_armi.predict(lotto, device=dispositivo, conf=confidenza_minima,
+                                                                     verbose=False)):
+            if len(risultato.boxes):
+                frame_armi.append(np.full(len(risultato.boxes), primo_indice + scostamento, np.int32))
+                box.append(risultato.boxes.xyxy.cpu().numpy())
+                classi.append(risultato.boxes.cls.int().cpu().numpy())
+                confidenze.append(risultato.boxes.conf.cpu().numpy())
+        lotto.clear()
+
+    indice_frame = -1
     for indice_frame, frame in enumerate(leggi_frame(video.percorso_video, FPS_ANALISI, video.inizio_secondi,
                                                      video.fine_secondi)):
-        risultato = modello_armi.predict(frame, device=dispositivo, conf=confidenza_minima, verbose=False)[0].boxes
-        if len(risultato):
-            frame_armi.append(np.full(len(risultato), indice_frame, np.int32))
-            box.append(risultato.xyxy.cpu().numpy())
-            classi.append(risultato.cls.int().cpu().numpy())
-            confidenze.append(risultato.conf.cpu().numpy())
-    unisci = lambda blocchi, forma, tipo: np.concatenate(blocchi).astype(tipo) if blocchi else np.empty(forma, tipo)
-    return {"armi_frame": unisci(frame_armi, (0,), np.int32), "armi_box": unisci(box, (0, 4), np.float32),
-            "armi_classe": unisci(classi, (0,), np.int32), "armi_confidenza": unisci(confidenze, (0,), np.float16)}
+        lotto.append(frame)
+        if len(lotto) == dimensione_lotto:
+            elabora_lotto(indice_frame - dimensione_lotto + 1)
+    if lotto:
+        elabora_lotto(indice_frame - len(lotto) + 1)
+    concatena = lambda blocchi, forma, tipo: np.concatenate(blocchi).astype(tipo) if blocchi else np.empty(forma, tipo)
+    return {"armi_frame": concatena(frame_armi, (0,), np.int32), "armi_box": concatena(box, (0, 4), np.float32),
+            "armi_classe": concatena(classi, (0,), np.int32),
+            "armi_confidenza": concatena(confidenze, (0,), np.float16)}
 
 
 def comando_aggiungi_armi(argomenti: list[str] | None = None) -> None:
@@ -292,7 +306,8 @@ def comando_aggiungi_armi(argomenti: list[str] | None = None) -> None:
 # ==============================================================================================================
 
 CLASSI_ARMA = ("pistol", "knife", "rifle")
-SINONIMI = {"pistol": "pistol", "handgun": "pistol", "gun": "pistol", "knife": "knife", "rifle": "rifle"}
+SINONIMI = {"pistol": "pistol", "handgun": "pistol", "gun": "pistol", "knife": "knife", "rifle": "rifle",
+            "short_rifle": "rifle"}
 CARTELLE_SPLIT = {"train": "train", "valid": "val", "val": "val", "test": "test"}
 ESTENSIONI_IMMAGINE = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
@@ -350,6 +365,88 @@ def comando_unisci_armi(argomenti: list[str] | None = None) -> None:
 
 
 # ==============================================================================================================
+# US Mock Attack (Univ. Siviglia, Hugging Face, CC BY-NC 4.0) — D30
+# 5149 frame 1920×1080 di 20 sequenze CCTV (3 telecamere), annotazioni VOC (Handgun, Short_rifle, Knife), ~70% di
+# frame senza armi (utili come negativi). Non ha split: lo facciamo PER SEQUENZA (frame vicini della stessa sequenza
+# in train e test falserebbero la misura), 70/20/10 come D25.
+# ==============================================================================================================
+URL_MOCK_ATTACK = ("https://huggingface.co/datasets/jsalazar/US-Real-time-gun-detection-in-CCTV-An-open-problem-dataset"
+                   "/resolve/main/weapons_images_2fps.zip")
+CLASSI_MOCK_ATTACK = ("Handgun", "Knife", "Short_rifle")
+QUOTE_SPLIT_MOCK_ATTACK = {"train": 0.7, "valid": 0.2, "test": 0.1}
+
+
+def sequenza_del_frame(nome_file: str) -> str:
+    """Cam1-From09-23-00To10-03-25_Segment_0_x264_frame_1.jpg → Cam1-From09-23-00To10-03-25_Segment_0_x264"""
+    import re
+    return re.sub(r"_frame_\d+$", "", Path(nome_file).stem)
+
+
+def dividi_sequenze(frame_per_sequenza: dict[str, int], seme: int = 0) -> dict[str, str]:
+    """Ogni sequenza intera in uno split, cercando di rispettare le quote in numero di frame."""
+    import random
+    sequenze = sorted(frame_per_sequenza)
+    random.Random(seme).shuffle(sequenze)
+    totale, cumulati, split_della_sequenza = sum(frame_per_sequenza.values()), 0, {}
+    soglie = [("train", QUOTE_SPLIT_MOCK_ATTACK["train"]),
+              ("valid", QUOTE_SPLIT_MOCK_ATTACK["train"] + QUOTE_SPLIT_MOCK_ATTACK["valid"]), ("test", 1.0)]
+    for sequenza in sequenze:
+        centro = (cumulati + frame_per_sequenza[sequenza] / 2) / totale
+        split_della_sequenza[sequenza] = next(nome for nome, soglia in soglie if centro <= soglia)
+        cumulati += frame_per_sequenza[sequenza]
+    return split_della_sequenza
+
+
+def converti_mock_attack(cartella_voc: Path, cartella_uscita: Path, seme: int = 0) -> Counter:
+    """Cartella con coppie .jpg/.xml (VOC) → export in stile Roboflow YOLO (train/valid/test + data.yaml),
+    così `unisci` lo tratta come gli altri dataset."""
+    import xml.etree.ElementTree as ET
+
+    immagini = sorted(Path(cartella_voc).rglob("*.jpg"))
+    frame_per_sequenza = Counter(sequenza_del_frame(immagine.name) for immagine in immagini)
+    split_della_sequenza = dividi_sequenze(frame_per_sequenza, seme)
+    conteggio = Counter()
+    for immagine in immagini:
+        split = split_della_sequenza[sequenza_del_frame(immagine.name)]
+        (cartella_uscita / split / "images").mkdir(parents=True, exist_ok=True)
+        (cartella_uscita / split / "labels").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(immagine, cartella_uscita / split / "images" / immagine.name)
+        righe = []
+        file_xml = immagine.with_suffix(".xml")
+        if file_xml.exists():
+            radice = ET.parse(file_xml).getroot()
+            larghezza = float(radice.findtext("size/width"))
+            altezza = float(radice.findtext("size/height"))
+            for oggetto in radice.iter("object"):
+                nome = oggetto.findtext("name")
+                if nome not in CLASSI_MOCK_ATTACK:
+                    conteggio[(split, f"sconosciuta:{nome}")] += 1
+                    continue
+                box = oggetto.find("bndbox")
+                x1, y1, x2, y2 = (float(box.findtext(lato)) for lato in ("xmin", "ymin", "xmax", "ymax"))
+                righe.append(f"{CLASSI_MOCK_ATTACK.index(nome)} {(x1 + x2) / 2 / larghezza:.6f} "
+                             f"{(y1 + y2) / 2 / altezza:.6f} {(x2 - x1) / larghezza:.6f} {(y2 - y1) / altezza:.6f}")
+                conteggio[(split, nome)] += 1
+        (cartella_uscita / split / "labels" / (immagine.stem + ".txt")).write_text(
+            "\n".join(righe) + ("\n" if righe else ""))
+        conteggio[(split, "immagini")] += 1
+        conteggio[(split, "senza_armi")] += not righe
+    (cartella_uscita / "data.yaml").write_text(yaml.safe_dump(
+        {"train": "../train/images", "val": "../valid/images", "test": "../test/images",
+         "nc": len(CLASSI_MOCK_ATTACK), "names": list(CLASSI_MOCK_ATTACK)}, sort_keys=False))
+    return conteggio
+
+
+def comando_converti_mock_attack(argomenti: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--sorgente", required=True, help="cartella con le coppie .jpg/.xml di weapons_images_2fps.zip")
+    parser.add_argument("--uscita", required=True)
+    argomenti = parser.parse_args(argomenti)
+    for (split, voce), numero in sorted(converti_mock_attack(Path(argomenti.sorgente), Path(argomenti.uscita)).items()):
+        print(f"{split:6s} {voce:20s} {numero}")
+
+
+# ==============================================================================================================
 # armi/addestra_detector
 # Fine-tuning di YOLO26s sul dataset armi unito (D4). Iperparametri PROVVISORI (DA DECIDERE).
 #
@@ -388,7 +485,7 @@ def comando_addestra_detector(argomenti: list[str] | None = None) -> None:
 # ==============================================================================================================
 # riga di comando: python -m sicurezza.visione <comando> [opzioni]
 # ==============================================================================================================
-COMANDI = {"estrai": comando_estrai, "aggiungi-armi": comando_aggiungi_armi, "unisci-armi": comando_unisci_armi, "addestra-detector": comando_addestra_detector}
+COMANDI = {"estrai": comando_estrai, "aggiungi-armi": comando_aggiungi_armi, "unisci-armi": comando_unisci_armi, "converti-mock-attack": comando_converti_mock_attack, "addestra-detector": comando_addestra_detector}
 
 
 def main(argomenti: list[str] | None = None) -> None:

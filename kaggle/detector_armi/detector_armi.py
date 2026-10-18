@@ -12,13 +12,23 @@ if shutil.which("ffprobe") is None:  # il lettore video usa ffmpeg/ffprobe: buil
                    "tar -xJ -C /tmp && cp /tmp/ffmpeg-*-static/ff* /usr/local/bin/", shell=True, check=True)
 # =====
 
-"""Passo 3: fine-tuning YOLO26s sul dataset armi unito (dataset Kaggle privato creato dagli export Roboflow)."""
-import subprocess, sys
+"""Passo 3: fine-tuning YOLO26s sul dataset armi unito: export Roboflow (dataset Kaggle privato) + US Mock Attack
+(D30, scaricato qui da Hugging Face e convertito da VOC, split per sequenza)."""
+import subprocess, sys, urllib.request, zipfile
 from pathlib import Path
 
-export = sorted({p.parent for p in Path("/kaggle/input").glob("**/data.yaml")})
-print("export trovati:", export, flush=True)
 ambiente = {**os.environ, "PYTHONPATH": "/tmp/repo/src"}
+
+# US Mock Attack: ~1,5 GB da Hugging Face, estratto e convertito in /tmp (non finisce nell'output del kernel)
+from sicurezza.visione import URL_MOCK_ATTACK
+urllib.request.urlretrieve(URL_MOCK_ATTACK, "/tmp/mock_attack.zip")
+zipfile.ZipFile("/tmp/mock_attack.zip").extractall("/tmp/mock_attack_voc")
+Path("/tmp/mock_attack.zip").unlink()
+subprocess.run([sys.executable, "-m", "sicurezza.visione", "converti-mock-attack", "--sorgente", "/tmp/mock_attack_voc",
+                "--uscita", "/tmp/mock_attack"], check=True, env=ambiente)
+
+export = sorted({p.parent for p in Path("/kaggle/input").glob("**/data.yaml")}) + [Path("/tmp/mock_attack")]
+print("export:", export, flush=True)
 subprocess.run([sys.executable, "-m", "sicurezza.visione", "unisci-armi", "--sorgenti", *map(str, export),
                 "--uscita", "/tmp/armi_unite"], check=True, env=ambiente)
 subprocess.run([sys.executable, "-m", "sicurezza.visione", "addestra-detector", "--dati", "/tmp/armi_unite/data.yaml",

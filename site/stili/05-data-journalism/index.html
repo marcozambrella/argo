@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data-journalism · Roma Safe CCTV</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,700;1,6..72,400&family=Libre+Franklin:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+/* 05 · Data-journalism — scrollytelling: un grafico fisso che si costruisce passo dopo passo mentre si legge. */
+:root {
+  --carta: #f6f1e7; --inchiostro: #1f1c18; --tenue: #6d675d; --griglia: #e2dacb;
+  --arancio: #d9480f; --blu: #1c6db0; --verde: #2f7d4f;
+  --serif: "Newsreader", Georgia, serif; --sans: "Libre Franklin", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --carta: #191714; --inchiostro: #efe9de; --tenue: #a39b8d; --griglia: #34302a; --arancio: #ff7a3d; --blu: #5aa6eb; --verde: #5fc28a; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--carta); color: var(--inchiostro); font: 400 19px/1.6 var(--serif); }
+a { color: var(--blu); }
+:focus-visible { outline: 3px solid var(--blu); outline-offset: 2px; }
+.occhiello { font: 800 13px/1 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--arancio); }
+.hero { max-width: 760px; margin: 0 auto; padding: 80px 20px 30px; text-align: center; }
+.hero h1 { font: 700 clamp(44px, 7vw, 76px)/1.02 var(--serif); letter-spacing: -.02em; margin: 18px 0; }
+.firma { font: 400 14px/1.4 var(--sans); color: var(--tenue); }
+.segnaposto { border: 1.5px dashed var(--arancio); color: var(--arancio); padding: 8px 12px; font: 600 14px/1.4 var(--sans); margin: 10px 0; text-align: left; }
+.video-largo { max-width: 1100px; margin: 20px auto 0; padding: 0 20px; }
+.video-largo video { width: 100%; display: block; border-radius: 4px; background: #000; }
+.video-largo figcaption { font: 400 13px/1.45 var(--sans); color: var(--tenue); margin-top: 8px; max-width: 760px; }
+.testo { max-width: 680px; margin: 60px auto; padding: 0 20px; }
+.testo h2 { font: 700 38px/1.1 var(--serif); margin: 0 0 16px; }
+
+/* scrollytelling */
+.racconto { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 40px; max-width: 1180px; margin: 0 auto; padding: 0 20px; }
+.passaggi { padding: 30vh 0 40vh; }
+.passaggio { min-height: 70vh; display: flex; align-items: center; }
+.passaggio > div { background: color-mix(in srgb, var(--carta) 92%, var(--inchiostro)); border-left: 4px solid var(--griglia); padding: 18px 22px; transition: border-color .3s, opacity .3s; opacity: .5; }
+.passaggio.attivo > div { border-color: var(--arancio); opacity: 1; }
+.passaggio .numero { font: 800 12px/1 var(--sans); letter-spacing: .12em; color: var(--tenue); }
+.passaggio h3 { font: 700 26px/1.15 var(--serif); margin: 6px 0 6px; }
+.passaggio .tecnica { font: 600 13px/1.3 var(--sans); color: var(--blu); }
+.grafico-fisso { position: sticky; top: 10vh; height: 80vh; display: flex; flex-direction: column; justify-content: center; }
+#scena { width: 100%; height: auto; max-height: 70vh; }
+#scena text { font-family: var(--sans); fill: var(--inchiostro); }
+.legenda-scena { font: 400 13px/1.4 var(--sans); color: var(--tenue); margin-top: 6px; min-height: 2.8em; }
+.livello { opacity: 0; transition: opacity .6s; }
+.livello.visibile { opacity: 1; }
+
+/* grafico finestre */
+.grafico-finestre { max-width: 900px; margin: 0 auto; padding: 0 20px 80px; }
+.grafico-finestre h2 { font: 700 38px/1.1 var(--serif); }
+#grafico-finestre { width: 100%; height: auto; display: block; }
+#grafico-finestre text { font-family: var(--sans); fill: var(--inchiostro); }
+.comando { display: flex; gap: 16px; align-items: center; font: 600 15px var(--sans); margin-top: 8px; }
+.comando input { flex: 1; accent-color: var(--arancio); height: 30px; }
+.fonte { font: 400 13px/1.4 var(--sans); color: var(--tenue); border-top: 1px solid var(--griglia); padding-top: 8px; }
+.piede { max-width: 900px; margin: 0 auto; padding: 24px 20px 48px; font: 400 13px var(--sans); color: var(--tenue); display: flex; justify-content: space-between; border-top: 1px solid var(--griglia); }
+
+@media (max-width: 860px) {
+  .racconto { grid-template-columns: 1fr; }
+  .grafico-fisso { top: 0; height: 55vh; z-index: 1; background: var(--carta); order: -1; }
+  #scena { max-height: 45vh; }
+  .passaggi { padding: 10vh 0 30vh; position: relative; z-index: 2; }
+  .passaggio { min-height: 80vh; }
+}
+@media (prefers-reduced-motion: reduce) { .livello, .passaggio > div { transition: none; } }
+</style>
+</head>
+<body>
+<header class="hero">
+  <p class="occhiello">Sicurezza · Roma · Intelligenza artificiale</p>
+  <h1 class="segnaposto" data-segnaposto="titoloHero"></h1>
+  <p class="segnaposto" data-segnaposto="sottotitoloHero"></p>
+  <p class="firma"><span class="segnaposto">[TESTO DI MARCO — firma e data]</span></p>
+</header>
+<figure class="video-largo">
+  <video src="../condivisi/hero.mp4" poster="../condivisi/hero-poster.jpg" autoplay muted loop playsinline
+    aria-label="Montaggio dei casi d'uso con le rilevazioni vere della rete"></video>
+  <figcaption>Le box, gli scheletri e gli ID sono l'uscita reale della rete su clip di repertorio (Pexels). Video: Roma Safe CCTV.</figcaption>
+</figure>
+
+<section class="testo" aria-labelledby="titolo-come">
+  <p class="occhiello">La pipeline</p>
+  <h2 id="titolo-come">Come funziona</h2>
+  <p class="segnaposto" data-segnaposto="introPipeline"></p>
+</section>
+
+<div class="racconto">
+  <div class="passaggi" id="passaggi"></div>
+  <div class="grafico-fisso" aria-hidden="true">
+    <svg id="scena" viewBox="0 0 520 420"></svg>
+    <p class="legenda-scena" id="legenda-scena"></p>
+  </div>
+</div>
+
+<section class="grafico-finestre" aria-labelledby="titolo-finestre">
+  <p class="occhiello">Il dettaglio</p>
+  <h2 id="titolo-finestre">Le finestre scorrevoli</h2>
+  <p class="segnaposto" data-segnaposto="introFinestre"></p>
+  <svg id="grafico-finestre" viewBox="0 0 860 300" role="img" aria-labelledby="descrizione-grafico"></svg>
+  <label class="comando">Finestra <output id="numero-finestra">1</output> <input type="range" id="cursore-finestre" min="0" value="0"></label>
+  <p class="fonte" id="descrizione-grafico">Finestre di 40 frame con passo di 10 su 160 frame a 25 fps. Fonte: parametri in <code>src/sicurezza/dati.py</code>.</p>
+</section>
+<footer class="piede"><span>Demo di stile 05 / 15 · Data-journalism</span><a href="../">Tutte le demo</a></footer>
+
+<script type="module">
+import { FINESTRE, NUMERO_FINESTRE, PASSI_PIPELINE, CLASSI, formattaSecondi, riempiSegnaposto, statoFinestra } from "../condivisi/progetto.js";
+riempiSegnaposto();
+const NS = "http://www.w3.org/2000/svg";
+const colore = (nome) => getComputedStyle(document.documentElement).getPropertyValue(nome).trim();
+const crea = (padre, nome, attributi, testo) => {
+  const elemento = document.createElementNS(NS, nome);
+  for (const [chiave, valore] of Object.entries(attributi)) elemento.setAttribute(chiave, valore);
+  if (testo !== undefined) elemento.textContent = testo;
+  padre.appendChild(elemento);
+  return elemento;
+};
+
+// --- Scena: una figura schematica (non un dato) che si arricchisce a ogni passaggio -------------------------
+const OSSA = [[15,13],[13,11],[16,14],[14,12],[11,12],[5,11],[6,12],[5,6],[5,7],[6,8],[7,9],[8,10],[1,2],[0,1],[0,2],[1,3],[2,4],[3,5],[4,6]];
+const POSA = [[0,.07],[-.02,.05],[.02,.05],[-.04,.06],[.04,.06],[-.1,.2],[.1,.2],[-.13,.38],[.16,.3],[-.14,.52],[.3,.25],[-.07,.53],[.07,.53],[-.07,.76],[.07,.76],[-.07,1],[.07,1]];
+const persona = (centroX, specchio) => POSA.map(([x, y]) => [centroX + (specchio ? -x : x) * 220, 70 + y * 230]);
+const persone = [persona(170, false), persona(350, true)];
+const arma = [persone[0][10][0] + 14, persone[0][10][1] - 6];
+const svg = document.getElementById("scena");
+const livelli = [];
+const LEGENDE = [
+  "Un fotogramma: due persone in strada (figura schematica).",
+  "Il modello di posa trova 17 punti del corpo per ogni persona.",
+  "Il detector armi cerca pistole, coltelli e fucili.",
+  "Si guardano 40 fotogrammi insieme, 1,6 secondi.",
+  "Punti e armi diventano un grafo: ossa, persone diverse, arma–polso.",
+  "La rete a grafo sceglie una di quattro classi. Risultati: in arrivo dopo l'addestramento.",
+  "Indipendente dal resto: WARNING ARMA se un'arma è vicino a una persona in 5 frame su 40.",
+];
+function disegnaScena() {
+  svg.replaceChildren();
+  livelli.length = 0;
+  const inchiostro = colore("--inchiostro"), arancio = colore("--arancio"), blu = colore("--blu"), griglia = colore("--griglia");
+  const livello = () => { const g = crea(svg, "g", { class: "livello" }); livelli.push(g); return g; };
+  // 0: inquadratura e sagome
+  const l0 = livello();
+  crea(l0, "rect", { x: 20, y: 30, width: 480, height: 300, fill: "none", stroke: griglia, "stroke-width": 2 });
+  for (const p of persone) crea(l0, "ellipse", { cx: p[0][0], cy: 195, rx: 46, ry: 125, fill: griglia });
+  // 1: scheletri
+  const l1 = livello();
+  for (const p of persone) {
+    for (const [a, b] of OSSA) crea(l1, "line", { x1: p[a][0], y1: p[a][1], x2: p[b][0], y2: p[b][1], stroke: blu, "stroke-width": 2.5 });
+    for (const [x, y] of p) crea(l1, "circle", { cx: x, cy: y, r: 3.5, fill: inchiostro });
+  }
+  // 2: arma
+  const l2 = livello();
+  crea(l2, "rect", { x: arma[0] - 12, y: arma[1] - 12, width: 24, height: 24, fill: "none", stroke: arancio, "stroke-width": 2.5 });
+  crea(l2, "text", { x: arma[0] + 16, y: arma[1] - 10, "font-size": 12, fill: arancio }, "arma");
+  // 3: striscia di 40 frame
+  const l3 = livello();
+  for (let i = 0; i < 40; i++) crea(l3, "rect", { x: 20 + i * 12, y: 345, width: 10, height: 18, fill: blu, opacity: 0.3 + 0.7 * (i / 39) });
+  crea(l3, "text", { x: 20, y: 384, "font-size": 12 }, "40 frame = 1,6 s");
+  // 4: archi del grafo
+  const l4 = livello();
+  for (const nodo of [0, 9, 10, 5, 6]) for (const altro of [0, 9, 10])
+    crea(l4, "line", { x1: persone[0][nodo][0], y1: persone[0][nodo][1], x2: persone[1][altro][0], y2: persone[1][altro][1], stroke: inchiostro, opacity: .25 });
+  for (const p of persone) for (const polso of [9, 10])
+    crea(l4, "line", { x1: arma[0], y1: arma[1], x2: p[polso][0], y2: p[polso][1], stroke: arancio, "stroke-dasharray": "4 3" });
+  // 5: quattro classi, barre vuote (nessun risultato inventato)
+  const l5 = livello();
+  CLASSI.forEach((classe, indice) => {
+    crea(l5, "text", { x: 300, y: 362 + indice * 15, "font-size": 11, "text-anchor": "end" }, classe);
+    crea(l5, "rect", { x: 308, y: 353 + indice * 15, width: 180, height: 10, fill: "none", stroke: griglia });
+  });
+  crea(l5, "text", { x: 398, y: 420, "font-size": 10, "text-anchor": "middle", fill: colore("--tenue") }, "probabilità: in attesa dei risultati");
+  // 6: warning
+  const l6 = livello();
+  crea(l6, "rect", { x: 300, y: 2, width: 200, height: 24, fill: arancio });
+  crea(l6, "text", { x: 400, y: 19, "font-size": 13, "font-weight": 800, "text-anchor": "middle", fill: colore("--carta") }, "WARNING ARMA");
+  mostraFinoA(passaggioAttivo);
+}
+let passaggioAttivo = 0;
+function mostraFinoA(indice) {
+  passaggioAttivo = indice;
+  livelli.forEach((livello, numero) => livello.classList.toggle("visibile", numero <= indice));
+  document.getElementById("legenda-scena").textContent = LEGENDE[indice];
+}
+
+const contenitore = document.getElementById("passaggi");
+PASSI_PIPELINE.forEach((passo, indice) => {
+  const blocco = document.createElement("div");
+  blocco.className = "passaggio";
+  blocco.dataset.indice = indice;
+  blocco.innerHTML = `<div><span class="numero">PASSO ${passo.numero} DI 7</span><h3>${passo.nome}</h3>
+    <p>${passo.dettaglio}.</p><span class="tecnica">${passo.tecnica}</span></div>`;
+  contenitore.appendChild(blocco);
+});
+const osservatore = new IntersectionObserver((voci) => {
+  for (const voce of voci) if (voce.isIntersecting) {
+    document.querySelectorAll(".passaggio").forEach((b) => b.classList.toggle("attivo", b === voce.target));
+    mostraFinoA(Number(voce.target.dataset.indice));
+  }
+}, { rootMargin: "-45% 0px -45% 0px" });
+document.querySelectorAll(".passaggio").forEach((blocco) => osservatore.observe(blocco));
+disegnaScena();
+
+// --- Grafico delle finestre con annotazioni --------------------------------------------------------------
+const grafico = document.getElementById("grafico-finestre");
+const cursore = document.getElementById("cursore-finestre");
+cursore.max = NUMERO_FINESTRE - 1;
+const X0 = 40, LARGO = 790, x = (frame) => X0 + (frame / FINESTRE.frameTotaliMostrati) * LARGO;
+function disegnaFinestre() {
+  grafico.replaceChildren();
+  const inchiostro = colore("--inchiostro"), arancio = colore("--arancio"), griglia = colore("--griglia"), tenue = colore("--tenue");
+  const stato = statoFinestra(Number(cursore.value));
+  for (let secondo = 0; secondo <= 6; secondo++) {
+    const posizione = x(secondo * FINESTRE.fps);
+    crea(grafico, "line", { x1: posizione, y1: 40, x2: posizione, y2: 250, stroke: griglia });
+    crea(grafico, "text", { x: posizione, y: 270, "font-size": 12, "text-anchor": "middle", fill: tenue }, `${secondo} s`);
+  }
+  for (let indice = 0; indice < NUMERO_FINESTRE; indice++) {
+    const finestra = statoFinestra(indice);
+    const selezionata = indice === stato.indice;
+    crea(grafico, "rect", { x: x(finestra.primoFrame), y: 50 + indice * 15, width: x(40) - X0, height: 11, rx: 2,
+      fill: selezionata ? arancio : inchiostro, opacity: selezionata ? 1 : 0.12 });
+  }
+  // annotazione in stile giornalistico
+  const yBarra = 50 + stato.indice * 15;
+  const xNota = Math.min(x(stato.ultimoFrame + 1) + 14, 640);
+  crea(grafico, "line", { x1: x(stato.ultimoFrame + 1) + 2, y1: yBarra + 5, x2: xNota + 4, y2: yBarra + 5, stroke: inchiostro });
+  crea(grafico, "text", { x: xNota + 8, y: yBarra + 9, "font-size": 13, "font-weight": 600 },
+    `frame ${stato.primoFrame}–${stato.ultimoFrame} · ${formattaSecondi(stato.secondoInizio)}–${formattaSecondi(stato.secondoFine)} s`);
+  crea(grafico, "text", { x: X0, y: 24, "font-size": 13, "font-weight": 800 }, "Ogni barra è una finestra; ogni frame cade in 4 finestre");
+  document.getElementById("numero-finestra").textContent = stato.indice + 1;
+}
+cursore.addEventListener("input", disegnaFinestre);
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { disegnaScena(); disegnaFinestre(); });
+disegnaFinestre();
+</script>
+</body>
+</html>

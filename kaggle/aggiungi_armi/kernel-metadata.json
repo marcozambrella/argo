@@ -1,0 +1,24 @@
+{
+  "id": "KAGGLE_UTENTE/roma-safe-cctv-aggiungi-armi",
+  "title": "roma-safe-cctv aggiungi armi",
+  "code_file": "aggiungi_armi.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "machine_shape": "NvidiaTeslaT4",
+  "dataset_sources": [
+    "vulamnguyen/rwf2000",
+    "mohamedtariki/vsd-cctv-fights",
+    "toluwaniaremu/smartcity-cctv-violence-detection-dataset-scvd",
+    "bypktt/ucf-crimes",
+    "aniketsahu09/chain-snatching-cctv-dataset"
+  ],
+  "kernel_sources": [
+    "KAGGLE_UTENTE/roma-safe-cctv-estrazione",
+    "KAGGLE_UTENTE/roma-safe-cctv-detector-armi"
+  ],
+  "competition_sources": [],
+  "model_sources": []
+}

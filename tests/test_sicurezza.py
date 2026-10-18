@@ -11,7 +11,7 @@ import yaml
 from sicurezza.dati import gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
 from sicurezza.demo import analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
-from sicurezza.visione import Estrattore, estrai_elenco, impacchetta_estrazione, unisci
+from sicurezza.visione import converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
 
 
 # ==============================================================================================================
@@ -329,6 +329,9 @@ def test_secondo_passaggio_armi_stessi_frame(tmp_path):
     armi = armi_di_un_video(YOLO(str(PESI_POSE)), video, "cpu")
     dati = np.load(tmp_path / "prova__persone.npz")
     assert len(armi["armi_frame"]) > 0 and armi["armi_frame"].max() < int(dati["numero_frame"])
+    uno_alla_volta = armi_di_un_video(YOLO(str(PESI_POSE)), video, "cpu", dimensione_lotto=1)
+    np.testing.assert_array_equal(armi["armi_frame"], uno_alla_volta["armi_frame"])   # lotti = un frame alla volta
+    np.testing.assert_allclose(armi["armi_box"], uno_alla_volta["armi_box"], atol=0.5)
 
 
 @pytest.mark.skipif(not PESI_POSE.exists(), reason="pesi yolo26n-pose non scaricati in runs/")
@@ -589,3 +592,44 @@ def test_addestramento_impara(dataset_finto, nome_modello, tmp_path):
     assert json.loads((tmp_path / "risultati.json").read_text())["modello"] == nome_modello
     # polsi agitati vs fermi: il compito è facilissimo, un modello che funziona lo impara
     assert risultati["val"]["macro_f1"] >= 0.8, risultati["storia"]
+
+
+# ==============================================================================================================
+# US Mock Attack (D30)
+# ==============================================================================================================
+
+def scrivi_frame_voc(cartella, sequenza, numero, oggetti):
+    nome = f"{sequenza}_frame_{numero}"
+    (cartella / f"{nome}.jpg").write_bytes(b"jpg")
+    righe_oggetti = "".join(f"<object><name>{classe}</name><bndbox><xmin>{x1}</xmin><ymin>{y1}</ymin>"
+                            f"<xmax>{x2}</xmax><ymax>{y2}</ymax></bndbox></object>" for classe, x1, y1, x2, y2 in oggetti)
+    (cartella / f"{nome}.xml").write_text(f"<annotation><filename>{nome}</filename><size><width>1920</width>"
+                                          f"<height>1080</height><depth>3</depth></size>{righe_oggetti}</annotation>")
+
+
+def test_mock_attack_conversione_e_split_per_sequenza(tmp_path):
+    sorgente = tmp_path / "Images"
+    sorgente.mkdir()
+    for indice_sequenza in range(10):
+        sequenza = f"Cam{indice_sequenza % 3 + 1}-From09-00-00To10-00-00_Segment_{indice_sequenza}_x264"
+        for frame in range(1, 6):
+            oggetti = [("Handgun", 960, 540, 1000, 600)] if frame == 1 else \
+                      [("Short_rifle", 0, 0, 192, 108), ("Knife", 10, 10, 20, 20)] if frame == 2 else []
+            scrivi_frame_voc(sorgente, sequenza, frame, oggetti)
+    conteggio = converti_mock_attack(sorgente, tmp_path / "mock")
+    assert sum(conteggio[(split, "immagini")] for split in ("train", "valid", "test")) == 50
+    assert sequenza_del_frame("Cam1-From09-23-00To10-03-25_Segment_0_x264_frame_17.jpg") == \
+        "Cam1-From09-23-00To10-03-25_Segment_0_x264"
+    # nessuna sequenza divisa tra split
+    split_di = {}
+    for etichette in (tmp_path / "mock").glob("*/labels/*.txt"):
+        split_di.setdefault(sequenza_del_frame(etichette.name), set()).add(etichette.parent.parent.name)
+    assert all(len(splits) == 1 for splits in split_di.values()) and len(split_di) == 10
+    # unione con le classi del progetto: Handgun → pistol (0), Short_rifle → rifle (2), Knife → knife (1)
+    unisci([tmp_path / "mock"], tmp_path / "unito")
+    righe = [riga.split()[0] for f in (tmp_path / "unito" / "labels").rglob("*.txt") for riga in f.read_text().splitlines()]
+    assert sorted(set(righe)) == ["0", "1", "2"] and righe.count("0") == 10 and righe.count("1") == 10
+    vuoti = [f for f in (tmp_path / "unito" / "labels").rglob("*.txt") if not f.read_text().strip()]
+    assert len(vuoti) == 30                                     # frame senza armi restano come negativi
+    primo = next((tmp_path / "mock").glob("*/labels/*_frame_1.txt")).read_text().split()
+    assert primo[0] == "0" and abs(float(primo[1]) - 980 / 1920) < 1e-4  # centro x normalizzato
