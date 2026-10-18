@@ -13,15 +13,15 @@ if shutil.which("ffprobe") is None:  # il lettore video usa ffmpeg/ffprobe: buil
 # =====
 
 """Passi 5-6: finestre etichettate dalle estrazioni, poi Graph-Transformer (GPU 0) e ST-GCN (GPU 1) in parallelo."""
-import os, subprocess, sys
+import subprocess, sys
 from pathlib import Path
 
 ingresso = next(Path("/kaggle/input").glob("**/annotazioni.jsonl"))
 cartelle_estratti = [str(c) for c in Path("/kaggle/input").glob("**/estratti") if c.is_dir()]
 ambiente = {**os.environ, "PYTHONPATH": "/tmp/repo/src"}
-subprocess.run([sys.executable, "-m", "sicurezza.dataset_finestre", "--annotazioni", str(ingresso),
+subprocess.run([sys.executable, "-m", "sicurezza.modelli", "dataset-finestre", "--annotazioni", str(ingresso),
                 "--estratti", *cartelle_estratti, "--uscita", "/tmp/finestre.npz"], check=True, env=ambiente)
-processi = [subprocess.Popen([sys.executable, "-m", "sicurezza.addestramento", "--finestre", "/tmp/finestre.npz",
+processi = [subprocess.Popen([sys.executable, "-m", "sicurezza.modelli", "addestra", "--finestre", "/tmp/finestre.npz",
                               "--modello", modello, "--uscita", f"/kaggle/working/{modello}"],
                              env={**ambiente, "CUDA_VISIBLE_DEVICES": str(gpu)})
             for gpu, modello in enumerate(["graph_transformer", "stgcn"])]

@@ -20,7 +20,7 @@ import subprocess, sys
 from pathlib import Path
 
 uscita = Path("/kaggle/working")
-subprocess.run([sys.executable, "-m", "sicurezza.prepara_elenchi", "--input", "/kaggle/input", "--uscita",
+subprocess.run([sys.executable, "-m", "sicurezza.dati", "prepara-elenchi", "--input", "/kaggle/input", "--uscita",
                 str(uscita)], check=True, env={**os.environ, "PYTHONPATH": "/tmp/repo/src"})
 
 # detector armi fine-tunato, se il kernel del detector è tra le sorgenti (DA DECIDERE: aspettarlo o no)
@@ -31,7 +31,7 @@ gia_estratti = [str(cartella) for cartella in Path("/kaggle/input").glob("**/est
 
 PROCESSI_PER_GPU, NUMERO_GPU = 2, 2
 parti = PROCESSI_PER_GPU * NUMERO_GPU
-processi = [subprocess.Popen([sys.executable, "-m", "sicurezza.estrazione", "--elenco", str(uscita / "elenco.jsonl"),
+processi = [subprocess.Popen([sys.executable, "-m", "sicurezza.visione", "estrai", "--elenco", str(uscita / "elenco.jsonl"),
                               "--uscita", str(uscita / "estratti"), "--parte", str(parte), "--parti", str(parti),
                               "--dispositivo", str(parte % NUMERO_GPU), "--ore-massime", "11", *opzione_armi,
                               "--gia-estratti", *gia_estratti],

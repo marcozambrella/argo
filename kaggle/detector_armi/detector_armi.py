@@ -19,7 +19,7 @@ from pathlib import Path
 export = sorted({p.parent for p in Path("/kaggle/input").glob("**/data.yaml")})
 print("export trovati:", export, flush=True)
 ambiente = {**os.environ, "PYTHONPATH": "/tmp/repo/src"}
-subprocess.run([sys.executable, "-m", "sicurezza.armi.unisci_dataset", "--sorgenti", *map(str, export),
+subprocess.run([sys.executable, "-m", "sicurezza.visione", "unisci-armi", "--sorgenti", *map(str, export),
                 "--uscita", "/tmp/armi_unite"], check=True, env=ambiente)
-subprocess.run([sys.executable, "-m", "sicurezza.armi.addestra_detector", "--dati", "/tmp/armi_unite/data.yaml",
+subprocess.run([sys.executable, "-m", "sicurezza.visione", "addestra-detector", "--dati", "/tmp/armi_unite/data.yaml",
                 "--uscita", "/kaggle/working", "--dispositivo", "0"], check=True, env=ambiente)

@@ -13,10 +13,10 @@ if shutil.which("ffprobe") is None:  # il lettore video usa ffmpeg/ffprobe: buil
 # =====
 
 """Passo 2 del piano, v5: pipeline nuova (D20 lotti + D21 TrackTrack, GMC spenta per telecamere fisse)."""
-import json, os, subprocess, sys, time
+import json, subprocess, sys, time
 from pathlib import Path
 import numpy as np
-from sicurezza.estrazione import VideoDaEstrarre, scrivi_elenco
+from sicurezza.dati import VideoDaEstrarre, scrivi_elenco
 
 video = sorted(Path("/kaggle/input").glob("**/RWF-2000/val/*/*.avi"))[:48]
 ambiente = {**os.environ, "PYTHONPATH": "/tmp/repo/src"}
@@ -27,7 +27,7 @@ def misura(nome, processi_per_gpu, telecamera_mobile):
     scrivi_elenco([VideoDaEstrarre(f"{nome}/{p.stem}", str(p), telecamera_mobile=telecamera_mobile) for p in video], elenco)
     uscita, parti = Path(f"/tmp/{nome}"), 2 * processi_per_gpu
     inizio = time.perf_counter()
-    lanciati = [subprocess.Popen([sys.executable, "-m", "sicurezza.estrazione", "--elenco", str(elenco), "--uscita",
+    lanciati = [subprocess.Popen([sys.executable, "-m", "sicurezza.visione", "estrai", "--elenco", str(elenco), "--uscita",
                                   str(uscita), "--parte", str(parte), "--parti", str(parti), "--dispositivo",
                                   str(parte % 2), "--modello-armi", "yolo26s.pt"], env=ambiente,
                                  stdout=subprocess.DEVNULL) for parte in range(parti)]

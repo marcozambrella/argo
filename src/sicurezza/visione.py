@@ -1,51 +1,32 @@
-"""Estrazione delle timeline: video a 25 fps → pose tracciate (YOLO26s-pose + BoT-SORT) + armi → un .npz per video.
+"""Sicurezza NN — visione. File unico (richiesta di Marco: massimo 5 file Python)."""
 
-L'estrazione è la parte costosa e non dipende dalle etichette: si fa una volta sola e i file si riusano per ogni
-esperimento. Riprende da dove si era fermata (salta i .npz già presenti) e si divide in parti, una per GPU.
-
-Uso (una parte per GPU):
-    python -m sicurezza.estrazione --elenco elenco.jsonl --uscita estratti/ --parte 0 --parti 2 --dispositivo 0
-"""
-
-import argparse
-import json
-import os
-import time
-from dataclasses import asdict, dataclass
+from collections import Counter
 from pathlib import Path
+import argparse
+import os
+import shutil
+import sys
+import time
 
 import numpy as np
+import yaml
 
-from .config import FPS_ANALISI
-from .video import leggi_frame, leggi_info_video
+from .dati import VideoDaEstrarre, FPS_ANALISI, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto
+
+
+# ==============================================================================================================
+# estrazione
+# Estrazione delle timeline: video a 25 fps → pose tracciate (YOLO26s-pose + BoT-SORT) + armi → un .npz per video.
+#
+# L'estrazione è la parte costosa e non dipende dalle etichette: si fa una volta sola e i file si riusano per ogni
+# esperimento. Riprende da dove si era fermata (salta i .npz già presenti) e si divide in parti, una per GPU.
+#
+# Uso (una parte per GPU):
+#     python -m sicurezza.visione estrai --elenco elenco.jsonl --uscita estratti/ --parte 0 --parti 2 --dispositivo 0
+# ==============================================================================================================
 
 MODELLO_POSE_PREDEFINITO = "yolo26s-pose.pt"   # D3
 TRACKER_PREDEFINITO = "tracktrack.yaml"        # D21: il vero default di .track in Ultralytics 8.4 (D3)
-
-
-@dataclass
-class VideoDaEstrarre:
-    """Un video (o un suo segmento) da estrarre. `id_clip` diventa il nome del file .npz."""
-    id_clip: str
-    percorso_video: str
-    inizio_secondi: float | None = None
-    fine_secondi: float | None = None
-    telecamera_mobile: bool = False   # D20: la compensazione del movimento (GMC) del tracker serve solo qui
-
-
-def leggi_elenco(percorso_elenco: str | Path) -> list[VideoDaEstrarre]:
-    with open(percorso_elenco) as file_elenco:
-        return [VideoDaEstrarre(**json.loads(riga)) for riga in file_elenco if riga.strip()]
-
-
-def scrivi_elenco(video_da_estrarre: list[VideoDaEstrarre], percorso_elenco: str | Path) -> None:
-    with open(percorso_elenco, "w") as file_elenco:
-        for video in video_da_estrarre:
-            file_elenco.write(json.dumps(asdict(video)) + "\n")
-
-
-def nome_file_estratto(id_clip: str) -> str:
-    return id_clip.replace("/", "__") + ".npz"
 
 
 PERSONE_VUOTE = {"id_traccia": np.empty(0, np.int32), "box": np.empty((0, 4), np.float32),
@@ -221,8 +202,8 @@ def estrai_elenco(video_da_estrarre: list[VideoDaEstrarre], cartella_uscita: str
               f"media {frame_totali / secondi:.1f} frame/s", flush=True)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+def comando_estrai(argomenti: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser()
     parser.add_argument("--elenco", required=True, help="file .jsonl con un VideoDaEstrarre per riga")
     parser.add_argument("--uscita", required=True)
     parser.add_argument("--parte", type=int, default=0)
@@ -233,12 +214,189 @@ def main() -> None:
     parser.add_argument("--gia-estratti", nargs="*", default=[], help="cartelle con .npz di sessioni precedenti")
     parser.add_argument("--ore-massime", type=float, default=None, help="fermati dopo queste ore (sessioni Kaggle)")
     parser.add_argument("--mezza-precisione", action="store_true", help="FP16 su GPU (D18)")
-    argomenti = parser.parse_args()
+    argomenti = parser.parse_args(argomenti)
 
     estrattore = Estrattore(argomenti.modello_pose, argomenti.modello_armi, argomenti.dispositivo,
                             mezza_precisione=argomenti.mezza_precisione)
     estrai_elenco(leggi_elenco(argomenti.elenco), argomenti.uscita, estrattore, argomenti.parte, argomenti.parti,
                   argomenti.gia_estratti, argomenti.ore_massime * 3600 if argomenti.ore_massime else None)
+
+
+# ==============================================================================================================
+# aggiungi_armi
+# Secondo passaggio OPZIONALE (DA DECIDERE, punto 5 del diario): aggiunge le armi a .npz estratti con la sola pose.
+#
+# Rilegge ogni video a 25 fps (stesso segmento dell'estrazione), passa solo il detector armi e sostituisce i campi
+# armi_* nel .npz. Le persone non vengono toccate.
+#
+# Uso:
+#     python -m sicurezza.visione aggiungi-armi --elenco elenco.jsonl --estratti estratti/ --uscita estratti_con_armi/         --modello-armi best.pt --parte 0 --parti 2 --dispositivo 0
+# ==============================================================================================================
+
+def armi_di_un_video(modello_armi, video, dispositivo, confidenza_minima: float = 0.25) -> dict[str, np.ndarray]:
+    frame_armi, box, classi, confidenze = [], [], [], []
+    for indice_frame, frame in enumerate(leggi_frame(video.percorso_video, FPS_ANALISI, video.inizio_secondi,
+                                                     video.fine_secondi)):
+        risultato = modello_armi.predict(frame, device=dispositivo, conf=confidenza_minima, verbose=False)[0].boxes
+        if len(risultato):
+            frame_armi.append(np.full(len(risultato), indice_frame, np.int32))
+            box.append(risultato.xyxy.cpu().numpy())
+            classi.append(risultato.cls.int().cpu().numpy())
+            confidenze.append(risultato.conf.cpu().numpy())
+    unisci = lambda blocchi, forma, tipo: np.concatenate(blocchi).astype(tipo) if blocchi else np.empty(forma, tipo)
+    return {"armi_frame": unisci(frame_armi, (0,), np.int32), "armi_box": unisci(box, (0, 4), np.float32),
+            "armi_classe": unisci(classi, (0,), np.int32), "armi_confidenza": unisci(confidenze, (0,), np.float16)}
+
+
+def comando_aggiungi_armi(argomenti: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--elenco", required=True)
+    parser.add_argument("--estratti", required=True, help="cartella con i .npz della sola pose")
+    parser.add_argument("--uscita", required=True)
+    parser.add_argument("--modello-armi", required=True)
+    parser.add_argument("--parte", type=int, default=0)
+    parser.add_argument("--parti", type=int, default=1)
+    parser.add_argument("--dispositivo", default=None)
+    argomenti = parser.parse_args(argomenti)
+
+    from ultralytics import YOLO
+    modello_armi = YOLO(argomenti.modello_armi)
+    cartella_uscita = Path(argomenti.uscita)
+    cartella_uscita.mkdir(parents=True, exist_ok=True)
+    for video in leggi_elenco(argomenti.elenco)[argomenti.parte::argomenti.parti]:
+        nome = nome_file_estratto(video.id_clip)
+        sorgente, destinazione = Path(argomenti.estratti) / nome, cartella_uscita / nome
+        if not sorgente.exists() or destinazione.exists():
+            continue
+        dati = dict(np.load(sorgente))
+        armi = armi_di_un_video(modello_armi, video, argomenti.dispositivo)
+        if len(armi["armi_frame"]) and armi["armi_frame"].max() >= int(dati["numero_frame"]):
+            print(f"ATTENZIONE {video.id_clip}: numero di frame diverso dall'estrazione, salto")
+            continue
+        dati.update(armi)
+        temporaneo = destinazione.with_suffix(".tmp.npz")
+        np.savez_compressed(temporaneo, **dati)
+        os.replace(temporaneo, destinazione)
+        print(f"{video.id_clip}: {len(armi['armi_frame'])} armi", flush=True)
+
+
+# ==============================================================================================================
+# armi/unisci_dataset
+# Unisce più export Roboflow in formato YOLO in un unico dataset con classi pistol / knife / rifle (P2).
+#
+# Le classi non previste (grenade, helmet, ...) vengono tolte dalle etichette, ma le immagini restano: diventano
+# esempi "senza arma" o con meno armi, utili contro i falsi positivi.
+#
+# Uso:
+#     python -m sicurezza.visione unisci-armi --sorgenti export_master/ export_prospace/ --uscita armi_unite/
+# ==============================================================================================================
+
+CLASSI_ARMA = ("pistol", "knife", "rifle")
+SINONIMI = {"pistol": "pistol", "handgun": "pistol", "gun": "pistol", "knife": "knife", "rifle": "rifle"}
+CARTELLE_SPLIT = {"train": "train", "valid": "val", "val": "val", "test": "test"}
+ESTENSIONI_IMMAGINE = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
+
+def nomi_classi_export(cartella_export: Path) -> list[str]:
+    configurazione = yaml.safe_load((cartella_export / "data.yaml").read_text())
+    nomi = configurazione["names"]
+    return [nomi[indice] for indice in sorted(nomi)] if isinstance(nomi, dict) else list(nomi)
+
+
+def unisci(cartelle_export: list[Path], cartella_uscita: Path) -> Counter:
+    conteggio = Counter()
+    for numero_sorgente, cartella_export in enumerate(cartelle_export):
+        nomi = nomi_classi_export(cartella_export)
+        nuovo_indice = {indice: CLASSI_ARMA.index(SINONIMI[nome.lower()])
+                        for indice, nome in enumerate(nomi) if nome.lower() in SINONIMI}
+        for cartella_split_export, split in CARTELLE_SPLIT.items():
+            cartella_immagini = cartella_export / cartella_split_export / "images"
+            if not cartella_immagini.exists():
+                continue
+            (cartella_uscita / "images" / split).mkdir(parents=True, exist_ok=True)
+            (cartella_uscita / "labels" / split).mkdir(parents=True, exist_ok=True)
+            for immagine in sorted(cartella_immagini.iterdir()):
+                if immagine.suffix.lower() not in ESTENSIONI_IMMAGINE:
+                    continue
+                nome_nuovo = f"s{numero_sorgente}_{immagine.name}"   # niente collisioni tra export diversi
+                shutil.copy2(immagine, cartella_uscita / "images" / split / nome_nuovo)
+                file_etichette = cartella_export / cartella_split_export / "labels" / (immagine.stem + ".txt")
+                righe_nuove = []
+                if file_etichette.exists():
+                    for riga in file_etichette.read_text().splitlines():
+                        valori = riga.split()
+                        if valori and int(valori[0]) in nuovo_indice:
+                            righe_nuove.append(" ".join([str(nuovo_indice[int(valori[0])]), *valori[1:]]))
+                            conteggio[(split, CLASSI_ARMA[nuovo_indice[int(valori[0])]])] += 1
+                        elif valori:
+                            conteggio[(split, f"tolta:{nomi[int(valori[0])]}")] += 1
+                (cartella_uscita / "labels" / split / (Path(nome_nuovo).stem + ".txt")).write_text(
+                    "\n".join(righe_nuove) + ("\n" if righe_nuove else ""))
+                conteggio[(split, "immagini")] += 1
+    split_presenti = [split for split in ("train", "val", "test") if (cartella_uscita / "images" / split).exists()]
+    (cartella_uscita / "data.yaml").write_text(yaml.safe_dump({
+        "path": str(cartella_uscita.resolve()), **{split: f"images/{split}" for split in split_presenti},
+        "names": dict(enumerate(CLASSI_ARMA))}, sort_keys=False))
+    return conteggio
+
+
+def comando_unisci_armi(argomenti: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--sorgenti", nargs="+", required=True)
+    parser.add_argument("--uscita", required=True)
+    argomenti = parser.parse_args(argomenti)
+    for (split, voce), numero in sorted(unisci([Path(s) for s in argomenti.sorgenti], Path(argomenti.uscita)).items()):
+        print(f"{split:6s} {voce:20s} {numero}")
+
+
+# ==============================================================================================================
+# armi/addestra_detector
+# Fine-tuning di YOLO26s sul dataset armi unito (D4). Iperparametri PROVVISORI (DA DECIDERE).
+#
+# Uso (su Kaggle, GPU):
+#     python -m sicurezza.visione addestra-detector --dati armi_unite/data.yaml --uscita runs/armi
+# ==============================================================================================================
+
+def addestra_detector(percorso_data_yaml: str, cartella_uscita: str, modello_base: str = "yolo26s.pt",
+                      epoche: int = 100, pazienza: int = 20, dimensione_immagine: int = 640, lotto: int = 16,
+                      dispositivo: str | int | None = None):
+    from ultralytics import YOLO
+
+    modello = YOLO(modello_base)
+    modello.train(data=percorso_data_yaml, epochs=epoche, patience=pazienza, imgsz=dimensione_immagine,
+                  batch=lotto, device=dispositivo, project=cartella_uscita, name="yolo26s_armi", exist_ok=True,
+                  seed=0)
+    return modello.val(data=percorso_data_yaml, split="test" if _ha_test(percorso_data_yaml) else "val")
+
+
+def _ha_test(percorso_data_yaml: str) -> bool:
+    import yaml
+    return "test" in yaml.safe_load(open(percorso_data_yaml))
+
+
+def comando_addestra_detector(argomenti: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dati", required=True)
+    parser.add_argument("--uscita", required=True)
+    parser.add_argument("--epoche", type=int, default=100)
+    parser.add_argument("--dispositivo", default=None)
+    argomenti = parser.parse_args(argomenti)
+    metriche = addestra_detector(argomenti.dati, argomenti.uscita, epoche=argomenti.epoche,
+                                 dispositivo=argomenti.dispositivo)
+    print(f"mAP50 {metriche.box.map50:.4f}  mAP50-95 {metriche.box.map:.4f}")
+
+# ==============================================================================================================
+# riga di comando: python -m sicurezza.visione <comando> [opzioni]
+# ==============================================================================================================
+COMANDI = {"estrai": comando_estrai, "aggiungi-armi": comando_aggiungi_armi, "unisci-armi": comando_unisci_armi, "addestra-detector": comando_addestra_detector}
+
+
+def main(argomenti: list[str] | None = None) -> None:
+    argomenti = sys.argv[1:] if argomenti is None else argomenti
+    if not argomenti or argomenti[0] not in COMANDI:
+        print("uso: python -m sicurezza.visione {estrai|aggiungi-armi|unisci-armi|addestra-detector} [opzioni]  (--help dopo il comando)")
+        raise SystemExit(2)
+    COMANDI[argomenti[0]](argomenti[1:])
 
 
 if __name__ == "__main__":
