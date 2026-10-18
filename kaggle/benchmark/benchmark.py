@@ -12,47 +12,50 @@ if shutil.which("ffprobe") is None:  # il lettore video usa ffmpeg/ffprobe: buil
                    "tar -xJ -C /tmp && cp /tmp/ffmpeg-*-static/ff* /usr/local/bin/", shell=True, check=True)
 # =====
 
-"""Passo 2 del piano: velocità reale su T4. v3 (D18): confronta FP32, FP16 e 2 processi per GPU."""
+"""Passo 2 del piano, v4: profilo delle fasi su T4 (la v3 ha mostrato che il limite è la CPU, non la GPU)."""
 import json, os, subprocess, sys, time
 from pathlib import Path
-from sicurezza.estrazione import Estrattore, VideoDaEstrarre, scrivi_elenco
+import cv2, numpy as np, ultralytics
+from ultralytics import YOLO
 from sicurezza.video import leggi_frame
 
-video = sorted(Path("/kaggle/input").glob("**/RWF-2000/val/*/*.avi"))[:48]
-risultati = {}
-inizio, frame = time.perf_counter(), 0
-for percorso in video[:12]:
-    frame += sum(1 for _ in leggi_frame(str(percorso)))
-risultati["solo_decodifica_fps"] = frame / (time.perf_counter() - inizio)
+video = sorted(Path("/kaggle/input").glob("**/RWF-2000/val/Fight/*.avi"))[:6]
+frame_pieni = [f for percorso in video for f in leggi_frame(str(percorso))][:600]
+frame_640 = [cv2.resize(f, (640, int(f.shape[0] * 640 / f.shape[1]))) for f in frame_pieni]
+cartella_tracker = Path(ultralytics.__file__).parent / "cfg" / "trackers"
+senza_gmc = Path("/tmp/botsort_senza_gmc.yaml")
+senza_gmc.write_text((cartella_tracker / "botsort.yaml").read_text().replace("gmc_method: sparseOptFlow", "gmc_method: none"))
+risultati = {"cpu": os.cpu_count(), "frame": len(frame_pieni), "risoluzione": list(frame_pieni[0].shape[:2])}
 
-# 1. un processo su una GPU, pose + detector (yolo26s generico al posto di quello armi), FP32 e FP16
-for nome, mezza in [("un_processo_fp32", False), ("un_processo_fp16", True)]:
-    estrattore = Estrattore("yolo26s-pose.pt", "yolo26s.pt", dispositivo=0, mezza_precisione=mezza)
-    estrattore.estrai_video(VideoDaEstrarre("riscaldamento", str(video[0])))
-    inizio, frame = time.perf_counter(), 0
-    for percorso in video[:12]:
-        frame += int(estrattore.estrai_video(VideoDaEstrarre(percorso.stem, str(percorso)))["numero_frame"])
-    risultati[f"{nome}_fps"] = frame / (time.perf_counter() - inizio)
-    print(nome, risultati[f"{nome}_fps"], flush=True)
+def ms_per_frame(funzione, frame):
+    funzione(frame[:5])
+    inizio = time.perf_counter(); funzione(frame); return (time.perf_counter() - inizio) / len(frame) * 1000
 
-# 2. throughput totale con N processi FP16 in parallelo sulle 2 GPU (come farà il kernel di estrazione)
-elenco = Path("/tmp/elenco_bench.jsonl")
-scrivi_elenco([VideoDaEstrarre(f"bench/{p.stem}", str(p)) for p in video], elenco)
-ambiente = {**os.environ, "PYTHONPATH": "/tmp/repo/src"}
-for processi_per_gpu in (1, 2, 3):
-    uscita = Path(f"/tmp/bench_{processi_per_gpu}")
-    parti = 2 * processi_per_gpu
-    inizio = time.perf_counter()
-    lanciati = [subprocess.Popen([sys.executable, "-m", "sicurezza.estrazione", "--elenco", str(elenco), "--uscita",
-                                  str(uscita), "--parte", str(parte), "--parti", str(parti), "--dispositivo",
-                                  str(parte % 2), "--modello-armi", "yolo26s.pt", "--mezza-precisione"], env=ambiente,
-                                 stdout=subprocess.DEVNULL) for parte in range(parti)]
-    for processo in lanciati:
-        processo.wait()
-    secondi = time.perf_counter() - inizio
-    import numpy as np
-    frame = sum(int(np.load(f)["numero_frame"]) for f in uscita.glob("*.npz"))
-    risultati[f"fp16_{processi_per_gpu}_processi_per_gpu_fps_totali"] = frame / secondi
-    print(processi_per_gpu, "processi per GPU:", risultati[f"fp16_{processi_per_gpu}_processi_per_gpu_fps_totali"], flush=True)
+inizio = time.perf_counter()
+for percorso in video:
+    for _ in leggi_frame(str(percorso)): pass
+risultati["decodifica_ms"] = (time.perf_counter() - inizio) / len(frame_pieni) * 1000
+
+pose = YOLO("yolo26s-pose.pt"); armi = YOLO("yolo26s.pt")
+def predici(modello, lotto=1):
+    def esegui(frame):
+        for indice in range(0, len(frame), lotto):
+            modello.predict(frame[indice:indice + lotto], device=0, verbose=False)
+    return esegui
+def traccia(tracker):
+    def esegui(frame):
+        for indice, f in enumerate(frame):
+            pose.track(f, persist=indice > 0, tracker=tracker, device=0, conf=0.1, verbose=False)
+    return esegui
+
+risultati["pose_predict_pieni_ms"] = ms_per_frame(predici(pose), frame_pieni)
+risultati["pose_predict_640_ms"] = ms_per_frame(predici(pose), frame_640)
+risultati["pose_predict_lotto8_pieni_ms"] = ms_per_frame(predici(pose, 8), frame_pieni)
+risultati["pose_track_gmc_pieni_ms"] = ms_per_frame(traccia("botsort.yaml"), frame_pieni)
+risultati["pose_track_senza_gmc_pieni_ms"] = ms_per_frame(traccia(str(senza_gmc)), frame_pieni)
+risultati["pose_track_gmc_640_ms"] = ms_per_frame(traccia("botsort.yaml"), frame_640)
+risultati["pose_track_senza_gmc_640_ms"] = ms_per_frame(traccia(str(senza_gmc)), frame_640)
+risultati["armi_predict_pieni_ms"] = ms_per_frame(predici(armi), frame_pieni)
+risultati["armi_predict_lotto8_pieni_ms"] = ms_per_frame(predici(armi, 8), frame_pieni)
 print(json.dumps(risultati, indent=2))
 Path("/kaggle/working/benchmark.json").write_text(json.dumps(risultati, indent=2))
