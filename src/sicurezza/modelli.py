@@ -14,7 +14,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from .dati import CENTRO_SCHELETRO, CLASSI, ClipAnnotata, FRAME_PER_FINESTRA, NOMI_SPLIT, NUMERO_KEYPOINT, OSSA, POLSI, SPECCHIO_KEYPOINT, dividi_per_gruppi, etichetta_finestra, inizi_finestre, leggi_annotazioni, nome_file_estratto
+from .dati import gruppi_visti_dal_detector, CENTRO_SCHELETRO, CLASSI, ClipAnnotata, FRAME_PER_FINESTRA, NOMI_SPLIT, NUMERO_KEYPOINT, OSSA, POLSI, SPECCHIO_KEYPOINT, dividi_per_gruppi, etichetta_finestra, inizi_finestre, leggi_annotazioni, nome_file_estratto
 
 
 # ==============================================================================================================
@@ -686,7 +686,8 @@ def addestra(finestre: dict, nome_modello: str, cartella_uscita: Path, epoche: i
     dispositivo = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cartella_uscita.mkdir(parents=True, exist_ok=True)
 
-    split = dividi_per_gruppi(finestre["gruppo"], finestre["etichetta"], finestre["sorgente"], seme=seme)
+    split = dividi_per_gruppi(finestre["gruppo"], finestre["etichetta"], finestre["sorgente"], seme=seme,
+                              gruppi_sempre_in_train=gruppi_visti_dal_detector())
     indici_split = {nome: np.flatnonzero(split == numero) for numero, nome in enumerate(NOMI_SPLIT)}
     np.savez(cartella_uscita / "split.npz", **indici_split)
 

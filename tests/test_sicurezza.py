@@ -8,7 +8,7 @@ import subprocess
 import torch
 import yaml
 
-from sicurezza.dati import ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
+from sicurezza.dati import gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
 from sicurezza.demo import analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.visione import Estrattore, estrai_elenco, impacchetta_estrazione, unisci
@@ -265,6 +265,17 @@ def test_nessun_gruppo_in_due_split_e_quote_rispettate():
         assert len(np.unique(split[gruppi == gruppo])) == 1
     quote = np.bincount(split, minlength=3) / len(split)
     np.testing.assert_allclose(quote, [0.70, 0.15, 0.15], atol=0.05)
+
+
+def test_video_visti_dal_detector_sempre_in_train():
+    """D26: i video UCF usati per addestrare il detector armi non devono finire in val o test."""
+    gruppi = np.repeat([f"ucf/Robbery{i:03d}_x264" for i in range(60)], 10)
+    etichette, sorgenti = np.full(600, 2), np.array(["ucf_uca"] * 600)
+    forzati = frozenset(f"ucf/Robbery{i:03d}_x264" for i in range(0, 60, 3))
+    split = dividi_per_gruppi(gruppi, etichette, sorgenti, gruppi_sempre_in_train=forzati)
+    assert all(split[gruppi == gruppo][0] == 0 for gruppo in forzati)
+    assert set(split.tolist()) == {0, 1, 2}                 # gli altri si distribuiscono ancora su tutti gli split
+    assert len(gruppi_visti_dal_detector()) == 43           # elenco reale in annotations/armi/
 
 
 def test_riproducibile():

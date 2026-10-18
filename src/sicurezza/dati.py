@@ -547,12 +547,25 @@ QUOTE_PREDEFINITE = (0.70, 0.15, 0.15)
 NOMI_SPLIT = ("train", "val", "test")
 
 
+# D26: video di UCF-Crime da cui vengono le immagini di CCTV Weapon Detect (il detector armi li ha visti in
+# addestramento): nel classificatore stanno sempre in train, altrimenti il test sarebbe troppo ottimista.
+FILE_VIDEO_UCF_NEL_DETECTOR = Path(__file__).resolve().parents[2] / "annotations" / "armi" / "video_ucf_nel_detector.txt"
+
+
+def gruppi_visti_dal_detector(percorso: Path = FILE_VIDEO_UCF_NEL_DETECTOR) -> frozenset[str]:
+    if not Path(percorso).exists():
+        return frozenset()
+    return frozenset(f"ucf/{riga.strip()}" for riga in Path(percorso).read_text().splitlines() if riga.strip())
+
+
 def dividi_per_gruppi(gruppi: np.ndarray, etichette: np.ndarray, sorgenti: np.ndarray,
-                      quote=QUOTE_PREDEFINITE, seme: int = 0) -> np.ndarray:
-    """Ritorna per ogni finestra l'indice dello split (0 train, 1 val, 2 test)."""
-    finestre_per_gruppo = Counter(gruppi.tolist())
+                      quote=QUOTE_PREDEFINITE, seme: int = 0,
+                      gruppi_sempre_in_train: frozenset[str] = frozenset()) -> np.ndarray:
+    """Ritorna per ogni finestra l'indice dello split (0 train, 1 val, 2 test).
+    I `gruppi_sempre_in_train` (D26) vanno in train e non entrano nel bilanciamento degli altri."""
+    finestre_per_gruppo = Counter(g for g in gruppi.tolist() if g not in gruppi_sempre_in_train)
     classe_prevalente = {}
-    for gruppo in finestre_per_gruppo:
+    for gruppo in finestre_per_gruppo:  # solo i gruppi da distribuire
         classi_gruppo = etichette[gruppi == gruppo]
         classe_prevalente[gruppo] = int(np.bincount(classi_gruppo).argmax())
     sorgente_gruppo = dict(zip(gruppi.tolist(), sorgenti.tolist()))
@@ -574,6 +587,7 @@ def dividi_per_gruppi(gruppi: np.ndarray, etichette: np.ndarray, sorgenti: np.nd
             centro = (cumulate + finestre_per_gruppo[gruppo] / 2) / totale
             split_del_gruppo[gruppo] = int(np.searchsorted(soglie, centro, side="right"))
             cumulate += finestre_per_gruppo[gruppo]
+    split_del_gruppo.update({gruppo: 0 for gruppo in gruppi_sempre_in_train})
     return np.array([min(split_del_gruppo[gruppo], len(quote) - 1) for gruppo in gruppi.tolist()], np.int64)
 
 # ==============================================================================================================
