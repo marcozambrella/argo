@@ -488,7 +488,8 @@ def comando_addestra_detector(argomenti: list[str] | None = None) -> None:
 # armi/falsi_allarmi
 # Verifica del piano: il detector non deve scattare su oggetti innocui (coltelli da cucina posati, telefoni, forbici,
 # ombrelli). È il motivo per cui non usiamo il "knife" di COCO (D4). Su immagini SENZA armi impugnate conta quelle in
-# cui il detector trova qualcosa sopra soglia, divise per categoria (= nome della sottocartella).
+# cui il detector trova qualcosa sopra soglia, divise per categoria (= nome della sottocartella). Per ogni arma
+# trovata: classe, confidenza, area del riquadro in proporzione all'immagine.
 # Una sola immagine è il caso peggiore: il WARNING ARMA vuole l'arma in più frame vicino a una persona (D6).
 # Le immagini di prova si scaricano con `python -m sicurezza.strumenti scarica-negativi-coco`.
 #
@@ -512,11 +513,13 @@ def conta_falsi_allarmi(modello_armi, cartella_immagini: Path, soglia_confidenza
         for percorso, risultato in zip(lotto, risultati):
             categoria = percorso.parent.name
             immagini_per_categoria[categoria] += 1
-            armi = [(modello_armi.names[int(classe)], round(float(confidenza), 3))
-                    for classe, confidenza in zip(risultato.boxes.cls, risultato.boxes.conf)]
+            # area del riquadro / area dell'immagine: distingue l'oggetto scambiato per arma dal riquadro su mezza scena
+            armi = [(modello_armi.names[int(classe)], round(float(confidenza), 3), round(float(xywhn[2] * xywhn[3]), 3))
+                    for classe, confidenza, xywhn in zip(risultato.boxes.cls, risultato.boxes.conf,
+                                                          risultato.boxes.xywhn)]
             if armi:
                 allarmi_per_categoria[categoria] += 1
-                classi_per_categoria.setdefault(categoria, Counter()).update(nome for nome, _ in armi)
+                classi_per_categoria.setdefault(categoria, Counter()).update(nome for nome, _, _ in armi)
                 immagini_con_allarme.append({"immagine": str(percorso.relative_to(cartella_immagini)), "armi": armi})
     per_categoria = {categoria: {"immagini": numero, "con_allarme": allarmi_per_categoria[categoria],
                                  "frazione": round(allarmi_per_categoria[categoria] / numero, 4),

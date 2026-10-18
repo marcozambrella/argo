@@ -671,7 +671,8 @@ def test_falsi_allarmi_contati_per_categoria(tmp_path):
     class RisultatoFinto:
         def __init__(self, armi):
             self.boxes = type("Box", (), {"cls": torch.tensor([classe for classe, _ in armi], dtype=torch.float32),
-                                          "conf": torch.tensor([confidenza for _, confidenza in armi])})()
+                                          "conf": torch.tensor([confidenza for _, confidenza in armi]),
+                                          "xywhn": torch.tensor([[0.5, 0.5, 0.2, 0.1]] * len(armi))})()
 
     class DetectorFinto:  # "trova" un coltello solo nelle immagini col nome che inizia per "falso"
         def __init__(self):
@@ -689,4 +690,4 @@ def test_falsi_allarmi_contati_per_categoria(tmp_path):
     assert risultato["per_categoria"]["knife"] == {"immagini": 3, "con_allarme": 1, "frazione": 0.3333,
                                                    "classi": {"knife": 1}}
     assert risultato["per_categoria"]["cell_phone"]["con_allarme"] == 0
-    assert risultato["immagini_con_allarme"] == [{"immagine": "knife/falso_b.jpg", "armi": [("knife", 0.7)]}]
+    assert risultato["immagini_con_allarme"] == [{"immagine": "knife/falso_b.jpg", "armi": [("knife", 0.7, 0.02)]}]
