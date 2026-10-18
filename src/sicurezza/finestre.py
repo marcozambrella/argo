@@ -40,12 +40,26 @@ def etichetta_finestra(inizio_finestra: int, eventi: Sequence[Evento], classe_sf
                        frame_minimi_evento: int = FRAME_MINIMI_EVENTO) -> int | None:
     """Classe della finestra, oppure None se va scartata.
 
-    - una classe copre ≥ frame_minimi_evento frame → quella classe (se più di una, quella che copre di più);
-    - qualche evento la tocca ma nessuno arriva alla soglia → None (ambigua, scartata);
+    - un evento "conta" se copre ≥ frame_minimi_evento frame della finestra (P3), oppure, se l'evento è più corto
+      di così, se la finestra lo contiene per intero (D22: gli scippi durano spesso meno di 0,8 s);
+    - tra gli eventi che contano vince la classe che copre più frame;
+    - qualche evento la tocca ma nessuno conta → None (ambigua, scartata);
     - nessun evento → `classe_sfondo` (es. "normale" per CCTV-Fights; None dove il resto del video non è affidabile).
     """
-    copertura = frame_coperti_per_classe(inizio_finestra, eventi, frame_per_finestra)
-    if not copertura:
+    fine_finestra = inizio_finestra + frame_per_finestra
+    classi_che_contano = set()
+    tocca_qualcosa = False
+    for primo_frame, frame_dopo_ultimo, classe in eventi:
+        coperti = min(frame_dopo_ultimo, fine_finestra) - max(primo_frame, inizio_finestra)
+        if coperti <= 0:
+            continue
+        tocca_qualcosa = True
+        durata_evento = frame_dopo_ultimo - primo_frame
+        if coperti >= min(frame_minimi_evento, durata_evento):
+            classi_che_contano.add(classe)
+    if not tocca_qualcosa:
         return classe_sfondo
-    classe_prevalente, frame_coperti = max(copertura.items(), key=lambda coppia: coppia[1])
-    return classe_prevalente if frame_coperti >= frame_minimi_evento else None
+    if not classi_che_contano:
+        return None
+    copertura = frame_coperti_per_classe(inizio_finestra, eventi, frame_per_finestra)
+    return max(classi_che_contano, key=lambda classe: copertura[classe])
