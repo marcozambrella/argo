@@ -6,13 +6,13 @@ runs/
 *.mp4
 *.avi
 *.webm
-!site/assets/**/*.mp4
 !tests/dati/*.mp4
 # python
 __pycache__/
 *.egg-info/
 .venv/
 .pytest_cache/
+.ruff_cache/
 # segreti
 kaggle.json
 .env

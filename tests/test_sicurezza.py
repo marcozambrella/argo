@@ -318,16 +318,15 @@ def test_estrazione_reale_su_cpu_e_ripresa(tmp_path):
     assert (tmp_path / "prova__persone.npz").stat().st_mtime == modificato_prima
 
 
-@pytest.mark.skipif(not PESI_POSE.exists() or not (RADICE / "runs" / "yolo26s.pt").exists(),
-                    reason="pesi non scaricati in runs/")
+@pytest.mark.skipif(not PESI_POSE.exists(), reason="pesi yolo26n-pose non scaricati in runs/")
 def test_secondo_passaggio_armi_stessi_frame(tmp_path):
-    """Con un detector qualsiasi (qui YOLO26s generico al posto di quello armi) i frame tornano allineati."""
+    """Con un detector qualsiasi (qui il modello pose al posto di quello armi) i frame tornano allineati."""
     from ultralytics import YOLO
 
     from sicurezza.visione import armi_di_un_video
     video = VideoDaEstrarre("prova/persone", str(VIDEO_PERSONE))
     estrai_elenco([video], tmp_path, Estrattore(str(PESI_POSE), dispositivo="cpu"))
-    armi = armi_di_un_video(YOLO(str(RADICE / "runs" / "yolo26s.pt")), video, "cpu")
+    armi = armi_di_un_video(YOLO(str(PESI_POSE)), video, "cpu")
     dati = np.load(tmp_path / "prova__persone.npz")
     assert len(armi["armi_frame"]) > 0 and armi["armi_frame"].max() < int(dati["numero_frame"])
 
