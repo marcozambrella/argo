@@ -767,14 +767,15 @@ def probabilita_armi_in_mano_lotto(modello_mani, frame: list[np.ndarray], box_pe
 
 
 def ritagli_per_addestramento(cartella_unita: Path, cartella_uscita: Path, modello_pose, dispositivo=None,
-                              ritagli_per_arma: int = 2, mani_vuote_per_immagine: int = 4, seme: int = 0) -> Counter:
+                              ritagli_per_arma: int = 2, mani_vuote_per_immagine: int = 4, seme: int = 0,
+                              split_da_fare: tuple[str, ...] = ("train", "val", "test")) -> Counter:
     """Dataset unito in formato YOLO (images/<split>, labels/<split>) → dataset di classificazione per Ultralytics:
     cartella_uscita/<split>/<niente|pistol|knife|rifle>/*.jpg (ritagli già a 224 px)."""
     import random
 
     import cv2
     generatore, conteggio = random.Random(seme), Counter()
-    for split in ("train", "val", "test"):
+    for split in split_da_fare:
         cartella_immagini = cartella_unita / "images" / split
         if not cartella_immagini.exists():
             continue
@@ -829,10 +830,11 @@ def comando_ritagli_mani(argomenti: list[str] | None = None) -> None:
     parser.add_argument("--uscita", required=True)
     parser.add_argument("--modello-pose", default=MODELLO_POSE_PREDEFINITO)
     parser.add_argument("--dispositivo", default=None)
+    parser.add_argument("--split", nargs="+", default=["train", "val", "test"], help="per lanciarne più in parallelo")
     argomenti = parser.parse_args(argomenti)
     from ultralytics import YOLO
     conteggio = ritagli_per_addestramento(Path(argomenti.dati), Path(argomenti.uscita), YOLO(argomenti.modello_pose),
-                                          argomenti.dispositivo)
+                                          argomenti.dispositivo, split_da_fare=tuple(argomenti.split))
     for (split, classe), numero in sorted(conteggio.items()):
         print(f"{split:6s} {classe:8s} {numero}")
 
