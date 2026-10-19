@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import sys
+import tempfile
 import time
 
 import numpy as np
@@ -319,7 +320,8 @@ def nomi_classi_export(cartella_export: Path) -> list[str]:
     return [nomi[indice] for indice in sorted(nomi)] if isinstance(nomi, dict) else list(nomi)
 
 
-def unisci(cartelle_export: list[Path], cartella_uscita: Path, area_massima_train: float | None = None) -> Counter:
+def unisci(cartelle_export: list[Path], cartella_uscita: Path, area_massima_train: float | None = None,
+           solo_split: tuple[str, ...] = ("train", "val", "test")) -> Counter:
     """area_massima_train (D37): in train e val si tolgono le immagini con un'arma il cui riquadro supera questa
     frazione dell'immagine (primi piani, lontani dalla CCTV). Il test resta intero, per confrontare i detector."""
     conteggio = Counter()
@@ -329,7 +331,7 @@ def unisci(cartelle_export: list[Path], cartella_uscita: Path, area_massima_trai
                         for indice, nome in enumerate(nomi) if nome.lower() in SINONIMI}
         for cartella_split_export, split in CARTELLE_SPLIT.items():
             cartella_immagini = cartella_export / cartella_split_export / "images"
-            if not cartella_immagini.exists():
+            if not cartella_immagini.exists() or split not in solo_split:
                 continue
             (cartella_uscita / "images" / split).mkdir(parents=True, exist_ok=True)
             (cartella_uscita / "labels" / split).mkdir(parents=True, exist_ok=True)
@@ -358,10 +360,12 @@ def unisci(cartelle_export: list[Path], cartella_uscita: Path, area_massima_trai
                 (cartella_uscita / "labels" / split / (Path(nome_nuovo).stem + ".txt")).write_text(
                     "\n".join(righe_nuove) + ("\n" if righe_nuove else ""))
                 conteggio[(split, "immagini")] += 1
-    split_presenti = [split for split in ("train", "val", "test") if (cartella_uscita / "images" / split).exists()]
+    percorsi = {split: f"images/{split}" for split in ("train", "val", "test")
+                if (cartella_uscita / "images" / split).exists()}
+    if "test" in percorsi:   # dataset di sola valutazione: Ultralytics vuole comunque train e val nel data.yaml
+        percorsi = {"train": percorsi["test"], "val": percorsi["test"], **percorsi}
     (cartella_uscita / "data.yaml").write_text(yaml.safe_dump({
-        "path": str(cartella_uscita.resolve()), **{split: f"images/{split}" for split in split_presenti},
-        "names": dict(enumerate(CLASSI_ARMA))}, sort_keys=False))
+        "path": str(cartella_uscita.resolve()), **percorsi, "names": dict(enumerate(CLASSI_ARMA))}, sort_keys=False))
     return conteggio
 
 
@@ -371,9 +375,11 @@ def comando_unisci_armi(argomenti: list[str] | None = None) -> None:
     parser.add_argument("--uscita", required=True)
     parser.add_argument("--area-massima-train", type=float, default=None,
                         help="toglie da train/val le immagini con armi più grandi di questa frazione (D37)")
+    parser.add_argument("--solo-test", action="store_true", help="converte solo il test (per confrontare detector)")
     argomenti = parser.parse_args(argomenti)
+    solo_split = ("test",) if argomenti.solo_test else ("train", "val", "test")
     for (split, voce), numero in sorted(unisci([Path(s) for s in argomenti.sorgenti], Path(argomenti.uscita),
-                                               argomenti.area_massima_train).items()):
+                                               argomenti.area_massima_train, solo_split).items()):
         print(f"{split:6s} {voce:20s} {numero}")
 
 
@@ -629,9 +635,61 @@ def comando_falsi_allarmi(argomenti: list[str] | None = None) -> None:
         Path(argomenti.uscita).write_text(json.dumps(risultato, indent=1, ensure_ascii=False))
 
 # ==============================================================================================================
+# armi/confronta_detector
+# D37: tabella unica per scegliere il detector. Ogni detector su ogni test set (mAP50 per classe, precisione, recall)
+# e sulle immagini senza armi di `falsi-allarmi`. I test set devono avere le classi del progetto: per un export con
+# altre classi (es. Sohas) prima `unisci-armi --solo-test`.
+#
+# Uso:
+#     python -m sicurezza.visione confronta-detector --pesi v1=runs/.../best.pt v2=... --test roboflow=data.yaml
+#         mock_attack=... --negativi data/negativi_coco --uscita runs/confronto_detector.json
+# ==============================================================================================================
+
+def confronta_detector(pesi: dict[str, str], test: dict[str, str], cartella_negativi: Path | None = None,
+                       dispositivo: str = "cpu") -> dict:
+    from ultralytics import YOLO
+
+    cartella_temporanea = tempfile.mkdtemp()   # Ultralytics salva sempre qualcosa: non nel repo
+    tabella = {}
+    for nome_detector, percorso_pesi in pesi.items():
+        riga = {}
+        for nome_test, data_yaml in test.items():
+            misure = YOLO(percorso_pesi).val(data=data_yaml, split="test", device=dispositivo, batch=4, workers=0,
+                                             plots=False, verbose=False, project=cartella_temporanea,
+                                             name=f"{nome_detector}_{nome_test}")
+            riga[nome_test] = {"map50": round(float(misure.box.map50), 3), "precisione": round(float(misure.box.mp), 3),
+                               "recall": round(float(misure.box.mr), 3),
+                               **{misure.names[classe]: round(float(misure.box.ap50[posizione]), 3)
+                                  for posizione, classe in enumerate(misure.box.ap_class_index)}}
+            print(nome_detector, nome_test, riga[nome_test], flush=True)
+        if cartella_negativi:
+            falsi = conta_falsi_allarmi(YOLO(percorso_pesi), Path(cartella_negativi), dispositivo=dispositivo)
+            per_categoria = {categoria: valori["con_allarme"] for categoria, valori in falsi["per_categoria"].items()}
+            riga["falsi_allarmi"] = {**per_categoria, "totale": sum(per_categoria.values()),
+                                     "immagini": sum(v["immagini"] for v in falsi["per_categoria"].values())}
+            print(nome_detector, "falsi allarmi", riga["falsi_allarmi"], flush=True)
+        tabella[nome_detector] = riga
+    shutil.rmtree(cartella_temporanea, ignore_errors=True)
+    return tabella
+
+
+def comando_confronta_detector(argomenti: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--pesi", nargs="+", required=True, help="nome=percorso/best.pt")
+    parser.add_argument("--test", nargs="+", required=True, help="nome=percorso/data.yaml (classi del progetto)")
+    parser.add_argument("--negativi", default=None, help="cartella di `strumenti scarica-negativi-coco`")
+    parser.add_argument("--dispositivo", default="cpu")
+    parser.add_argument("--uscita", required=True)
+    argomenti = parser.parse_args(argomenti)
+    coppie = lambda valori: dict(valore.split("=", 1) for valore in valori)
+    tabella = confronta_detector(coppie(argomenti.pesi), coppie(argomenti.test), argomenti.negativi,
+                                 argomenti.dispositivo)
+    Path(argomenti.uscita).write_text(json.dumps(tabella, indent=1, ensure_ascii=False))
+
+# ==============================================================================================================
 # riga di comando: python -m sicurezza.visione <comando> [opzioni]
 # ==============================================================================================================
-COMANDI = {"estrai": comando_estrai, "aggiungi-armi": comando_aggiungi_armi, "unisci-armi": comando_unisci_armi, "converti-mock-attack": comando_converti_mock_attack, "prepara-sohas": comando_prepara_sohas, "addestra-detector": comando_addestra_detector, "falsi-allarmi": comando_falsi_allarmi}
+COMANDI = {"estrai": comando_estrai, "aggiungi-armi": comando_aggiungi_armi, "unisci-armi": comando_unisci_armi, "converti-mock-attack": comando_converti_mock_attack, "prepara-sohas": comando_prepara_sohas, "addestra-detector": comando_addestra_detector, "falsi-allarmi": comando_falsi_allarmi, "confronta-detector": comando_confronta_detector}
 
 
 def main(argomenti: list[str] | None = None) -> None:
