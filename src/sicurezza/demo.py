@@ -352,9 +352,63 @@ def comando_tara_warning(argomenti: list[str] | None = None) -> None:
 
 
 # ==============================================================================================================
+# valuta_sistema
+# Il sistema intero sul test: classificatore + WARNING ARMA tarato + regola D6 ("rissa riconosciuta + warning arma
+# = rissa con arma", come chiesto da Marco il 19/10). Confronta le metriche del solo modello con quelle del sistema.
+#
+# Uso:
+#     python -m sicurezza.demo valuta-sistema --finestre finestre.npz --split split.npz --probabilita probabilita_test.npy
+#         --taratura taratura_warning.json --estratti estratti/ --uscita sistema.json
+# ==============================================================================================================
+
+def valuta_sistema(probabilita: np.ndarray, etichette: np.ndarray, warning: np.ndarray) -> dict:
+    from .dati import INDICE_CLASSE
+    from .modelli import metriche
+    predette_sistema = np.array([INDICE_CLASSE[classe_finale(p, w)] for p, w in zip(probabilita, warning)])
+    con_arma = etichette == INDICE_CLASSE["violenza_con_arma"]
+    return {"solo_modello": metriche(etichette, probabilita.argmax(1)),
+            "modello_piu_regola": metriche(etichette, predette_sistema),
+            "finestre_con_warning": int(warning.sum()), "finestre": len(etichette),
+            "warning_su_finestre_con_arma": round(float(warning[con_arma].mean()), 4) if con_arma.any() else None,
+            "warning_su_finestre_senza_arma": round(float(warning[~con_arma].mean()), 4)}
+
+
+def comando_valuta_sistema(argomenti: list[str] | None = None) -> None:
+    from .dati import nome_file_estratto
+    from .modelli import carica_timeline
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--finestre", required=True)
+    parser.add_argument("--split", required=True, help="split.npz dell'addestramento (indici 'test')")
+    parser.add_argument("--probabilita", required=True, help="probabilita_test.npy dello stesso addestramento")
+    parser.add_argument("--taratura", required=True, help="taratura_warning.json (combinazione 'migliore')")
+    parser.add_argument("--estratti", nargs="+", required=True)
+    parser.add_argument("--uscita", required=True)
+    argomenti = parser.parse_args(argomenti)
+
+    regola = json.loads(Path(argomenti.taratura).read_text())["migliore"]
+    opzioni = {chiave: regola[chiave] for chiave in ("soglia_confidenza", "vicinanza") if chiave in regola}
+    with np.load(argomenti.finestre) as finestre:
+        id_clip, inizi, etichette = finestre["id_clip"], finestre["inizio_finestra"], finestre["etichetta"]
+    indici_test = np.load(argomenti.split)["test"]
+    percorso_per_nome = {file.name: file for cartella in argomenti.estratti for file in Path(cartella).glob("*.npz")}
+    warning, timeline_in_memoria = [], {}
+    for indice in indici_test:
+        nome = nome_file_estratto(str(id_clip[indice]))
+        if nome not in timeline_in_memoria:
+            timeline_in_memoria = {nome: carica_timeline(percorso_per_nome[nome])}  # una clip alla volta in memoria
+        warning.append(warning_arma(timeline_in_memoria[nome], int(inizi[indice]), regola["frame_minimi"], **opzioni))
+    risultato = valuta_sistema(np.load(argomenti.probabilita), etichette[indici_test], np.array(warning, bool))
+    Path(argomenti.uscita).write_text(json.dumps(risultato, indent=1, ensure_ascii=False))
+    for nome in ("solo_modello", "modello_piu_regola"):
+        print(f"{nome:20s} macro-F1 {risultato[nome]['macro_f1']:.3f}  recall {risultato[nome]['recall']}")
+
+
+# ==============================================================================================================
 # riga di comando: python -m sicurezza.demo <comando> [opzioni]
 # ==============================================================================================================
-COMANDI = {"analizza-video": comando_analizza_video, "tara-warning": comando_tara_warning}
+COMANDI = {"analizza-video": comando_analizza_video, "tara-warning": comando_tara_warning,
+           "valuta-sistema": comando_valuta_sistema}
 
 
 def main(argomenti: list[str] | None = None) -> None:

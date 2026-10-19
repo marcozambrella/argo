@@ -43,6 +43,13 @@ for processo in processi:
 subprocess.run([sys.executable, "-m", "sicurezza.demo", "tara-warning", "--finestre", "/tmp/finestre.npz",
                 "--split", "/kaggle/working/graph_transformer/split.npz", "--estratti", *cartelle_estratti,
                 "--uscita", "/kaggle/working/taratura_warning.json"], check=True, env=ambiente)
+# il sistema intero sul test: modello + WARNING ARMA tarato + "rissa + warning = rissa con arma" (D6)
+for modello in OPZIONI:
+    subprocess.run([sys.executable, "-m", "sicurezza.demo", "valuta-sistema", "--finestre", "/tmp/finestre.npz",
+                    "--split", f"/kaggle/working/{modello}/split.npz",
+                    "--probabilita", f"/kaggle/working/{modello}/probabilita_test.npy",
+                    "--taratura", "/kaggle/working/taratura_warning.json", "--estratti", *cartelle_estratti,
+                    "--uscita", f"/kaggle/working/{modello}/sistema_test.json"], check=True, env=ambiente)
 # dove sbagliano: metriche per sorgente e per video del test
 subprocess.run([sys.executable, "-m", "sicurezza.modelli", "analizza-predizioni", "--finestre", "/tmp/finestre.npz",
                 "--probabilita", *[f"{m}=/kaggle/working/{m}/probabilita_test.npy" for m in OPZIONI],

@@ -9,7 +9,7 @@ import torch
 import yaml
 
 from sicurezza.dati import gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
-from sicurezza.demo import arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
+from sicurezza.demo import valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import analizza_predizioni, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.strumenti import risultati_per_il_sito, scegli_candidati_scippo_telefono, scegli_immagini_coco
 from sicurezza.visione import prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
@@ -803,4 +803,16 @@ def test_candidati_scippo_di_telefono():
              "eee | 26 | X | 1 | nothing phone 3 first look review",                            # niente furto
              "fff | 1:45 | X | 1 | Câmeras flagram furto de celular em clínica"]
     assert [i for i, _ in scegli_candidati_scippo_telefono(righe)] == ["aaa", "bbb", "fff"]
+
+
+def test_rissa_piu_warning_diventa_rissa_con_arma():
+    """Regola D6 chiesta da Marco: se il modello vede violenza e il WARNING ARMA è scattato → violenza con arma."""
+    probabilita = np.array([[0.1, 0.8, 0.05, 0.05],    # violenza + warning → con arma (giusto)
+                            [0.1, 0.8, 0.05, 0.05],    # violenza senza warning → resta violenza (giusto)
+                            [0.9, 0.05, 0.03, 0.02]])  # normale + warning → resta normale (la regola non inventa risse)
+    etichette = np.array([2, 1, 0])
+    risultato = valuta_sistema(probabilita, etichette, np.array([True, False, True]))
+    assert risultato["solo_modello"]["recall"]["violenza_con_arma"] == 0.0
+    assert risultato["modello_piu_regola"]["recall"]["violenza_con_arma"] == 1.0
+    assert risultato["modello_piu_regola"]["accuratezza"] == 1.0 and risultato["warning_su_finestre_senza_arma"] == 0.5
 
