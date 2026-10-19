@@ -895,3 +895,46 @@ def test_probabilita_armi_in_mano_massimo_tra_le_due_mani():
     assert probabilita_armi_in_mano(ClassificatoreFinto(), np.zeros((480, 640, 3), np.uint8),
                                     np.empty((0, 4)), np.empty((0, 17, 3))).shape == (0, 3)
 
+
+class ClassificatoreManiFinto:
+    """Coltello sicuro in ogni ritaglio con qualcosa di chiaro dentro, altrimenti niente."""
+    names = {0: "knife", 1: "niente", 2: "pistol", 3: "rifle"}
+
+    def predict(self, ritagli, **_):
+        import torch as t
+        valori = [[0.9, 0.1, 0, 0] if r.mean() > 10 else [0, 1.0, 0, 0] for r in ritagli]
+        return [type("R", (), {"probs": type("P", (), {"data": t.tensor(v)})()})() for v in valori]
+
+
+def test_aggiungi_armi_anche_le_mani(clip_a_30_fps):
+    """Passaggio sui video con il classificatore delle mani: una probabilità per ogni riga-persona del .npz."""
+    class DetectorVuoto:
+        names = {0: "pistol", 1: "knife", 2: "rifle"}
+
+        def predict(self, lotto, **_):
+            import torch as t
+            vuoto = type("B", (), {"xyxy": t.empty(0, 4), "cls": t.empty(0), "conf": t.empty(0), "__len__": lambda _: 0})
+            return [type("R", (), {"boxes": vuoto()})() for _ in lotto]
+
+    from sicurezza.visione import armi_di_un_video
+    persone = {"persone_frame": np.array([0, 0, 5, 99], np.int32),
+               "persone_box": np.tile(np.array([[40, 20, 120, 110]], np.float32), (4, 1)),
+               "persone_keypoint": np.stack([scheletro_in_piedi(80, 110, 90)] * 4)}
+    video = VideoDaEstrarre("prova/clip", str(clip_a_30_fps))
+    uscita = armi_di_un_video(DetectorVuoto(), video, "cpu", modello_mani=ClassificatoreManiFinto(), persone=persone)
+    assert uscita["persone_mani"].shape == (4, 3) and len(uscita["armi_frame"]) == 0
+    assert np.allclose(uscita["persone_mani"][:, 1], 0.9, atol=1e-3)    # colonna coltello, una per riga-persona
+
+
+def test_warning_dalle_mani(tmp_path):
+    dati = dict(estrazione_finta(numero_frame=40, numero_persone=2, con_arma=False))
+    dati["persone_mani"] = np.zeros((len(dati["persone_frame"]), 3), np.float16)
+    dati["persone_mani"][dati["persone_frame"] < 8, 1] = 0.85           # coltello in mano nei primi 8 frame
+    timeline = timeline_da_dati(dati)
+    assert timeline.mani_per_frame.shape == (40, 3) and timeline.mani_per_frame[:8, 1].min() > 0.84
+    assert frame_con_arma(timeline, 0, soglia_confidenza=0.5, vicinanza="mani") == 8
+    assert frame_con_arma(timeline, 0, soglia_confidenza=0.5, vicinanza="polso:0.2") == 0        # il detector non vede
+    assert frame_con_arma(timeline, 0, soglia_confidenza=0.5, vicinanza="polso:0.2+mani") == 8
+    senza_mani = timeline_da_dati({k: v for k, v in dati.items() if k != "persone_mani"})
+    assert senza_mani.mani_per_frame is None and frame_con_arma(senza_mani, 0, vicinanza="mani") == 0
+

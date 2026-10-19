@@ -164,6 +164,8 @@ def impacchetta_estrazione(righe_persone, righe_armi, numero_frame: int, larghez
         "armi_box": concatena(righe_armi, "box", (0, 4), np.float32),
         "armi_classe": concatena(righe_armi, "classe", (0,), np.int32),
         "armi_confidenza": concatena(righe_armi, "confidenza", (0,), np.float16),
+        **({"persone_mani": concatena(righe_persone, "mani", (0, len(CLASSI_ARMA_MANI)), np.float16)}
+           if righe_persone and all("mani" in dati for _, dati in righe_persone) else {}),
     }
 
 
@@ -236,9 +238,20 @@ def comando_estrai(argomenti: list[str] | None = None) -> None:
 # ==============================================================================================================
 
 def armi_di_un_video(modello_armi, video, dispositivo, confidenza_minima: float = 0.25,
-                     dimensione_lotto: int = 8) -> dict[str, np.ndarray]:
-    """Solo il detector armi su tutti i frame (a lotti, come l'estrazione: D20)."""
+                     dimensione_lotto: int = 8, modello_mani=None, persone: dict | None = None) -> dict[str, np.ndarray]:
+    """Il detector armi su tutti i frame (a lotti, come l'estrazione: D20). Con `modello_mani` e le persone già
+    estratte (campi persone_* del .npz) anche l'ingrandimento sulle mani (D44): `persone_mani` [righe persone, 3]."""
     frame_armi, box, classi, confidenze, lotto = [], [], [], [], []
+    if modello_mani is not None:
+        persone_frame = np.asarray(persone["persone_frame"])
+        ordine = np.argsort(persone_frame, kind="stable")
+        inizi_righe = np.searchsorted(persone_frame[ordine], np.arange(persone_frame.max(initial=-1) + 2))
+        persone_mani = np.zeros((len(persone_frame), len(CLASSI_ARMA_MANI)), np.float32)
+
+    def righe_del_frame(indice_frame):
+        if indice_frame + 1 >= len(inizi_righe):
+            return ordine[:0]
+        return ordine[inizi_righe[indice_frame]:inizi_righe[indice_frame + 1]]
 
     def elabora_lotto(primo_indice):
         for scostamento, risultato in enumerate(modello_armi.predict(lotto, device=dispositivo, conf=confidenza_minima,
@@ -248,6 +261,13 @@ def armi_di_un_video(modello_armi, video, dispositivo, confidenza_minima: float 
                 box.append(risultato.boxes.xyxy.cpu().numpy())
                 classi.append(risultato.boxes.cls.int().cpu().numpy())
                 confidenze.append(risultato.boxes.conf.cpu().numpy())
+        if modello_mani is not None:
+            righe = [righe_del_frame(primo_indice + scostamento) for scostamento in range(len(lotto))]
+            probabilita = probabilita_armi_in_mano_lotto(
+                modello_mani, lotto, [np.asarray(persone["persone_box"])[r] for r in righe],
+                [np.asarray(persone["persone_keypoint"])[r] for r in righe], dispositivo)
+            for righe_frame, valori in zip(righe, probabilita):
+                persone_mani[righe_frame] = valori
         lotto.clear()
 
     indice_frame = -1
@@ -259,9 +279,12 @@ def armi_di_un_video(modello_armi, video, dispositivo, confidenza_minima: float 
     if lotto:
         elabora_lotto(indice_frame - len(lotto) + 1)
     concatena = lambda blocchi, forma, tipo: np.concatenate(blocchi).astype(tipo) if blocchi else np.empty(forma, tipo)
-    return {"armi_frame": concatena(frame_armi, (0,), np.int32), "armi_box": concatena(box, (0, 4), np.float32),
-            "armi_classe": concatena(classi, (0,), np.int32),
-            "armi_confidenza": concatena(confidenze, (0,), np.float16)}
+    uscita = {"armi_frame": concatena(frame_armi, (0,), np.int32), "armi_box": concatena(box, (0, 4), np.float32),
+              "armi_classe": concatena(classi, (0,), np.int32),
+              "armi_confidenza": concatena(confidenze, (0,), np.float16)}
+    if modello_mani is not None:
+        uscita["persone_mani"] = persone_mani.astype(np.float16)
+    return uscita
 
 
 def comando_aggiungi_armi(argomenti: list[str] | None = None) -> None:
@@ -270,6 +293,7 @@ def comando_aggiungi_armi(argomenti: list[str] | None = None) -> None:
     parser.add_argument("--estratti", required=True, help="cartella con i .npz della sola pose")
     parser.add_argument("--uscita", required=True)
     parser.add_argument("--modello-armi", required=True)
+    parser.add_argument("--modello-mani", default=None, help="classificatore dell'ingrandimento sulle mani (D44)")
     parser.add_argument("--parte", type=int, default=0)
     parser.add_argument("--parti", type=int, default=1)
     parser.add_argument("--dispositivo", default=None)
@@ -277,6 +301,7 @@ def comando_aggiungi_armi(argomenti: list[str] | None = None) -> None:
 
     from ultralytics import YOLO
     modello_armi = YOLO(argomenti.modello_armi)
+    modello_mani = YOLO(argomenti.modello_mani) if argomenti.modello_mani else None
     cartella_uscita = Path(argomenti.uscita)
     cartella_uscita.mkdir(parents=True, exist_ok=True)
     for video in leggi_elenco(argomenti.elenco)[argomenti.parte::argomenti.parti]:
@@ -285,7 +310,7 @@ def comando_aggiungi_armi(argomenti: list[str] | None = None) -> None:
         if not sorgente.exists() or destinazione.exists():
             continue
         dati = dict(np.load(sorgente))
-        armi = armi_di_un_video(modello_armi, video, argomenti.dispositivo)
+        armi = armi_di_un_video(modello_armi, video, argomenti.dispositivo, modello_mani=modello_mani, persone=dati)
         if len(armi["armi_frame"]) and armi["armi_frame"].max() >= int(dati["numero_frame"]):
             print(f"ATTENZIONE {video.id_clip}: numero di frame diverso dall'estrazione, salto")
             continue
@@ -707,16 +732,30 @@ def ritagli_delle_mani(frame: np.ndarray, box_persone: np.ndarray, keypoint_pers
 def probabilita_armi_in_mano(modello_mani, frame: np.ndarray, box_persone: np.ndarray, keypoint_persone: np.ndarray,
                              dispositivo=None) -> np.ndarray:
     """[persone, 3]: per ogni persona la probabilità più alta (tra le due mani) di pistola, coltello, fucile."""
-    probabilita = np.zeros((len(box_persone), len(CLASSI_ARMA_MANI)), np.float32)
-    ritagli, persona_del_ritaglio = ritagli_delle_mani(frame, box_persone, keypoint_persone)
+    return probabilita_armi_in_mano_lotto(modello_mani, [frame], [box_persone], [keypoint_persone], dispositivo)[0]
+
+
+def probabilita_armi_in_mano_lotto(modello_mani, frame: list[np.ndarray], box_per_frame: list[np.ndarray],
+                                   keypoint_per_frame: list[np.ndarray], dispositivo=None,
+                                   ritagli_per_chiamata: int = 128) -> list[np.ndarray]:
+    """Come probabilita_armi_in_mano ma per più frame, con UNA chiamata al modello ogni `ritagli_per_chiamata`
+    ritagli (una chiamata per frame costerebbe ore sull'intero dataset)."""
+    probabilita = [np.zeros((len(box), len(CLASSI_ARMA_MANI)), np.float32) for box in box_per_frame]
+    ritagli, proprietari = [], []
+    for numero_frame, (immagine, box, keypoint) in enumerate(zip(frame, box_per_frame, keypoint_per_frame)):
+        ritagli_frame, persone = ritagli_delle_mani(immagine, box, keypoint)
+        ritagli += ritagli_frame
+        proprietari += [(numero_frame, persona) for persona in persone]
     if not ritagli:
         return probabilita
     indice_classe = {nome: indice for indice, nome in modello_mani.names.items()}
-    for persona, risultato in zip(persona_del_ritaglio, modello_mani.predict(ritagli, imgsz=DIMENSIONE_RITAGLIO,
-                                                                              device=dispositivo, verbose=False)):
-        valori = risultato.probs.data.float().cpu().numpy()
-        for posizione, nome in enumerate(CLASSI_ARMA_MANI):
-            probabilita[persona, posizione] = max(probabilita[persona, posizione], valori[indice_classe[nome]])
+    colonne = [indice_classe[nome] for nome in CLASSI_ARMA_MANI]
+    for inizio in range(0, len(ritagli), ritagli_per_chiamata):
+        risultati = modello_mani.predict(ritagli[inizio:inizio + ritagli_per_chiamata], imgsz=DIMENSIONE_RITAGLIO,
+                                         device=dispositivo, verbose=False)
+        for (numero_frame, persona), risultato in zip(proprietari[inizio:inizio + ritagli_per_chiamata], risultati):
+            valori = risultato.probs.data.float().cpu().numpy()[colonne]
+            probabilita[numero_frame][persona] = np.maximum(probabilita[numero_frame][persona], valori)
     return probabilita
 
 

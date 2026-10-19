@@ -46,6 +46,7 @@ class TimelineVideo:
     armi_box: np.ndarray
     armi_classe: np.ndarray
     armi_confidenza: np.ndarray
+    mani_per_frame: np.ndarray | None = None      # (numero_frame, 3): ingrandimento sulle mani (D44), max sulle persone
 
 
 def carica_timeline(percorso_npz, ricuci: bool = True) -> TimelineVideo:
@@ -86,9 +87,14 @@ def timeline_da_dati(dati, ricuci: bool = True, filtra_armi_grandi: bool = True)
     if ricuci:
         keypoint_per_traccia, box_per_traccia = ricuci_tracce(keypoint_per_traccia, box_per_traccia)
     armi = armi_non_piu_grandi_della_persona(dati) if filtra_armi_grandi else slice(None)
+    mani_per_frame = None
+    if "persone_mani" in dati:   # solo se il .npz è passato da `aggiungi-armi --modello-mani`
+        mani_per_frame = np.zeros((numero_frame, np.asarray(dati["persone_mani"]).shape[1]), np.float32)
+        np.maximum.at(mani_per_frame, np.asarray(dati["persone_frame"]), np.asarray(dati["persone_mani"], np.float32))
     return TimelineVideo(numero_frame, int(dati["larghezza"]), int(dati["altezza"]), keypoint_per_traccia,
                          box_per_traccia, np.asarray(dati["armi_frame"])[armi], np.asarray(dati["armi_box"])[armi],
-                         np.asarray(dati["armi_classe"])[armi], np.asarray(dati["armi_confidenza"])[armi].astype(np.float32))
+                         np.asarray(dati["armi_classe"])[armi], np.asarray(dati["armi_confidenza"])[armi].astype(np.float32),
+                         mani_per_frame)
 
 
 BUCO_MASSIMO_FRAME = 15            # PROVVISORIO: 0,6 s senza la persona al massimo
