@@ -10,7 +10,8 @@
   "machine_shape": "NvidiaTeslaT4",
   "dataset_sources": [],
   "kernel_sources": [
-    "KAGGLE_UTENTE/roma-safe-cctv-estrazione"
+    "KAGGLE_UTENTE/roma-safe-cctv-aggiungi-armi",
+    "KAGGLE_UTENTE/roma-safe-cctv-estrazione-normali"
   ],
   "competition_sources": [],
   "model_sources": []

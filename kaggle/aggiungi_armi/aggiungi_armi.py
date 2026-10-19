@@ -13,7 +13,8 @@ if shutil.which("ffprobe") is None:  # il lettore video usa ffmpeg/ffprobe: buil
 # =====
 
 """D28: dopo un nuovo addestramento del detector armi, ricalcola SOLO le armi sui .npz dell'estrazione (le pose restano).
-Sorgenti: output del kernel di estrazione (elenco.jsonl + estratti/) e del kernel del detector (best.pt nuovo)."""
+Sorgenti: output del kernel di estrazione (elenco.jsonl + estratti/) e del kernel del detector (best.pt nuovo).
+D44: se c'è anche il classificatore delle mani (mani_best.pt), calcola pure le probabilità di arma in mano per persona."""
 import subprocess, sys
 from pathlib import Path
 
@@ -21,13 +22,15 @@ ambiente = {**os.environ, "PYTHONPATH": "/tmp/repo/src"}
 elenco = next(Path("/kaggle/input").glob("**/elenco.jsonl"))
 estratti = next(c for c in Path("/kaggle/input").glob("**/estratti") if c.is_dir())
 pesi_armi = next(Path("/kaggle/input").glob("**/yolo26s_armi/weights/best.pt"))
-print("elenco:", elenco, "| estratti:", estratti, "| detector:", pesi_armi, flush=True)
+pesi_mani = sorted(Path("/kaggle/input").glob("**/mani_best.pt"))
+opzione_mani = ["--modello-mani", str(pesi_mani[0])] if pesi_mani else []
+print("elenco:", elenco, "| estratti:", estratti, "| detector:", pesi_armi, "| mani:", opzione_mani, flush=True)
 PROCESSI_PER_GPU, NUMERO_GPU = 2, 2
 parti = PROCESSI_PER_GPU * NUMERO_GPU
 processi = [subprocess.Popen([sys.executable, "-m", "sicurezza.visione", "aggiungi-armi", "--elenco", str(elenco),
                               "--estratti", str(estratti), "--uscita", "/kaggle/working/estratti",
                               "--modello-armi", str(pesi_armi), "--parte", str(parte), "--parti", str(parti),
-                              "--dispositivo", str(parte % NUMERO_GPU)], env=ambiente)
+                              "--dispositivo", str(parte % NUMERO_GPU), *opzione_mani], env=ambiente)
             for parte in range(parti)]
 for processo in processi:
     processo.wait()
