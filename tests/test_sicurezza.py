@@ -711,7 +711,9 @@ def test_risultati_per_il_sito_dal_vero_addestramento(dataset_finto, tmp_path):
     modello = sito["modelli"][0]
     assert modello["nome"] == "ST-GCN" and 0 <= modello["macro_f1"] <= 1 and modello["latenza_cpu_ms"] > 0
     assert sito["classi"] == ["normale", "violenza", "violenza_con_arma", "scippo"]
-    assert modello["finestre_test"] == len(np.load(tmp_path / "stgcn" / "split.npz")["test"])
+    split = np.load(tmp_path / "stgcn" / "split.npz")
+    assert modello["finestre_test"] == len(split["test"])
+    assert not set(split["clip_test"]) & set(split["clip_train"]) and len(split["clip_test"]) > 0
     assert sito["warning_arma"]["frame_minimi"] == 5 and risultati_per_il_sito([])["modelli"] == []
 
 

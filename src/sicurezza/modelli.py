@@ -708,7 +708,9 @@ def addestra(finestre: dict, nome_modello: str, cartella_uscita: Path, epoche: i
     split = dividi_per_gruppi(finestre["gruppo"], finestre["etichetta"], finestre["sorgente"], seme=seme,
                               gruppi_sempre_in_train=gruppi_visti_dal_detector())
     indici_split = {nome: np.flatnonzero(split == numero) for numero, nome in enumerate(NOMI_SPLIT)}
-    np.savez(cartella_uscita / "split.npz", **indici_split)
+    # anche i video di ogni split: servono a scegliere i video della demo tra quelli MAI visti in addestramento
+    np.savez(cartella_uscita / "split.npz", **indici_split,
+             **{f"clip_{nome}": np.unique(finestre["id_clip"][indici]) for nome, indici in indici_split.items()})
 
     iperparametri_modello = iperparametri_modello or {}
     modello = crea_modello(nome_modello, **iperparametri_modello).to(dispositivo)
