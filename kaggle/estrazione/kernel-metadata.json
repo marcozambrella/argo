@@ -13,7 +13,8 @@
     "mohamedtariki/vsd-cctv-fights",
     "toluwaniaremu/smartcity-cctv-violence-detection-dataset-scvd",
     "bypktt/ucf-crimes",
-    "aniketsahu09/chain-snatching-cctv-dataset"
+    "aniketsahu09/chain-snatching-cctv-dataset",
+    "KAGGLE_UTENTE/roma-safe-cctv-mani-modello"
   ],
   "kernel_sources": [
     "KAGGLE_UTENTE/roma-safe-cctv-detector-armi-v3"
