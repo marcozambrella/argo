@@ -222,13 +222,16 @@ def comando_estrai(argomenti: list[str] | None = None) -> None:
     parser.add_argument("--modello-pose", default=MODELLO_POSE_PREDEFINITO)
     parser.add_argument("--modello-armi", default=None, help="pesi del detector armi fine-tunato (D4)")
     parser.add_argument("--modello-mani", default=None, help="classificatore dell'ingrandimento sulle mani (D44)")
+    parser.add_argument("--tracker", default=TRACKER_PREDEFINITO,
+                        help="configurazione del tracker di Ultralytics (D47: botsort.yaml per la riestrazione)")
     parser.add_argument("--gia-estratti", nargs="*", default=[], help="cartelle con .npz di sessioni precedenti")
     parser.add_argument("--ore-massime", type=float, default=None, help="fermati dopo queste ore (sessioni Kaggle)")
     parser.add_argument("--mezza-precisione", action="store_true", help="FP16 su GPU (D18)")
     argomenti = parser.parse_args(argomenti)
 
     estrattore = Estrattore(argomenti.modello_pose, argomenti.modello_armi, argomenti.dispositivo,
-                            mezza_precisione=argomenti.mezza_precisione, percorso_modello_mani=argomenti.modello_mani)
+                            tracker=argomenti.tracker, mezza_precisione=argomenti.mezza_precisione,
+                            percorso_modello_mani=argomenti.modello_mani)
     estrai_elenco(leggi_elenco(argomenti.elenco), argomenti.uscita, estrattore, argomenti.parte, argomenti.parti,
                   argomenti.gia_estratti, argomenti.ore_massime * 3600 if argomenti.ore_massime else None)
 

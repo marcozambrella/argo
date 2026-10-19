@@ -14,7 +14,7 @@ import torch
 
 from .dati import CLASSI, FPS_ANALISI, FRAME_PER_FINESTRA, OSSA, PASSO_FINESTRE, POLSI, leggi_frame, leggi_info_video
 from .modelli import TimelineVideo, costruisci_finestra, crea_modello, timeline_da_dati
-from .visione import Estrattore, MODELLO_POSE_PREDEFINITO, impacchetta_estrazione
+from .visione import Estrattore, MODELLO_POSE_PREDEFINITO, TRACKER_PREDEFINITO, impacchetta_estrazione
 
 
 # ==============================================================================================================
@@ -207,16 +207,16 @@ class ScrittoreVideo:
 def analizza_video(percorso_video: str, percorso_classificatore: str, cartella_uscita: str | Path,
                    percorso_modello_armi: str | None = None, percorso_modello_pose: str = MODELLO_POSE_PREDEFINITO,
                    dispositivo: str = "cpu", taratura: dict | None = None,
-                   percorso_modello_mani: str | None = None) -> list[dict]:
+                   percorso_modello_mani: str | None = None, tracker: str = TRACKER_PREDEFINITO) -> list[dict]:
     """taratura: la combinazione "migliore" di `tara-warning` (soglia, frame minimi, vicinanza); senza, i valori
-    provvisori del piano."""
+    provvisori del piano. tracker: lo stesso usato per estrarre i dati di addestramento del classificatore (D3)."""
     regola = {"soglia_confidenza": SOGLIA_CONFIDENZA_ARMA, "frame_minimi": FRAME_MINIMI_CON_ARMA,
               "vicinanza": VICINANZA_PREDEFINITA}
     regola.update({chiave: (taratura or {})[chiave] for chiave in regola if chiave in (taratura or {})})
     cartella_uscita = Path(cartella_uscita)
     cartella_uscita.mkdir(parents=True, exist_ok=True)
     info = leggi_info_video(percorso_video)
-    estrattore = Estrattore(percorso_modello_pose, percorso_modello_armi, dispositivo,
+    estrattore = Estrattore(percorso_modello_pose, percorso_modello_armi, dispositivo, tracker=tracker,
                             percorso_modello_mani=percorso_modello_mani)   # D44: anche le mani, se c'è il modello
     classificatore = carica_classificatore(percorso_classificatore, dispositivo)
     scrittore = ScrittoreVideo(cartella_uscita / "video_annotato.mp4", info.larghezza, info.altezza)
@@ -270,10 +270,12 @@ def comando_analizza_video(argomenti: list[str] | None = None) -> None:
     parser.add_argument("--dispositivo", default="cpu")
     parser.add_argument("--taratura", default=None, help="taratura_warning.json di `tara-warning` (D35)")
     parser.add_argument("--modello-mani", default=None, help="classificatore dell'ingrandimento sulle mani (D44)")
+    parser.add_argument("--tracker", default=TRACKER_PREDEFINITO, help="lo stesso dell'estrazione dei dati (D3)")
     argomenti = parser.parse_args(argomenti)
     taratura = json.loads(Path(argomenti.taratura).read_text())["migliore"] if argomenti.taratura else None
     eventi = analizza_video(argomenti.video, argomenti.classificatore, argomenti.uscita, argomenti.modello_armi,
-                            argomenti.modello_pose, argomenti.dispositivo, taratura, argomenti.modello_mani)
+                            argomenti.modello_pose, argomenti.dispositivo, taratura, argomenti.modello_mani,
+                            argomenti.tracker)
     print(f"{len(eventi)} finestre analizzate → {argomenti.uscita}")
 
 # ==============================================================================================================

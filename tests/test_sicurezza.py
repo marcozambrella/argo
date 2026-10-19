@@ -697,6 +697,17 @@ def test_negativi_coco_senza_doppioni_e_sempre_gli_stessi():
     assert scelte["scissors"] == [] and scelte["umbrella"] == ["000000000006.jpg"]
 
 
+def test_estrai_passa_il_tracker_scelto_all_estrattore(monkeypatch):
+    import sicurezza.visione as visione
+    creati = []
+    monkeypatch.setattr(visione, "Estrattore", lambda *posizionali, **nominali: creati.append(nominali) or "estrattore")
+    monkeypatch.setattr(visione, "leggi_elenco", lambda percorso: [])
+    monkeypatch.setattr(visione, "estrai_elenco", lambda *argomenti: None)
+    visione.comando_estrai(["--elenco", "elenco.jsonl", "--uscita", "estratti", "--tracker", "botsort.yaml"])
+    visione.comando_estrai(["--elenco", "elenco.jsonl", "--uscita", "estratti"])
+    assert [nominali["tracker"] for nominali in creati] == ["botsort.yaml", visione.TRACKER_PREDEFINITO]
+
+
 def test_scarica_con_riprova_riprova_e_poi_si_arrende(tmp_path, monkeypatch):
     tentativi = []
 
