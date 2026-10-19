@@ -29,7 +29,9 @@ pesi_armi = sorted(Path("/kaggle/input").glob("**/yolo26s_armi/weights/best.pt")
 pesi_mani = sorted(Path("/kaggle/input").glob("**/mani_best.pt"))
 opzioni = (["--modello-armi", str(pesi_armi[0])] if pesi_armi else []) + \
           (["--modello-mani", str(pesi_mani[0])] if pesi_mani else [])
-opzioni += ["--tracker", "botsort.yaml"]   # D47: lo stesso tracker della riestrazione completa
+# stesso tracker dell'estrazione principale usata nell'addestramento (TrackTrack di default): la riestrazione con
+# BoT-SORT (D47) non si fa prima della consegna di venerdì 23/10; quando si farà, qui va "botsort.yaml"
+opzioni += ["--tracker", "tracktrack.yaml"]
 print("modelli:", opzioni, flush=True)
 PROCESSI_PER_GPU, NUMERO_GPU = 2, 2
 parti = PROCESSI_PER_GPU * NUMERO_GPU
