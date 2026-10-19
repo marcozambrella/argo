@@ -1,6 +1,6 @@
 {
-  "id": "KAGGLE_UTENTE/roma-safe-cctv-estrazione",
-  "title": "roma-safe-cctv estrazione",
+  "id": "KAGGLE_UTENTE/roma-safe-cctv-estrazione-botsort",
+  "title": "roma-safe-cctv estrazione botsort",
   "code_file": "estrazione.py",
   "language": "python",
   "kernel_type": "script",

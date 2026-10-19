@@ -13,6 +13,8 @@ if shutil.which("ffprobe") is None:  # il lettore video usa ffmpeg/ffprobe: buil
 # =====
 
 """Passo 4: estrazione delle timeline da tutte le sorgenti, 2 processi per GPU (2x T4, D18/D20), max ~11 h.
+D47 (riestrazione dopo il rinnovo della quota): BoT-SORT + armi + mani in un passaggio, id nuovo `-botsort` così
+l'output della prima estrazione (TrackTrack) resta per aggiungi-armi e per confronto.
 Benchmark v5: ~84 frame/s totali (66 con GMC per i video da cellulare) → ~9,6 h per tutto.
 Se la sessione finisce prima, rilanciare: l'output della sessione precedente va aggiunto come kernel_sources
 e i video già fatti vengono saltati (--gia-estratti)."""
@@ -27,13 +29,19 @@ subprocess.run([sys.executable, "-m", "sicurezza.dati", "prepara-elenchi", "--in
 pesi_armi = sorted(Path("/kaggle/input").glob("**/yolo26s_armi/weights/best.pt"))
 opzione_armi = ["--modello-armi", str(pesi_armi[0])] if pesi_armi else []
 print("detector armi:", pesi_armi[0] if pesi_armi else "NESSUNO (solo pose)", flush=True)
+# D44: classificatore dell'ingrandimento sulle mani (dataset roma-safe-cctv-mani-modello), se è tra le sorgenti
+pesi_mani = sorted(Path("/kaggle/input").glob("**/mani_best.pt"))
+opzione_mani = ["--modello-mani", str(pesi_mani[0])] if pesi_mani else []
+print("modello mani:", pesi_mani[0] if pesi_mani else "NESSUNO", flush=True)
+TRACKER = "botsort.yaml"   # D47: TrackTrack con le soglie di default perdeva molte persone nei video CCTV
 gia_estratti = [str(cartella) for cartella in Path("/kaggle/input").glob("**/estratti") if cartella.is_dir()]
 
 PROCESSI_PER_GPU, NUMERO_GPU = 2, 2
 parti = PROCESSI_PER_GPU * NUMERO_GPU
 processi = [subprocess.Popen([sys.executable, "-m", "sicurezza.visione", "estrai", "--elenco", str(uscita / "elenco.jsonl"),
                               "--uscita", str(uscita / "estratti"), "--parte", str(parte), "--parti", str(parti),
-                              "--dispositivo", str(parte % NUMERO_GPU), "--ore-massime", "11", *opzione_armi,
+                              "--dispositivo", str(parte % NUMERO_GPU), "--ore-massime", "11", "--tracker", TRACKER,
+                              *opzione_armi, *opzione_mani,
                               "--gia-estratti", *gia_estratti],
                              env={**os.environ, "PYTHONPATH": "/tmp/repo/src"})
             for parte in range(parti)]

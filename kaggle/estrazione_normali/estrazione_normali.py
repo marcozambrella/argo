@@ -29,6 +29,7 @@ pesi_armi = sorted(Path("/kaggle/input").glob("**/yolo26s_armi/weights/best.pt")
 pesi_mani = sorted(Path("/kaggle/input").glob("**/mani_best.pt"))
 opzioni = (["--modello-armi", str(pesi_armi[0])] if pesi_armi else []) + \
           (["--modello-mani", str(pesi_mani[0])] if pesi_mani else [])
+opzioni += ["--tracker", "botsort.yaml"]   # D47: lo stesso tracker della riestrazione completa
 print("modelli:", opzioni, flush=True)
 PROCESSI_PER_GPU, NUMERO_GPU = 2, 2
 parti = PROCESSI_PER_GPU * NUMERO_GPU
