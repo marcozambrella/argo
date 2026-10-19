@@ -993,6 +993,16 @@ def test_warning_dalle_mani(tmp_path):
     assert senza_mani.mani_per_frame is None and frame_con_arma(senza_mani, 0, vicinanza="mani") == 0
 
 
+def test_normali_folla_senza_hieve_se_il_server_non_risponde(tmp_path, monkeypatch):
+    def server_giu(url, destinazione):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr("urllib.request.urlretrieve", server_giu)
+    (tmp_path / "input").mkdir()
+    conteggio = prepara_normali(tmp_path / "input", tmp_path / "uscita", scarica_hieve=True)
+    assert conteggio["hieve"] == 0
+
+
 def test_normali_folla_preparati_e_letti(tmp_path):
     """D41/D46: sequenze di frame → mp4, solo i video normali scelti, una scena = un gruppo, tutto classe normale."""
     import cv2
@@ -1001,7 +1011,8 @@ def test_normali_folla_preparati_e_letti(tmp_path):
     (sequenza / "img1").mkdir(parents=True)
     (sequenza / "seqinfo.ini").write_text("[Sequence]\nframeRate=25\n")
     for numero in range(1, 26):
-        cv2.imwrite(str(sequenza / "img1" / f"{numero:06d}.jpg"), np.full((64, 64, 3), numero * 9, np.uint8))
+        # larghezza dispari come MOT20-04 (1545×1080): libx264 con yuv420p vuole lati pari
+        cv2.imwrite(str(sequenza / "img1" / f"{numero:06d}.jpg"), np.full((48, 65, 3), numero * 9, np.uint8))
     crea_file(ingresso / "shanghaitech-campus", "train/01_001.avi", "train/01_002.avi", "test/01_0014.avi")
     crea_file(ingresso / "avenue", "Avenue Dataset/training_videos/01.avi")
     for nome in ("N_0_0_0_1_0.mp4", "F_1_0_0_0_0.mp4"):
@@ -1011,7 +1022,8 @@ def test_normali_folla_preparati_e_letti(tmp_path):
                         "-pix_fmt", "yuv420p", str(cartella / nome)], check=True)
     conteggio = prepara_normali(ingresso, tmp_path / "uscita")
     assert conteggio == {"mot20": 1, "shanghaitech": 2, "ubi_fights": 1, "avenue": 1}   # 01_0014: è un video di test
-    assert leggi_info_video(str(tmp_path / "uscita" / "normali_folla" / "mot20" / "MOT20-01.mp4")).durata_secondi == 1.0
+    info = leggi_info_video(str(tmp_path / "uscita" / "normali_folla" / "mot20" / "MOT20-01.mp4"))
+    assert info.durata_secondi == 1.0 and (info.larghezza, info.altezza) == (66, 48)   # 1 px nero a destra
     clip = elenca_clip_normali_folla(tmp_path / "uscita")
     assert {c.classe_intera for c in clip} == {"normale"} and len(clip) == 5
     gruppi = {c.id_clip: c.gruppo for c in clip}

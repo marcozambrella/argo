@@ -557,9 +557,11 @@ def prepara_normali(cartella_input: Path, cartella_uscita: Path, scarica_hieve: 
             destinazione = radice / fonte.lower() / f"{sequenza.name}.mp4"
             destinazione.parent.mkdir(parents=True, exist_ok=True)
             if not destinazione.exists():
+                # pad a lati pari (MOT20-04 è 1545×1080 e libx264/yuv420p li vuole pari): 1 px nero a destra/sotto,
+                # le coordinate dei pixel restano le stesse
                 subprocess.run(["ffmpeg", "-v", "error", "-y", "-framerate", str(fps_della_sequenza(sequenza, fonte)),
-                                "-i", str(immagini / "%06d.jpg"), "-c:v", "libx264", "-crf", "18", "-pix_fmt",
-                                "yuv420p", str(destinazione)], check=True)
+                                "-i", str(immagini / "%06d.jpg"), "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+                                "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", str(destinazione)], check=True)
             conteggio[fonte.lower()] += 1
 
     # ShanghaiTech: i video normali del training originale hanno il nome a 3 cifre (01_001.avi)
@@ -585,21 +587,26 @@ def prepara_normali(cartella_input: Path, cartella_uscita: Path, scarica_hieve: 
         collega(video, "avenue")
 
     if scarica_hieve:
+        import socket
         import urllib.request
         import zipfile
+        socket.setdefaulttimeout(120)   # server unico in HTTP: se si blocca non deve appendere il kernel
         for url in URL_HIEVE:
             archivio = cartella_uscita / Path(url).name
-            urllib.request.urlretrieve(url, archivio)
-            with zipfile.ZipFile(archivio) as zip_hieve:
-                for nome in zip_hieve.namelist():
-                    if Path(nome).suffix.lower() not in ESTENSIONI_VIDEO or \
-                            any(parola in Path(nome).stem.lower() for parola in PAROLE_HIEVE_DA_ESCLUDERE):
-                        continue
-                    destinazione = radice / "hieve" / Path(nome).name
-                    destinazione.parent.mkdir(parents=True, exist_ok=True)
-                    destinazione.write_bytes(zip_hieve.read(nome))
-                    conteggio["hieve"] += 1
-            archivio.unlink()
+            try:   # HiEve è un di più: se il download fallisce si va avanti con le altre fonti
+                urllib.request.urlretrieve(url, archivio)
+                with zipfile.ZipFile(archivio) as zip_hieve:
+                    for nome in zip_hieve.namelist():
+                        if Path(nome).suffix.lower() not in ESTENSIONI_VIDEO or \
+                                any(parola in Path(nome).stem.lower() for parola in PAROLE_HIEVE_DA_ESCLUDERE):
+                            continue
+                        destinazione = radice / "hieve" / Path(nome).name
+                        destinazione.parent.mkdir(parents=True, exist_ok=True)
+                        destinazione.write_bytes(zip_hieve.read(nome))
+                        conteggio["hieve"] += 1
+            except (OSError, zipfile.BadZipFile) as errore:
+                print(f"HiEve saltato ({url}): {errore}", flush=True)
+            archivio.unlink(missing_ok=True)
     return conteggio
 
 
