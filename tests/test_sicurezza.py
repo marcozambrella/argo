@@ -8,10 +8,10 @@ import subprocess
 import torch
 import yaml
 
-from sicurezza.dati import gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
+from sicurezza.dati import gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
 from sicurezza.demo import confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
-from sicurezza.strumenti import risultati_per_il_sito, scegli_immagini_coco
+from sicurezza.strumenti import risultati_per_il_sito, scegli_candidati_scippo_telefono, scegli_immagini_coco
 from sicurezza.visione import prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
 
 
@@ -223,6 +223,15 @@ def test_chain_snatching_usa_solo_i_tempi_annotati(tmp_path):
     assert clip[0].eventi_in_frame(200) == [(50, 90, INDICE_CLASSE["scippo"])]
     assert clip[1].eventi_secondi == [] and clip[2].eventi_secondi == []
     assert all(c.classe_sfondo is None for c in clip)      # fuori dallo scippo: finestre scartate
+
+
+def test_phone_snatching_stessa_logica_del_chain_snatching(tmp_path):
+    crea_file(tmp_path, "phone_snatching/x7MHAcDekHw.mp4", "phone_snatching/6cECGbEud4g.mp4")
+    (tmp_path / "tempi.json").write_text(json.dumps({"x7MHAcDekHw.mp4": {"eventi": [[1.0, 2.0]], "nessuno_scippo": False}}))
+    clip = elenca_clip_phone_snatching(tmp_path, file_tempi=tmp_path / "tempi.json")
+    assert [c.id_clip for c in clip] == ["phone_snatching/6cECGbEud4g", "phone_snatching/x7MHAcDekHw"]
+    assert clip[0].eventi_secondi == [] and clip[1].eventi_secondi == [(1.0, 2.0, "scippo")]
+    assert all(c.sorgente == "phone_snatching" and c.gruppo == c.id_clip for c in clip)
 
 
 # ==============================================================================================================
@@ -753,4 +762,15 @@ def test_sohas_classi_innocue_tolte_e_primi_piani_fuori_dal_train(tmp_path):
     assert unito[("test", "pistol")] == 1                         # il test resta intero, anche coi primi piani
     righe_knife = [r for f in (tmp_path / "unito" / "labels").rglob("*.txt") for r in f.read_text().splitlines()]
     assert {r.split()[0] for r in righe_knife} == {"0", "1"}   # knife → indice 1 di CLASSI_ARMA, pistol → 0
+
+
+def test_candidati_scippo_di_telefono():
+    righe = ["[1] aaa | 30 | Canale | 100 | Phone Snatch at Shell Petrol Station",
+             "[2] aaa | 30 | Canale | 100 | Phone Snatch at Shell Petrol Station",          # doppione
+             "bbb | 1:22 | Social Media Library | Karachi Mobile Snatching Accused Arrested",
+             "ccc | 44 | X | 1 | Chain Snatching from Old Lady",                                # catenina: già coperta
+             "ddd | 26 | X | 1 | Mobile Snatching Prank",                                       # scherzo
+             "eee | 26 | X | 1 | nothing phone 3 first look review",                            # niente furto
+             "fff | 1:45 | X | 1 | Câmeras flagram furto de celular em clínica"]
+    assert [i for i, _ in scegli_candidati_scippo_telefono(righe)] == ["aaa", "bbb", "fff"]
 

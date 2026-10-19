@@ -468,9 +468,26 @@ FILE_TEMPI_SCIPPO = Path(__file__).resolve().parents[2] / "annotations" / "chain
 
 
 def elenca_clip_chain_snatching(radice_dataset: str | Path, file_tempi: Path = FILE_TEMPI_SCIPPO) -> list[ClipAnnotata]:
+    return clip_da_tempi_annotati(sorted(Path(radice_dataset).glob("**/Chain_Snatching_Videos/*.mp4")), file_tempi,
+                                  "chain_snatching")
+
+
+# D40: scippi di telefono da video YouTube con licenza CC BY (`strumenti scarica-video-cc`), annotati da Marco con
+# `strumenti annota-scippi --video data/phone_snatching --uscita annotations/phone_snatching/tempi_scippo.json`.
+FILE_TEMPI_SCIPPO_TELEFONO = Path(__file__).resolve().parents[2] / "annotations" / "phone_snatching" / "tempi_scippo.json"
+
+
+def elenca_clip_phone_snatching(radice_dataset: str | Path,
+                                file_tempi: Path = FILE_TEMPI_SCIPPO_TELEFONO) -> list[ClipAnnotata]:
+    return clip_da_tempi_annotati(sorted(Path(radice_dataset).glob("**/phone_snatching/*.mp4")), file_tempi,
+                                  "phone_snatching")
+
+
+def clip_da_tempi_annotati(percorsi_video: list[Path], file_tempi: Path, sorgente: str) -> list[ClipAnnotata]:
+    """Video annotati con lo strumento degli scippi: si usano solo i tratti segnati (D15, D22)."""
     tempi = json.loads(Path(file_tempi).read_text()) if Path(file_tempi).exists() else {}
     clip = []
-    for percorso in sorted(Path(radice_dataset).glob("**/Chain_Snatching_Videos/*.mp4")):
+    for percorso in percorsi_video:
         annotazione = tempi.get(percorso.name)
         if annotazione is None:
             eventi, nota = [], "non ancora annotato: nessuna finestra"
@@ -479,8 +496,8 @@ def elenca_clip_chain_snatching(radice_dataset: str | Path, file_tempi: Path = F
         else:
             eventi, nota = [(float(inizio), float(fine), "scippo") for inizio, fine in annotazione["eventi"]], ""
         clip.append(ClipAnnotata(
-            id_clip=f"chain_snatching/{percorso.stem}", sorgente="chain_snatching",
-            gruppo=f"chain_snatching/{percorso.stem}", percorso_video=str(percorso), eventi_secondi=eventi,
+            id_clip=f"{sorgente}/{percorso.stem}", sorgente=sorgente,
+            gruppo=f"{sorgente}/{percorso.stem}", percorso_video=str(percorso), eventi_secondi=eventi,
             classe_sfondo=None, note=nota))
     return clip
 
@@ -498,7 +515,8 @@ def elenca_clip_chain_snatching(radice_dataset: str | Path, file_tempi: Path = F
 # ==============================================================================================================
 
 SORGENTI = {"rwf2000": elenca_clip_rwf2000, "cctv_fights": elenca_clip_cctv_fights, "scvd": elenca_clip_scvd,
-            "ucf_uca": elenca_clip_ucf_uca, "chain_snatching": elenca_clip_chain_snatching}
+            "ucf_uca": elenca_clip_ucf_uca, "chain_snatching": elenca_clip_chain_snatching,
+            "phone_snatching": elenca_clip_phone_snatching}
 
 
 def prepara(cartella_input: Path, cartella_uscita: Path, sorgenti=tuple(SORGENTI)):

@@ -345,6 +345,85 @@ def comando_scarica_negativi_coco(argomenti: list[str] | None = None) -> None:
 
 
 # ==============================================================================================================
+# scarica_video_cc
+# D40: video di scippi di telefono con licenza Creative Commons Attribution da YouTube (fonti trovate dal
+# sub-agente, D31), da annotare poi con `annota-scippi`. Per ogni video si legge la licenza con yt-dlp e si scarica
+# SOLO se è CC BY; nome, canale, licenza e link finiscono in attribuzioni.csv (la CC BY obbliga a citare l'autore).
+# Se YouTube chiede di dimostrare di non essere un robot ci si ferma: niente cookie del browser né aggiramenti.
+#
+# Uso:  uv run python -m sicurezza.strumenti scarica-video-cc --candidati annotations/phone_snatching/candidati_youtube.txt \
+#           --cartella data/phone_snatching
+# ==============================================================================================================
+
+PAROLE_FURTO = re.compile(r"snatch|chor\b|thief|theft|steal|stolen|robb|jambret|furto|roub|vol de|vole|ladr", re.IGNORECASE)
+PAROLE_TELEFONO = re.compile(r"mobile|phone|cell|handphone|celular|t[ée]l[ée]phone|telefono|smartphone", re.IGNORECASE)
+PAROLE_DA_SCARTARE = re.compile(r"prank|funny|vines|idiotz|be like|thug|review|first look|unboxing|animation|"
+                                r"explainer|salman|#shorts|hack|software|flashing", re.IGNORECASE)
+DURATA_MASSIMA_SECONDI = 360   # le compilation lunghe le annota male anche una persona: meglio clip brevi
+
+
+def scegli_candidati_scippo_telefono(righe: list[str]) -> list[tuple[str, str]]:
+    """Righe "id | durata | canale | ... | titolo" (formato del sub-agente) → [(id, titolo)] senza doppioni."""
+    scelti, visti = [], set()
+    for riga in righe:
+        campi = [campo.strip() for campo in re.sub(r"^\[\d+\]\s*", "", riga).split(" | ")]
+        if len(campi) < 2 or campi[0] in visti:
+            continue
+        titolo = campi[-1]
+        if PAROLE_FURTO.search(titolo) and PAROLE_TELEFONO.search(titolo) and not PAROLE_DA_SCARTARE.search(titolo) \
+                and "chain" not in titolo.lower():
+            visti.add(campi[0])
+            scelti.append((campi[0], titolo))
+    return scelti
+
+
+def comando_scarica_video_cc(argomenti: list[str] | None = None) -> None:
+    import time
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--candidati", required=True, help="un video per riga: id | ... | titolo")
+    parser.add_argument("--cartella", default="data/phone_snatching")
+    parser.add_argument("--pausa-secondi", type=float, default=4.0, help="tra un video e l'altro (evita il 429)")
+    argomenti = parser.parse_args(argomenti)
+    cartella = Path(argomenti.cartella)
+    cartella.mkdir(parents=True, exist_ok=True)
+    file_attribuzioni = cartella / "attribuzioni.csv"
+    gia_visti = set()
+    if file_attribuzioni.exists():
+        gia_visti = {riga["id"] for riga in csv.DictReader(file_attribuzioni.open())}
+    else:
+        file_attribuzioni.write_text("id,esito,licenza,durata_secondi,canale,titolo,url\n")
+    for id_video, _ in scegli_candidati_scippo_telefono(Path(argomenti.candidati).read_text().splitlines()):
+        if id_video in gia_visti:
+            continue
+        url = f"https://www.youtube.com/watch?v={id_video}"
+        lettura = subprocess.run(["yt-dlp", "--skip-download", "--dump-json", url], capture_output=True, text=True,
+                                 check=False)
+        if "not a bot" in lettura.stderr:
+            print("YouTube chiede la verifica anti-robot: mi fermo (vanno scaricati a mano).")
+            break
+        if lettura.returncode:
+            esito, informazioni = "non_disponibile", {}
+        else:
+            informazioni = json.loads(lettura.stdout)
+            licenza, durata = informazioni.get("license") or "", informazioni.get("duration") or 0
+            if "Creative Commons" not in licenza:
+                esito = "licenza_non_cc"
+            elif durata > DURATA_MASSIMA_SECONDI:
+                esito = "troppo_lungo"
+            else:
+                scaricamento = subprocess.run(["yt-dlp", "-q", "-f", "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720]",
+                                               "--merge-output-format", "mp4", "-o", str(cartella / "%(id)s.%(ext)s"),
+                                               url], capture_output=True, text=True, check=False)
+                esito = "scaricato" if scaricamento.returncode == 0 else "errore_scaricamento"
+        with file_attribuzioni.open("a", newline="") as uscita:
+            csv.writer(uscita).writerow([id_video, esito, informazioni.get("license", ""),
+                                         informazioni.get("duration", ""), informazioni.get("channel", ""),
+                                         informazioni.get("title", ""), url])
+        print(f"{id_video}: {esito}", flush=True)
+        time.sleep(argomenti.pausa_secondi)
+
+
+# ==============================================================================================================
 # esporta_risultati_sito
 # Dai risultati.json dell'addestramento (uno per modello) e dalla taratura del WARNING ARMA (D35) al file che il
 # sito legge: site/dati/risultati.json. Solo numeri misurati sul test set: niente da inventare (regola del sito).
@@ -488,7 +567,7 @@ def comando_monta_presentazione(argomenti: list[str] | None = None) -> None:
 # ==============================================================================================================
 # riga di comando: python -m sicurezza.strumenti <comando> [opzioni]
 # ==============================================================================================================
-COMANDI = {"annota-scippi": comando_annota_scippi, "scarica-campioni": comando_scarica_campioni, "scarica-negativi-coco": comando_scarica_negativi_coco, "esporta-risultati-sito": comando_esporta_risultati_sito, "monta-presentazione": comando_monta_presentazione}
+COMANDI = {"annota-scippi": comando_annota_scippi, "scarica-campioni": comando_scarica_campioni, "scarica-negativi-coco": comando_scarica_negativi_coco, "scarica-video-cc": comando_scarica_video_cc, "esporta-risultati-sito": comando_esporta_risultati_sito, "monta-presentazione": comando_monta_presentazione}
 
 
 def main(argomenti: list[str] | None = None) -> None:
