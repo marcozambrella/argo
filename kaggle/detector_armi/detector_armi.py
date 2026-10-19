@@ -18,7 +18,7 @@ if shutil.which("ffprobe") is None:  # il lettore video usa ffmpeg/ffprobe: buil
 - negativi difficili COCO (telefoni, coltelli da cucina, telecomandi, ...) diversi da quelli della prova;
 - via da train/val i primi piani: armi con riquadro > 10% dell'immagine (D37). Il test resta intero.
 Tetto D37: l'addestramento si ferma a ORE_MASSIME_ADDESTRAMENTO (best.pt si salva a ogni epoca)."""
-import signal, subprocess, sys, time, urllib.request, zipfile
+import signal, subprocess, sys, time, zipfile
 from pathlib import Path
 
 ORE_MASSIME_ADDESTRAMENTO = 4.75     # D37: "se ci mette meno di 5h"
@@ -28,8 +28,11 @@ visione = lambda *argomenti: subprocess.run([sys.executable, "-m", "sicurezza.vi
                                             env=ambiente)
 
 # US Mock Attack: ~1,5 GB da Hugging Face, estratto e convertito in /tmp (non finisce nell'output del kernel)
+from sicurezza.strumenti import scarica_con_riprova
 from sicurezza.visione import CARTELLA_SOHAS_NEL_REPO, URL_DASCI, URL_MOCK_ATTACK
-urllib.request.urlretrieve(URL_MOCK_ATTACK, "/tmp/mock_attack.zip")
+import socket
+socket.setdefaulttimeout(300)   # un download bloccato fa fallire il kernel invece di appenderlo
+scarica_con_riprova(URL_MOCK_ATTACK, Path("/tmp/mock_attack.zip"))
 zipfile.ZipFile("/tmp/mock_attack.zip").extractall("/tmp/mock_attack_voc")
 Path("/tmp/mock_attack.zip").unlink()
 visione("converti-mock-attack", "--sorgente", "/tmp/mock_attack_voc", "--uscita", "/tmp/mock_attack")

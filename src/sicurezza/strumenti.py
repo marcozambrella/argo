@@ -8,6 +8,7 @@ import csv
 import io
 import json
 import re
+import socket
 import subprocess
 import sys
 import tempfile
@@ -311,6 +312,17 @@ def scegli_immagini_coco(annotazioni: dict, categorie=CATEGORIE_NEGATIVE_COCO, p
     return scelte
 
 
+def scarica_con_riprova(url: str, destinazione: Path, tentativi: int = 3) -> None:
+    """urlretrieve con un timeout sul socket e qualche riprova: una connessione bloccata non deve appendere un kernel."""
+    for tentativo in range(tentativi):
+        try:
+            urllib.request.urlretrieve(url, destinazione)
+            return
+        except OSError:
+            if tentativo == tentativi - 1:
+                raise
+
+
 def comando_scarica_negativi_coco(argomenti: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cartella", default="data/negativi_coco")
@@ -319,12 +331,13 @@ def comando_scarica_negativi_coco(argomenti: list[str] | None = None) -> None:
                         help="categorie di CATEGORIE_NEGATIVE_ADDESTRAMENTO, senza le immagini della prova, salvate "
                              "come export YOLO (train/images + data.yaml senza classi) per `visione unisci-armi`")
     argomenti = parser.parse_args(argomenti)
+    socket.setdefaulttimeout(120)
     cartella = Path(argomenti.cartella)
     cartella.mkdir(parents=True, exist_ok=True)
     file_annotazioni = cartella / "instances_val2017.json"
     if not file_annotazioni.exists():  # lo zip (241 MB) serve solo per estrarre questo file (25 MB)
         archivio_zip = cartella / "annotations_trainval2017.zip"
-        urllib.request.urlretrieve(URL_ANNOTAZIONI_COCO, archivio_zip)
+        scarica_con_riprova(URL_ANNOTAZIONI_COCO, archivio_zip)
         with zipfile.ZipFile(archivio_zip) as archivio:
             file_annotazioni.write_bytes(archivio.read("annotations/instances_val2017.json"))
         archivio_zip.unlink()
@@ -340,7 +353,7 @@ def comando_scarica_negativi_coco(argomenti: list[str] | None = None) -> None:
         sottocartella.mkdir(parents=True, exist_ok=True)
         for nome in nomi_file:
             if not (sottocartella / nome).exists():
-                urllib.request.urlretrieve(URL_IMMAGINI_COCO + nome, sottocartella / nome)
+                scarica_con_riprova(URL_IMMAGINI_COCO + nome, sottocartella / nome)
         print(f"{categoria:12s} {len(nomi_file)} immagini in {sottocartella}")
 
 
