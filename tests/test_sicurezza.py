@@ -604,6 +604,13 @@ def test_addestramento_impara(dataset_finto, nome_modello, tmp_path):
     assert risultati["val"]["macro_f1"] >= 0.8, risultati["storia"]
 
 
+@pytest.mark.lento
+def test_tetto_di_tempo_ferma_e_salva_il_migliore(dataset_finto, tmp_path):
+    risultati = addestra(dataset_finto, "graph_transformer", tmp_path, epoche=5, dimensione_lotto=16,
+                         ore_massime=1e-9)
+    assert len(risultati["storia"]) == 1 and risultati["test"] is not None and (tmp_path / "migliore.pt").exists()
+
+
 # ==============================================================================================================
 # US Mock Attack (D30)
 # ==============================================================================================================

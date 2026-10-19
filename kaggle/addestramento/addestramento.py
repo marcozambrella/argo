@@ -13,18 +13,27 @@ if shutil.which("ffprobe") is None:  # il lettore video usa ffmpeg/ffprobe: buil
 # =====
 
 """Passi 5-6: finestre etichettate dalle estrazioni, poi Graph-Transformer (GPU 0) e ST-GCN (GPU 1) in parallelo,
-poi taratura del WARNING ARMA (D35). Le estrazioni devono venire da UNA sola sorgente (aggiungi-armi se il detector
-è stato riaddestrato, altrimenti estrazione): due cartelle con gli stessi nomi di file si sovrascriverebbero."""
+poi taratura del WARNING ARMA (D35) e analisi per sorgente. Le estrazioni devono venire da UNA sola sorgente
+(aggiungi-armi se il detector è stato riaddestrato, altrimenti estrazione): due cartelle con gli stessi nomi di file
+si sovrascriverebbero.
+Addestramento 2 (19/10): dopo l'addestramento 1 il Graph-Transformer andava in overfitting dall'epoca 4 → più
+regolarizzazione; pazienza 6 (le epoche costano 10-20 minuti); tetto ORE_MASSIME per stare nella quota GPU."""
 import subprocess, sys
 from pathlib import Path
 
+ORE_MASSIME = 4.0   # per ciascun modello (girano in parallelo): da fissare sulla quota rimasta (`kaggle quota`)
+OPZIONI = {"graph_transformer": ["--epoche", "25", "--pazienza", "6", "--dropout", "0.3", "--decadimento-pesi", "0.1"],
+           "stgcn": ["--epoche", "30", "--pazienza", "6"]}
+
 ingresso = next(Path("/kaggle/input").glob("**/annotazioni.jsonl"))
 cartelle_estratti = [str(c) for c in Path("/kaggle/input").glob("**/estratti") if c.is_dir()]
+print("annotazioni:", ingresso, "| estratti:", cartelle_estratti, flush=True)
 ambiente = {**os.environ, "PYTHONPATH": "/tmp/repo/src"}
 subprocess.run([sys.executable, "-m", "sicurezza.modelli", "dataset-finestre", "--annotazioni", str(ingresso),
                 "--estratti", *cartelle_estratti, "--uscita", "/tmp/finestre.npz"], check=True, env=ambiente)
 processi = [subprocess.Popen([sys.executable, "-m", "sicurezza.modelli", "addestra", "--finestre", "/tmp/finestre.npz",
-                              "--modello", modello, "--uscita", f"/kaggle/working/{modello}"],
+                              "--modello", modello, "--uscita", f"/kaggle/working/{modello}",
+                              "--ore-massime", str(ORE_MASSIME), *OPZIONI[modello]],
                              env={**ambiente, "CUDA_VISIBLE_DEVICES": str(gpu)})
             for gpu, modello in enumerate(["graph_transformer", "stgcn"])]
 for processo in processi:
@@ -34,3 +43,7 @@ for processo in processi:
 subprocess.run([sys.executable, "-m", "sicurezza.demo", "tara-warning", "--finestre", "/tmp/finestre.npz",
                 "--split", "/kaggle/working/graph_transformer/split.npz", "--estratti", *cartelle_estratti,
                 "--uscita", "/kaggle/working/taratura_warning.json"], check=True, env=ambiente)
+# dove sbagliano: metriche per sorgente e per video del test
+subprocess.run([sys.executable, "-m", "sicurezza.modelli", "analizza-predizioni", "--finestre", "/tmp/finestre.npz",
+                "--probabilita", *[f"{m}=/kaggle/working/{m}/probabilita_test.npy" for m in OPZIONI],
+                "--uscita", "/kaggle/working/analisi_test.json"], check=True, env=ambiente)

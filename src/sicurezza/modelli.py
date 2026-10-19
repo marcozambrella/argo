@@ -706,8 +706,11 @@ def indici_degli_split(finestre: dict, seme: int = 0) -> dict[str, np.ndarray]:
 
 def addestra(finestre: dict, nome_modello: str, cartella_uscita: Path, epoche: int = 50, dimensione_lotto: int = 64,
              tasso_apprendimento: float = 5e-4, decadimento_pesi: float = 0.05, pazienza: int = 10,
-             bilanciamento: str = "pesi", seme: int = 0, iperparametri_modello: dict | None = None) -> dict:
+             bilanciamento: str = "pesi", seme: int = 0, iperparametri_modello: dict | None = None,
+             ore_massime: float | None = None) -> dict:
+    """ore_massime: tetto di tempo (quota GPU di Kaggle). Si controlla a fine epoca: poi si valuta il migliore."""
     torch.manual_seed(seme)
+    inizio_addestramento = time.perf_counter()
     generatore = np.random.default_rng(seme)
     dispositivo = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cartella_uscita.mkdir(parents=True, exist_ok=True)
@@ -771,6 +774,9 @@ def addestra(finestre: dict, nome_modello: str, cartella_uscita: Path, epoche: i
             if epoche_senza_miglioramento >= pazienza:
                 print(f"stop anticipato: {pazienza} epoche senza miglioramento", flush=True)
                 break
+        if ore_massime and time.perf_counter() - inizio_addestramento > ore_massime * 3600:
+            print(f"stop: superate {ore_massime} h (tetto di tempo)", flush=True)
+            break
 
     salvato = torch.load(cartella_uscita / "migliore.pt", map_location=dispositivo)
     modello.load_state_dict(salvato["stato"])
@@ -803,10 +809,17 @@ def comando_addestra(argomenti: list[str] | None = None) -> None:
     parser.add_argument("--tasso-apprendimento", type=float, default=5e-4)
     parser.add_argument("--bilanciamento", choices=["pesi", "campionamento", "nessuno"], default="pesi")
     parser.add_argument("--seme", type=int, default=0)
+    parser.add_argument("--pazienza", type=int, default=10, help="epoche senza miglioramento prima di fermarsi")
+    parser.add_argument("--decadimento-pesi", type=float, default=0.05)
+    parser.add_argument("--dropout", type=float, default=None, help="se omesso, quello predefinito del modello")
+    parser.add_argument("--ore-massime", type=float, default=None, help="tetto di tempo (quota GPU)")
     argomenti = parser.parse_args(argomenti)
+    iperparametri_modello = {"dropout": argomenti.dropout} if argomenti.dropout is not None else {}
     risultati = addestra(carica_finestre(argomenti.finestre), argomenti.modello, Path(argomenti.uscita),
                          argomenti.epoche, argomenti.lotto, argomenti.tasso_apprendimento,
-                         bilanciamento=argomenti.bilanciamento, seme=argomenti.seme)
+                         decadimento_pesi=argomenti.decadimento_pesi, pazienza=argomenti.pazienza,
+                         bilanciamento=argomenti.bilanciamento, seme=argomenti.seme,
+                         iperparametri_modello=iperparametri_modello, ore_massime=argomenti.ore_massime)
     print(json.dumps({chiave: risultati[chiave] for chiave in ("val", "test", "latenza_cpu_ms_per_finestra")},
                      indent=2, ensure_ascii=False))
 
