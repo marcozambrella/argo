@@ -708,6 +708,25 @@ def test_estrai_passa_il_tracker_scelto_all_estrattore(monkeypatch):
     assert [nominali["tracker"] for nominali in creati] == ["botsort.yaml", visione.TRACKER_PREDEFINITO]
 
 
+def test_addestra_mani_salva_dove_dice_anche_con_percorso_relativo(tmp_path, monkeypatch):
+    import ultralytics
+    from sicurezza.visione import addestra_mani
+    chiamate = []
+
+    class YoloFinto:
+        def __init__(self, pesi):
+            pass
+
+        def train(self, **opzioni):
+            chiamate.append(opzioni)
+
+    monkeypatch.setattr(ultralytics, "YOLO", YoloFinto)
+    monkeypatch.chdir(tmp_path)
+    pesi = addestra_mani("ritagli", "uscita_relativa")
+    assert Path(chiamate[0]["project"]).is_absolute()
+    assert Path(chiamate[0]["project"]) / "yolo26s_mani" / "weights" / "best.pt" == pesi.resolve()
+
+
 def test_scarica_con_riprova_riprova_e_poi_si_arrende(tmp_path, monkeypatch):
     tentativi = []
 

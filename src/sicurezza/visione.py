@@ -570,9 +570,10 @@ def addestra_detector(percorso_data_yaml: str, cartella_uscita: str, modello_bas
     il tempo (quota GPU sprecata); il tetto delle 5 h di D37 lo mette il kernel fermando il processo."""
     from ultralytics import YOLO
 
+    # percorso assoluto: con uno relativo Ultralytics 8.4 salva sotto runs/<task>/<percorso>
     YOLO(modello_base).train(data=percorso_data_yaml, epochs=epoche, patience=pazienza, imgsz=dimensione_immagine,
-                             batch=lotto, device=dispositivo, project=cartella_uscita, name="yolo26s_armi",
-                             exist_ok=True, seed=0)
+                             batch=lotto, device=dispositivo, project=str(Path(cartella_uscita).resolve()),
+                             name="yolo26s_armi", exist_ok=True, seed=0)
     return valuta_detector(Path(cartella_uscita) / "yolo26s_armi" / "weights" / "best.pt", percorso_data_yaml,
                            dispositivo)
 
@@ -845,9 +846,10 @@ def comando_ritagli_mani(argomenti: list[str] | None = None) -> None:
 def addestra_mani(cartella_ritagli: str, cartella_uscita: str, epoche: int = 30, lotto: int = 64,
                   dispositivo: str | int | None = None):
     from ultralytics import YOLO
+    # percorso assoluto: con uno relativo Ultralytics 8.4 salva sotto runs/classify/<percorso>
     YOLO("yolo26s-cls.pt").train(data=cartella_ritagli, epochs=epoche, imgsz=DIMENSIONE_RITAGLIO, batch=lotto,
-                                 device=dispositivo, project=cartella_uscita, name="yolo26s_mani", exist_ok=True,
-                                 patience=8, seed=0)
+                                 device=dispositivo, project=str(Path(cartella_uscita).resolve()), name="yolo26s_mani",
+                                 exist_ok=True, patience=8, seed=0)
     return Path(cartella_uscita) / "yolo26s_mani" / "weights" / "best.pt"
 
 
