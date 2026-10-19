@@ -43,6 +43,7 @@ NOMI_KEYPOINT = (
 )
 NUMERO_KEYPOINT = len(NOMI_KEYPOINT)
 POLSI = (NOMI_KEYPOINT.index("polso_sx"), NOMI_KEYPOINT.index("polso_dx"))
+GOMITI = (NOMI_KEYPOINT.index("gomito_sx"), NOMI_KEYPOINT.index("gomito_dx"))   # stesso ordine dei polsi
 
 OSSA = (
     (15, 13), (13, 11), (16, 14), (14, 12), (11, 12), (5, 11), (6, 12), (5, 6), (5, 7), (6, 8),

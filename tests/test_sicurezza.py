@@ -12,7 +12,7 @@ from sicurezza.dati import gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASS
 from sicurezza.demo import valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import analizza_predizioni, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.strumenti import risultati_per_il_sito, scegli_candidati_scippo_telefono, scegli_immagini_coco
-from sicurezza.visione import prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
+from sicurezza.visione import mani_di_una_persona, precisione_media, probabilita_armi_in_mano, ritaglio_quadrato, ritagli_per_addestramento, prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
 
 
 # ==============================================================================================================
@@ -815,4 +815,83 @@ def test_rissa_piu_warning_diventa_rissa_con_arma():
     assert risultato["solo_modello"]["recall"]["violenza_con_arma"] == 0.0
     assert risultato["modello_piu_regola"]["recall"]["violenza_con_arma"] == 1.0
     assert risultato["modello_piu_regola"]["accuratezza"] == 1.0 and risultato["warning_su_finestre_senza_arma"] == 0.5
+
+
+# ==============================================================================================================
+# ingrandimento sulle mani (D44)
+# ==============================================================================================================
+
+def test_ritaglio_quadrato_fuori_dal_bordo_resta_nero():
+    immagine = np.full((100, 200, 3), 7, np.uint8)
+    ritaglio = ritaglio_quadrato(immagine, 0, 0, 40)              # centrato nell'angolo: 3/4 fuori
+    assert ritaglio.shape == (40, 40, 3)
+    assert (ritaglio[20:, 20:] == 7).all() and (ritaglio[:20] == 0).all() and (ritaglio[:, :20] == 0).all()
+
+
+def test_mani_oltre_il_polso_e_lato_proporzionale_all_altezza():
+    keypoint = scheletro_in_piedi(100, 400, 200)                  # persona alta 200 px
+    box = np.array([80, 200, 120, 400])
+    mani = mani_di_una_persona(box, keypoint)
+    assert len(mani) == 2 and all(lato == 0.4 * 200 for _, _, lato in mani)
+    polso, gomito = keypoint[10, :2], keypoint[8, :2]
+    assert np.allclose(mani[1][:2], polso + 0.3 * (polso - gomito))
+    keypoint[9:11, 2] = 0.1                                        # polsi non visti → nessun ritaglio
+    assert mani_di_una_persona(box, keypoint) == []
+
+
+def test_precisione_media():
+    assert precisione_media(np.array([0.9, 0.8, 0.1]), np.array([True, True, False])) == 1.0
+    assert precisione_media(np.array([0.9, 0.8, 0.1]), np.array([False, False, True])) == 1 / 3
+
+
+class RisultatoPoseFinto:
+    def __init__(self, persone):
+        import torch as t
+        self.boxes = type("B", (), {"xyxy": t.tensor([b for b, _ in persone], dtype=t.float32).reshape(-1, 4),
+                                    "__len__": lambda _: len(persone)})()
+        keypoint = np.array([k for _, k in persone], np.float32).reshape(-1, 17, 3)
+        self.keypoints = type("K", (), {"xy": t.from_numpy(keypoint[..., :2]), "conf": t.from_numpy(keypoint[..., 2])})()
+
+
+def test_ritagli_per_addestramento_positivi_e_mani_vuote(tmp_path):
+    import cv2
+    unita = tmp_path / "unito"
+    for split in ("train", "test"):
+        (unita / "images" / split).mkdir(parents=True)
+        (unita / "labels" / split).mkdir(parents=True)
+        cv2.imwrite(str(unita / "images" / split / "con_coltello.jpg"), np.zeros((480, 640, 3), np.uint8))
+        (unita / "labels" / split / "con_coltello.txt").write_text("1 0.5 0.5 0.02 0.05\n")
+        cv2.imwrite(str(unita / "images" / split / "vuota.jpg"), np.zeros((480, 640, 3), np.uint8))
+        (unita / "labels" / split / "vuota.txt").write_text("")
+
+    class PoseFinta:   # una persona in piedi in ogni immagine senza armi
+        def predict(self, immagini, **_):
+            return [RisultatoPoseFinto([([280, 200, 360, 400], scheletro_in_piedi(320, 400, 200))]) for _ in immagini]
+
+    conteggio = ritagli_per_addestramento(unita, tmp_path / "ritagli", PoseFinta(), ritagli_per_arma=2)
+    assert conteggio[("train", "knife")] == 2 and conteggio[("train", "niente")] == 2   # 2 copie, 2 mani
+    assert conteggio[("test", "knife")] == 2
+    ritaglio = cv2.imread(str(next((tmp_path / "ritagli" / "train" / "knife").glob("*.jpg"))))
+    assert ritaglio.shape == (224, 224, 3)
+
+
+def test_probabilita_armi_in_mano_massimo_tra_le_due_mani():
+    import torch as t
+
+    class ClassificatoreFinto:
+        names = {0: "knife", 1: "niente", 2: "pistol", 3: "rifle"}
+
+        def __init__(self):
+            self.chiamate = 0
+
+        def predict(self, ritagli, **_):   # prima mano: coltello 0,9; seconda mano: niente
+            valori = [[0.9, 0.05, 0.03, 0.02], [0.01, 0.97, 0.01, 0.01]][:len(ritagli)]
+            return [type("R", (), {"probs": type("P", (), {"data": t.tensor(v)})()})() for v in valori]
+
+    keypoint = scheletro_in_piedi(320, 400, 200)[None]
+    probabilita = probabilita_armi_in_mano(ClassificatoreFinto(), np.zeros((480, 640, 3), np.uint8),
+                                           np.array([[280, 200, 360, 400]]), keypoint)
+    assert probabilita.shape == (1, 3) and np.allclose(probabilita[0], [0.03, 0.9, 0.02])   # pistola, coltello, fucile
+    assert probabilita_armi_in_mano(ClassificatoreFinto(), np.zeros((480, 640, 3), np.uint8),
+                                    np.empty((0, 4)), np.empty((0, 17, 3))).shape == (0, 3)
 

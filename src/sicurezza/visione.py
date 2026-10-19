@@ -13,7 +13,7 @@ import time
 import numpy as np
 import yaml
 
-from .dati import VideoDaEstrarre, FPS_ANALISI, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto
+from .dati import GOMITI, POLSI, VideoDaEstrarre, FPS_ANALISI, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto
 
 
 # ==============================================================================================================
@@ -321,7 +321,7 @@ def nomi_classi_export(cartella_export: Path) -> list[str]:
 
 
 def unisci(cartelle_export: list[Path], cartella_uscita: Path, area_massima_train: float | None = None,
-           solo_split: tuple[str, ...] = ("train", "val", "test")) -> Counter:
+           solo_split: tuple[str, ...] = ("train", "val", "test"), collega: bool = False) -> Counter:
     """area_massima_train (D37): in train e val si tolgono le immagini con un'arma il cui riquadro supera questa
     frazione dell'immagine (primi piani, lontani dalla CCTV). Il test resta intero, per confrontare i detector."""
     conteggio = Counter()
@@ -356,7 +356,10 @@ def unisci(cartelle_export: list[Path], cartella_uscita: Path, area_massima_trai
                     conteggio[(split, CLASSI_ARMA[int(riga.split()[0])])] += 1
                 for nome_classe in classi_tolte:
                     conteggio[(split, f"tolta:{nome_classe}")] += 1
-                shutil.copy2(immagine, cartella_uscita / "images" / split / nome_nuovo)
+                if collega:   # collegamento invece della copia: veloce quando le immagini stanno sul disco USB
+                    (cartella_uscita / "images" / split / nome_nuovo).symlink_to(immagine.resolve())
+                else:
+                    shutil.copy2(immagine, cartella_uscita / "images" / split / nome_nuovo)
                 (cartella_uscita / "labels" / split / (Path(nome_nuovo).stem + ".txt")).write_text(
                     "\n".join(righe_nuove) + ("\n" if righe_nuove else ""))
                 conteggio[(split, "immagini")] += 1
@@ -376,10 +379,11 @@ def comando_unisci_armi(argomenti: list[str] | None = None) -> None:
     parser.add_argument("--area-massima-train", type=float, default=None,
                         help="toglie da train/val le immagini con armi più grandi di questa frazione (D37)")
     parser.add_argument("--solo-test", action="store_true", help="converte solo il test (per confrontare detector)")
+    parser.add_argument("--collega", action="store_true", help="collegamenti simbolici alle immagini invece di copie")
     argomenti = parser.parse_args(argomenti)
     solo_split = ("test",) if argomenti.solo_test else ("train", "val", "test")
     for (split, voce), numero in sorted(unisci([Path(s) for s in argomenti.sorgenti], Path(argomenti.uscita),
-                                               argomenti.area_massima_train, solo_split).items()):
+                                               argomenti.area_massima_train, solo_split, argomenti.collega).items()):
         print(f"{split:6s} {voce:20s} {numero}")
 
 
@@ -635,6 +639,252 @@ def comando_falsi_allarmi(argomenti: list[str] | None = None) -> None:
         Path(argomenti.uscita).write_text(json.dumps(risultato, indent=1, ensure_ascii=False))
 
 # ==============================================================================================================
+# armi/ingrandimento_mani (D44)
+# A 640 px un coltello ripreso da una CCTV è largo 2-3 pixel: il detector sull'intero frame non lo vede. Dalle pose
+# sappiamo dove sono le mani: si ritaglia un quadrato intorno a ogni polso alla risoluzione PIENA del video (lato =
+# 0,4 × altezza della persona, centro un po' oltre il polso, dove la mano tiene l'oggetto), lo si ingrandisce a 224 px
+# e un classificatore dice niente / pistola / coltello / fucile.
+# Addestramento: positivi = ritagli intorno alle armi annotate (l'arma occupa la stessa frazione del ritaglio che
+# avrebbe in mano a una persona); negativi = ritagli intorno ai polsi di persone senza armi, anche con telefoni,
+# portafogli, tessere e banconote in mano (le immagini di Sohas senza armi) e oggetti di COCO.
+#
+# Uso:
+#     python -m sicurezza.visione ritagli-mani --dati armi_unite/ --uscita ritagli_mani/ --dispositivo 0
+#     python -m sicurezza.visione addestra-mani --dati ritagli_mani/ --uscita runs/mani --dispositivo 0
+#     python -m sicurezza.visione valuta-mani --modello-mani .../best.pt --dati armi_unite/ --split test
+#         [--modello-armi detector.pt] --uscita valutazione_mani.json
+# ==============================================================================================================
+
+CLASSI_ARMA_MANI = ("pistol", "knife", "rifle")   # più "niente" per le mani vuote
+LATO_RITAGLIO_SU_ALTEZZA = 0.4
+SPOSTAMENTO_OLTRE_IL_POLSO = 0.3     # frazione del vettore gomito→polso
+LATO_MINIMO_RITAGLIO = 24            # pixel
+FATTORI_LATO_ARMA = (2.5, 4.5)       # ritaglio di addestramento = U(2,5; 4,5) × lato lungo dell'arma (≈ 0,4 × altezza)
+CONFIDENZA_MINIMA_POLSO = 0.3
+DIMENSIONE_RITAGLIO = 224
+
+
+def ritaglio_quadrato(immagine: np.ndarray, centro_x: float, centro_y: float, lato: float) -> np.ndarray:
+    """Quadrato lato × lato centrato in (centro_x, centro_y); le parti fuori dall'immagine restano nere."""
+    lato = max(round(lato), 1)
+    x0, y0 = round(centro_x - lato / 2), round(centro_y - lato / 2)
+    ritaglio = np.zeros((lato, lato, immagine.shape[2]), immagine.dtype)
+    dentro_x0, dentro_y0 = max(x0, 0), max(y0, 0)
+    dentro_x1, dentro_y1 = min(x0 + lato, immagine.shape[1]), min(y0 + lato, immagine.shape[0])
+    if dentro_x1 > dentro_x0 and dentro_y1 > dentro_y0:
+        ritaglio[dentro_y0 - y0:dentro_y1 - y0, dentro_x0 - x0:dentro_x1 - x0] = \
+            immagine[dentro_y0:dentro_y1, dentro_x0:dentro_x1]
+    return ritaglio
+
+
+def mani_di_una_persona(box_persona: np.ndarray, keypoint_persona: np.ndarray) -> list[tuple[float, float, float]]:
+    """(centro_x, centro_y, lato) del ritaglio per ogni polso visibile."""
+    lato = max(LATO_RITAGLIO_SU_ALTEZZA * float(box_persona[3] - box_persona[1]), LATO_MINIMO_RITAGLIO)
+    mani = []
+    for polso, gomito in zip(POLSI, GOMITI):
+        if not keypoint_persona[polso, 2] >= CONFIDENZA_MINIMA_POLSO:   # anche NaN = polso non visto
+            continue
+        x, y = (float(v) for v in keypoint_persona[polso, :2])
+        if keypoint_persona[gomito, 2] >= CONFIDENZA_MINIMA_POLSO:
+            x += SPOSTAMENTO_OLTRE_IL_POLSO * (x - float(keypoint_persona[gomito, 0]))
+            y += SPOSTAMENTO_OLTRE_IL_POLSO * (y - float(keypoint_persona[gomito, 1]))
+        mani.append((x, y, lato))
+    return mani
+
+
+def ritagli_delle_mani(frame: np.ndarray, box_persone: np.ndarray, keypoint_persone: np.ndarray
+                       ) -> tuple[list[np.ndarray], list[int]]:
+    import cv2
+    ritagli, persona_del_ritaglio = [], []
+    for indice, (box, keypoint) in enumerate(zip(box_persone, keypoint_persone)):
+        for centro_x, centro_y, lato in mani_di_una_persona(box, keypoint):
+            ritagli.append(cv2.resize(ritaglio_quadrato(frame, centro_x, centro_y, lato),
+                                      (DIMENSIONE_RITAGLIO, DIMENSIONE_RITAGLIO)))
+            persona_del_ritaglio.append(indice)
+    return ritagli, persona_del_ritaglio
+
+
+def probabilita_armi_in_mano(modello_mani, frame: np.ndarray, box_persone: np.ndarray, keypoint_persone: np.ndarray,
+                             dispositivo=None) -> np.ndarray:
+    """[persone, 3]: per ogni persona la probabilità più alta (tra le due mani) di pistola, coltello, fucile."""
+    probabilita = np.zeros((len(box_persone), len(CLASSI_ARMA_MANI)), np.float32)
+    ritagli, persona_del_ritaglio = ritagli_delle_mani(frame, box_persone, keypoint_persone)
+    if not ritagli:
+        return probabilita
+    indice_classe = {nome: indice for indice, nome in modello_mani.names.items()}
+    for persona, risultato in zip(persona_del_ritaglio, modello_mani.predict(ritagli, imgsz=DIMENSIONE_RITAGLIO,
+                                                                              device=dispositivo, verbose=False)):
+        valori = risultato.probs.data.float().cpu().numpy()
+        for posizione, nome in enumerate(CLASSI_ARMA_MANI):
+            probabilita[persona, posizione] = max(probabilita[persona, posizione], valori[indice_classe[nome]])
+    return probabilita
+
+
+def ritagli_per_addestramento(cartella_unita: Path, cartella_uscita: Path, modello_pose, dispositivo=None,
+                              ritagli_per_arma: int = 2, mani_vuote_per_immagine: int = 4, seme: int = 0) -> Counter:
+    """Dataset unito in formato YOLO (images/<split>, labels/<split>) → dataset di classificazione per Ultralytics:
+    cartella_uscita/<split>/<niente|pistol|knife|rifle>/*.jpg (ritagli già a 224 px)."""
+    import random
+
+    import cv2
+    generatore, conteggio = random.Random(seme), Counter()
+    for split in ("train", "val", "test"):
+        cartella_immagini = cartella_unita / "images" / split
+        if not cartella_immagini.exists():
+            continue
+        senza_armi = []
+        for percorso in sorted(cartella_immagini.iterdir()):
+            if percorso.suffix.lower() not in ESTENSIONI_IMMAGINE:
+                continue
+            etichette = cartella_unita / "labels" / split / (percorso.stem + ".txt")
+            righe = [r.split() for r in etichette.read_text().splitlines() if r.strip()] if etichette.exists() else []
+            if not righe:
+                senza_armi.append(percorso)
+                continue
+            immagine = cv2.imread(str(percorso))
+            if immagine is None:
+                continue
+            altezza, larghezza = immagine.shape[:2]
+            for numero_arma, (classe, centro_x, centro_y, w, h) in enumerate(r[:5] for r in righe):
+                lato_arma = max(float(w) * larghezza, float(h) * altezza)
+                for copia in range(ritagli_per_arma):
+                    lato = generatore.uniform(*FATTORI_LATO_ARMA) * max(lato_arma, 4)
+                    spostamento_x, spostamento_y = (generatore.uniform(-0.25, 0.25) * lato for _ in range(2))
+                    ritaglio = ritaglio_quadrato(immagine, float(centro_x) * larghezza + spostamento_x,
+                                                 float(centro_y) * altezza + spostamento_y, lato)
+                    nome_classe = CLASSI_ARMA[int(classe)]
+                    destinazione = cartella_uscita / split / nome_classe / f"{percorso.stem}_{numero_arma}_{copia}.jpg"
+                    destinazione.parent.mkdir(parents=True, exist_ok=True)
+                    cv2.imwrite(str(destinazione), cv2.resize(ritaglio, (DIMENSIONE_RITAGLIO, DIMENSIONE_RITAGLIO)))
+                    conteggio[(split, nome_classe)] += 1
+        # mani vuote: pose sulle immagini senza armi, a lotti
+        (cartella_uscita / split / "niente").mkdir(parents=True, exist_ok=True)
+        for inizio in range(0, len(senza_armi), 16):
+            lotto = senza_armi[inizio:inizio + 16]
+            immagini = [cv2.imread(str(p)) for p in lotto]
+            validi = [(p, i) for p, i in zip(lotto, immagini) if i is not None]
+            for (percorso, immagine), risultato in zip(validi, modello_pose.predict(
+                    [i for _, i in validi], device=dispositivo, conf=0.25, verbose=False)):
+                if not len(risultato.boxes):
+                    continue
+                box = risultato.boxes.xyxy.cpu().numpy()
+                keypoint = np.concatenate([risultato.keypoints.xy.cpu().numpy(),
+                                           risultato.keypoints.conf.cpu().numpy()[..., None]], -1)
+                ritagli, _ = ritagli_delle_mani(immagine, box, keypoint)
+                for numero, ritaglio in enumerate(generatore.sample(ritagli, min(len(ritagli), mani_vuote_per_immagine))):
+                    cv2.imwrite(str(cartella_uscita / split / "niente" / f"{percorso.stem}_{numero}.jpg"), ritaglio)
+                    conteggio[(split, "niente")] += 1
+    return conteggio
+
+
+def comando_ritagli_mani(argomenti: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dati", required=True, help="dataset unito da `unisci-armi` (images/, labels/)")
+    parser.add_argument("--uscita", required=True)
+    parser.add_argument("--modello-pose", default=MODELLO_POSE_PREDEFINITO)
+    parser.add_argument("--dispositivo", default=None)
+    argomenti = parser.parse_args(argomenti)
+    from ultralytics import YOLO
+    conteggio = ritagli_per_addestramento(Path(argomenti.dati), Path(argomenti.uscita), YOLO(argomenti.modello_pose),
+                                          argomenti.dispositivo)
+    for (split, classe), numero in sorted(conteggio.items()):
+        print(f"{split:6s} {classe:8s} {numero}")
+
+
+def addestra_mani(cartella_ritagli: str, cartella_uscita: str, epoche: int = 30, lotto: int = 64,
+                  dispositivo: str | int | None = None):
+    from ultralytics import YOLO
+    YOLO("yolo26s-cls.pt").train(data=cartella_ritagli, epochs=epoche, imgsz=DIMENSIONE_RITAGLIO, batch=lotto,
+                                 device=dispositivo, project=cartella_uscita, name="yolo26s_mani", exist_ok=True,
+                                 patience=8, seed=0)
+    return Path(cartella_uscita) / "yolo26s_mani" / "weights" / "best.pt"
+
+
+def comando_addestra_mani(argomenti: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dati", required=True, help="cartella di `ritagli-mani` (train/ val/ test/)")
+    parser.add_argument("--uscita", required=True)
+    parser.add_argument("--epoche", type=int, default=30)
+    parser.add_argument("--lotto", type=int, default=64)
+    parser.add_argument("--dispositivo", default=None)
+    argomenti = parser.parse_args(argomenti)
+    print("pesi:", addestra_mani(argomenti.dati, argomenti.uscita, argomenti.epoche, argomenti.lotto,
+                                 argomenti.dispositivo))
+
+
+def precisione_media(punteggi: np.ndarray, positivi: np.ndarray) -> float:
+    """Average precision (area sotto la curva precisione-recall) di una classe a livello di immagine."""
+    if not positivi.any():
+        return float("nan")
+    ordine = np.argsort(-punteggi, kind="stable")
+    veri = positivi[ordine].astype(float)
+    precisione = np.cumsum(veri) / np.arange(1, len(veri) + 1)
+    return float((precisione * veri).sum() / veri.sum())
+
+
+def valuta_mani(cartella_unita: Path, split: str, modello_pose, modello_mani=None, modello_armi=None,
+                dispositivo=None, soglia: float = 0.5) -> dict:
+    """Per immagine: c'è una pistola / un coltello / un fucile? Confronta l'ingrandimento sulle mani con il detector
+    sull'intero frame (stesse immagini): average precision e recall/falsi allarmi alla soglia."""
+    import cv2
+    punteggi = {"mani": [], "detector": []}
+    presenti = []
+    for percorso in sorted((cartella_unita / "images" / split).iterdir()):
+        immagine = cv2.imread(str(percorso))
+        if immagine is None:
+            continue
+        etichette = cartella_unita / "labels" / split / (percorso.stem + ".txt")
+        classi = {int(r.split()[0]) for r in etichette.read_text().splitlines() if r.strip()} if etichette.exists() else set()
+        presenti.append([CLASSI_ARMA.index(nome) in classi for nome in CLASSI_ARMA_MANI])
+        if modello_mani is not None:
+            risultato = modello_pose.predict(immagine, device=dispositivo, conf=0.25, verbose=False)[0]
+            box = risultato.boxes.xyxy.cpu().numpy()
+            keypoint = (np.concatenate([risultato.keypoints.xy.cpu().numpy(),
+                                        risultato.keypoints.conf.cpu().numpy()[..., None]], -1)
+                        if len(box) else np.empty((0, 17, 3)))
+            per_persona = probabilita_armi_in_mano(modello_mani, immagine, box, keypoint, dispositivo)
+            punteggi["mani"].append(per_persona.max(0) if len(per_persona) else np.zeros(len(CLASSI_ARMA_MANI)))
+        if modello_armi is not None:
+            risultato = modello_armi.predict(immagine, device=dispositivo, conf=0.05, verbose=False)[0]
+            migliori = np.zeros(len(CLASSI_ARMA_MANI))
+            for classe, confidenza in zip(risultato.boxes.cls.int().tolist(), risultato.boxes.conf.tolist()):
+                posizione = CLASSI_ARMA_MANI.index(modello_armi.names[classe])
+                migliori[posizione] = max(migliori[posizione], confidenza)
+            punteggi["detector"].append(migliori)
+    presenti = np.array(presenti, bool)
+    valutazione = {"immagini": len(presenti), "con_classe": dict(zip(CLASSI_ARMA_MANI, presenti.sum(0).tolist()))}
+    for metodo, valori in punteggi.items():
+        if not valori:
+            continue
+        valori = np.array(valori)
+        valutazione[metodo] = {nome: {
+            "precisione_media": round(precisione_media(valori[:, posizione], presenti[:, posizione]), 4),
+            "recall": round(float((valori[presenti[:, posizione], posizione] >= soglia).mean()), 4)
+            if presenti[:, posizione].any() else None,
+            "falsi_allarmi": round(float((valori[~presenti[:, posizione], posizione] >= soglia).mean()), 4)}
+            for posizione, nome in enumerate(CLASSI_ARMA_MANI)}
+    return valutazione
+
+
+def comando_valuta_mani(argomenti: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dati", required=True, help="dataset unito (images/<split>, labels/<split>)")
+    parser.add_argument("--split", default="test")
+    parser.add_argument("--modello-mani", default=None)
+    parser.add_argument("--modello-armi", default=None, help="detector sull'intero frame, per confronto")
+    parser.add_argument("--modello-pose", default=MODELLO_POSE_PREDEFINITO)
+    parser.add_argument("--dispositivo", default=None)
+    parser.add_argument("--uscita", required=True)
+    argomenti = parser.parse_args(argomenti)
+    from ultralytics import YOLO
+    valutazione = valuta_mani(Path(argomenti.dati), argomenti.split, YOLO(argomenti.modello_pose),
+                              YOLO(argomenti.modello_mani) if argomenti.modello_mani else None,
+                              YOLO(argomenti.modello_armi) if argomenti.modello_armi else None, argomenti.dispositivo)
+    Path(argomenti.uscita).write_text(json.dumps(valutazione, indent=1, ensure_ascii=False))
+    print(json.dumps(valutazione, indent=1, ensure_ascii=False))
+
+
+# ==============================================================================================================
 # armi/confronta_detector
 # D37: tabella unica per scegliere il detector. Ogni detector su ogni test set (mAP50 per classe, precisione, recall)
 # e sulle immagini senza armi di `falsi-allarmi`. I test set devono avere le classi del progetto: per un export con
@@ -689,7 +939,8 @@ def comando_confronta_detector(argomenti: list[str] | None = None) -> None:
 # ==============================================================================================================
 # riga di comando: python -m sicurezza.visione <comando> [opzioni]
 # ==============================================================================================================
-COMANDI = {"estrai": comando_estrai, "aggiungi-armi": comando_aggiungi_armi, "unisci-armi": comando_unisci_armi, "converti-mock-attack": comando_converti_mock_attack, "prepara-sohas": comando_prepara_sohas, "addestra-detector": comando_addestra_detector, "falsi-allarmi": comando_falsi_allarmi, "confronta-detector": comando_confronta_detector}
+COMANDI = {"estrai": comando_estrai, "aggiungi-armi": comando_aggiungi_armi, "unisci-armi": comando_unisci_armi, "converti-mock-attack": comando_converti_mock_attack, "prepara-sohas": comando_prepara_sohas, "addestra-detector": comando_addestra_detector, "falsi-allarmi": comando_falsi_allarmi, "confronta-detector": comando_confronta_detector,
+           "ritagli-mani": comando_ritagli_mani, "addestra-mani": comando_addestra_mani, "valuta-mani": comando_valuta_mani}
 
 
 def main(argomenti: list[str] | None = None) -> None:
