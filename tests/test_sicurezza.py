@@ -11,7 +11,7 @@ import yaml
 from sicurezza.dati import elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
 from sicurezza.demo import valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import analizza_predizioni, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
-from sicurezza.strumenti import risultati_per_il_sito, scegli_candidati_scippo_telefono, scegli_immagini_coco
+from sicurezza.strumenti import risultati_per_il_sito, scarica_con_riprova, scegli_candidati_scippo_telefono, scegli_immagini_coco
 from sicurezza.visione import mani_di_una_persona, precisione_media, probabilita_armi_in_mano, ritaglio_quadrato, ritagli_per_addestramento, prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
 
 
@@ -695,6 +695,30 @@ def test_negativi_coco_senza_doppioni_e_sempre_gli_stessi():
     assert scelte["knife"] == ["000000000001.jpg", "000000000003.jpg"]   # le prime per id
     assert scelte["cell phone"] == ["000000000007.jpg"]                  # la 3 è già tra i coltelli
     assert scelte["scissors"] == [] and scelte["umbrella"] == ["000000000006.jpg"]
+
+
+def test_scarica_con_riprova_riprova_e_poi_si_arrende(tmp_path, monkeypatch):
+    tentativi = []
+
+    def scarica_finto(url, destinazione):
+        tentativi.append(url)
+        if len(tentativi) < 3:
+            raise TimeoutError("connessione bloccata")   # socket.timeout è un OSError
+        Path(destinazione).write_bytes(b"ok")
+
+    monkeypatch.setattr("urllib.request.urlretrieve", scarica_finto)
+    scarica_con_riprova("http://esempio/immagine.jpg", tmp_path / "immagine.jpg")
+    assert len(tentativi) == 3 and (tmp_path / "immagine.jpg").read_bytes() == b"ok"
+
+    def rete_giu(url, destinazione):
+        tentativi.append(url)
+        raise OSError("rete giù")
+
+    tentativi.clear()
+    monkeypatch.setattr("urllib.request.urlretrieve", rete_giu)
+    with pytest.raises(OSError):
+        scarica_con_riprova("http://esempio/altra.jpg", tmp_path / "altra.jpg", tentativi=2)
+    assert len(tentativi) == 2
 
 
 def test_falsi_allarmi_contati_per_categoria(tmp_path):
