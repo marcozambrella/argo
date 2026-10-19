@@ -727,6 +727,47 @@ def test_addestra_mani_salva_dove_dice_anche_con_percorso_relativo(tmp_path, mon
     assert Path(chiamate[0]["project"]) / "yolo26s_mani" / "weights" / "best.pt" == pesi.resolve()
 
 
+def test_valuta_mani_combina_mani_e_detector(tmp_path, monkeypatch):
+    """Due immagini: nella prima un coltello che vedono solo le mani, nella seconda niente ma il detector sbaglia."""
+    import cv2
+    import sicurezza.visione as visione
+    for split_cartella in ("images/test", "labels/test"):
+        (tmp_path / split_cartella).mkdir(parents=True)
+    for nome in ("a", "b"):
+        cv2.imwrite(str(tmp_path / "images" / "test" / f"{nome}.jpg"), np.zeros((32, 32, 3), np.uint8))
+    (tmp_path / "labels" / "test" / "a.txt").write_text("1 0.5 0.5 0.1 0.1\n")   # 1 = knife
+
+    class Risultato:
+        def __init__(self, box, classi=(), confidenze=()):
+            self.boxes = type("Box", (), {"xyxy": torch.tensor(box, dtype=torch.float32).reshape(-1, 4),
+                                          "cls": torch.tensor(classi, dtype=torch.float32),
+                                          "conf": torch.tensor(confidenze, dtype=torch.float32)})()
+            self.keypoints = type("Kp", (), {"xy": torch.zeros(len(self.boxes.xyxy), 17, 2),
+                                             "conf": torch.ones(len(self.boxes.xyxy), 17)})()
+
+    class Pose:
+        def predict(self, immagine, **opzioni):
+            return [Risultato([[1, 1, 30, 30]])]
+
+    class Detector:
+        names = {0: "pistol", 1: "knife", 2: "rifle"}
+        chiamate = 0
+
+        def predict(self, immagine, **opzioni):
+            Detector.chiamate += 1
+            return [Risultato([[1, 1, 5, 5]], [1], [0.1])] if Detector.chiamate == 1 else \
+                [Risultato([[1, 1, 5, 5]], [1], [0.6])]
+
+    mani_per_immagine = iter([np.array([[0.0, 0.9, 0.0]]), np.array([[0.0, 0.2, 0.0]])])
+    monkeypatch.setattr(visione, "probabilita_armi_in_mano", lambda *argomenti: next(mani_per_immagine))
+    valutazione = visione.valuta_mani(tmp_path, "test", Pose(), "mani", Detector())
+    assert valutazione["con_classe"] == {"pistol": 0, "knife": 1, "rifle": 0}
+    assert valutazione["mani"]["knife"]["precisione_media"] == 1.0
+    assert valutazione["detector"]["knife"]["precisione_media"] == 0.5     # il falso allarme della b viene prima
+    assert valutazione["combinati"]["knife"]["recall"] == 1.0
+    assert valutazione["combinati"]["knife"]["falsi_allarmi"] == 1.0       # la b: 0,6 del detector ≥ 0,5
+
+
 def test_scarica_con_riprova_riprova_e_poi_si_arrende(tmp_path, monkeypatch):
     tentativi = []
 

@@ -906,6 +906,8 @@ def valuta_mani(cartella_unita: Path, split: str, modello_pose, modello_mani=Non
             punteggi["detector"].append(migliori)
     presenti = np.array(presenti, bool)
     valutazione = {"immagini": len(presenti), "con_classe": dict(zip(CLASSI_ARMA_MANI, presenti.sum(0).tolist()))}
+    if punteggi["mani"] and punteggi["detector"]:   # i due insieme: vale il più sicuro dei due (OR morbido)
+        punteggi["combinati"] = list(np.maximum(np.array(punteggi["mani"]), np.array(punteggi["detector"])))
     for metodo, valori in punteggi.items():
         if not valori:
             continue
