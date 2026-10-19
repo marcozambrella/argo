@@ -50,11 +50,13 @@ class Estrattore:
     def __init__(self, percorso_modello_pose: str = MODELLO_POSE_PREDEFINITO,
                  percorso_modello_armi: str | None = None, dispositivo: str | int | None = None,
                  tracker: str = TRACKER_PREDEFINITO, confidenza_minima_persone: float = 0.1,
-                 confidenza_minima_armi: float = 0.25, mezza_precisione: bool = False, dimensione_lotto: int = 8):
+                 confidenza_minima_armi: float = 0.25, mezza_precisione: bool = False, dimensione_lotto: int = 8,
+                 percorso_modello_mani: str | None = None):
         from ultralytics import YOLO  # import qui: i moduli che non estraggono non devono caricare torch
 
         self.modello_pose = YOLO(percorso_modello_pose)
         self.modello_armi = YOLO(percorso_modello_armi) if percorso_modello_armi else None
+        self.modello_mani = YOLO(percorso_modello_mani) if percorso_modello_mani else None   # D44
         self.dispositivo = dispositivo
         self.percorso_tracker = tracker
         # 0,1 è il default di Ultralytics per .track (D3): il tracker usa anche le detection poco sicure nel
@@ -107,6 +109,10 @@ class Estrattore:
                         "classe": risultato_armi.boxes.cls.int().cpu().numpy(),
                         "confidenza": risultato_armi.boxes.conf.cpu().numpy()}
             analisi.append((persone, armi))
+        if self.modello_mani is not None:   # ingrandimento sulle mani delle persone tracciate (D44), a lotti
+            probabilita = probabilita_armi_in_mano_lotto(self.modello_mani, frame, [p["box"] for p, _ in analisi],
+                                                         [p["keypoint"] for p, _ in analisi], self.dispositivo)
+            analisi = [({**persone, "mani": valori}, armi) for (persone, armi), valori in zip(analisi, probabilita)]
         return analisi
 
     def analizza_frame(self, frame: np.ndarray, primo_frame_del_video: bool,
@@ -215,13 +221,14 @@ def comando_estrai(argomenti: list[str] | None = None) -> None:
     parser.add_argument("--dispositivo", default=None, help="es. 0 per la prima GPU, cpu per la CPU")
     parser.add_argument("--modello-pose", default=MODELLO_POSE_PREDEFINITO)
     parser.add_argument("--modello-armi", default=None, help="pesi del detector armi fine-tunato (D4)")
+    parser.add_argument("--modello-mani", default=None, help="classificatore dell'ingrandimento sulle mani (D44)")
     parser.add_argument("--gia-estratti", nargs="*", default=[], help="cartelle con .npz di sessioni precedenti")
     parser.add_argument("--ore-massime", type=float, default=None, help="fermati dopo queste ore (sessioni Kaggle)")
     parser.add_argument("--mezza-precisione", action="store_true", help="FP16 su GPU (D18)")
     argomenti = parser.parse_args(argomenti)
 
     estrattore = Estrattore(argomenti.modello_pose, argomenti.modello_armi, argomenti.dispositivo,
-                            mezza_precisione=argomenti.mezza_precisione)
+                            mezza_precisione=argomenti.mezza_precisione, percorso_modello_mani=argomenti.modello_mani)
     estrai_elenco(leggi_elenco(argomenti.elenco), argomenti.uscita, estrattore, argomenti.parte, argomenti.parti,
                   argomenti.gia_estratti, argomenti.ore_massime * 3600 if argomenti.ore_massime else None)
 

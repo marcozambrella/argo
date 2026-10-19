@@ -8,7 +8,7 @@ import subprocess
 import torch
 import yaml
 
-from sicurezza.dati import gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
+from sicurezza.dati import elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
 from sicurezza.demo import valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import analizza_predizioni, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.strumenti import risultati_per_il_sito, scegli_candidati_scippo_telefono, scegli_immagini_coco
@@ -937,4 +937,30 @@ def test_warning_dalle_mani(tmp_path):
     assert frame_con_arma(timeline, 0, soglia_confidenza=0.5, vicinanza="polso:0.2+mani") == 8
     senza_mani = timeline_da_dati({k: v for k, v in dati.items() if k != "persone_mani"})
     assert senza_mani.mani_per_frame is None and frame_con_arma(senza_mani, 0, vicinanza="mani") == 0
+
+
+def test_normali_folla_preparati_e_letti(tmp_path):
+    """D41/D46: sequenze di frame → mp4, solo i video normali scelti, una scena = un gruppo, tutto classe normale."""
+    import cv2
+    ingresso = tmp_path / "input"
+    sequenza = ingresso / "mot-20" / "MOT20" / "train" / "MOT20-01"
+    (sequenza / "img1").mkdir(parents=True)
+    (sequenza / "seqinfo.ini").write_text("[Sequence]\nframeRate=25\n")
+    for numero in range(1, 26):
+        cv2.imwrite(str(sequenza / "img1" / f"{numero:06d}.jpg"), np.full((64, 64, 3), numero * 9, np.uint8))
+    crea_file(ingresso / "shanghaitech-campus", "train/01_001.avi", "train/01_002.avi", "test/01_0014.avi")
+    crea_file(ingresso / "avenue", "Avenue Dataset/training_videos/01.avi")
+    for nome in ("N_0_0_0_1_0.mp4", "F_1_0_0_0_0.mp4"):
+        cartella = ingresso / "ubi" / "UBI_FIGHTS" / ("normal" if nome.startswith("N") else "fight")
+        cartella.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=64x48:rate=25:duration=1",
+                        "-pix_fmt", "yuv420p", str(cartella / nome)], check=True)
+    conteggio = prepara_normali(ingresso, tmp_path / "uscita")
+    assert conteggio == {"mot20": 1, "shanghaitech": 2, "ubi_fights": 1, "avenue": 1}   # 01_0014: è un video di test
+    assert leggi_info_video(str(tmp_path / "uscita" / "normali_folla" / "mot20" / "MOT20-01.mp4")).durata_secondi == 1.0
+    clip = elenca_clip_normali_folla(tmp_path / "uscita")
+    assert {c.classe_intera for c in clip} == {"normale"} and len(clip) == 5
+    gruppi = {c.id_clip: c.gruppo for c in clip}
+    assert gruppi["normali_folla/shanghaitech/01_001"] == gruppi["normali_folla/shanghaitech/01_002"] == "folla_shanghaitech/01"
+    assert {c.sorgente for c in clip} == {"folla_mot20", "folla_shanghaitech", "folla_ubi_fights", "folla_avenue"}
 

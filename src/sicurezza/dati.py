@@ -504,6 +504,130 @@ def clip_da_tempi_annotati(percorsi_video: list[Path], file_tempi: Path, sorgent
 
 
 # ==============================================================================================================
+# normali_folla (D41, D46)
+# Scene NORMALI in luoghi affollati (stazioni, metro, incroci, campus, strade), tutte classe "normale": la
+# confusione più grande del modello è normale↔violenza. Fonti scelte dalla ricerca del sub-agente
+# (data/annotazioni/ricerca_normali/dataset_normali.md, "opzione A + HiEve", ~3 h).
+# `prepara_normali` mette tutto in <uscita>/normali_folla/<fonte>/: le sequenze di frame jpg (MOT20, HT21, MOT17)
+# diventano mp4 al loro frame rate, HiEve si scarica (senza registrazione) e si tengono solo le scene senza violenza,
+# per gli altri si fanno collegamenti ai video scelti. Poi `elenca_clip_normali_folla` li legge come una sorgente.
+#
+# Uso (sul kernel):  python -m sicurezza.dati prepara-normali --input /kaggle/input --uscita /tmp --hieve
+# ==============================================================================================================
+
+SEQUENZE_SCELTE = {   # cartelle di frame: tutte le MOT20; HT21 solo quelle nuove rispetto a MOT20 (Shibuya); MOT17 a
+    "MOT20": None,    # camera fissa (copie -FRCNN: le -DPM/-SDP sono gli stessi frame)
+    "HT21": ("HT21-03", "HT21-04", "HT21-13", "HT21-14"),
+    "MOT17": ("MOT17-01-FRCNN", "MOT17-02-FRCNN", "MOT17-03-FRCNN", "MOT17-04-FRCNN", "MOT17-08-FRCNN",
+              "MOT17-09-FRCNN"),
+}
+FPS_SEQUENZE_PREDEFINITI = {"MOT20": 25, "HT21": 25, "MOT17": 30}   # se manca seqinfo.ini
+VIDEO_SHANGHAITECH_PER_SCENA = 6       # 13 scene × 6 ≈ 75 minuti (la scena 01 da sola ha 83 video)
+MINUTI_UBI_FIGHTS_NORMALI = 45
+URL_HIEVE = ("http://106.54.5.179/data/HIE20.zip", "http://106.54.5.179/data/HIE20test.zip")
+PAROLE_HIEVE_DA_ESCLUDERE = ("fight", "robbery", "accident", "earthquake", "jail")   # risse, rapina, incidente, ...
+ESTENSIONI_VIDEO = {".mp4", ".avi", ".mov", ".webm", ".mkv"}
+
+
+def fps_della_sequenza(cartella_sequenza: Path, fonte: str) -> int:
+    file_info = cartella_sequenza / "seqinfo.ini"
+    if file_info.exists():
+        trovato = re.search(r"frameRate\s*=\s*(\d+)", file_info.read_text())
+        if trovato:
+            return int(trovato.group(1))
+    return FPS_SEQUENZE_PREDEFINITI[fonte]
+
+
+def prepara_normali(cartella_input: Path, cartella_uscita: Path, scarica_hieve: bool = False) -> Counter:
+    radice = cartella_uscita / "normali_folla"
+    conteggio = Counter()
+
+    def collega(sorgente: Path, fonte: str, nome: str | None = None):
+        destinazione = radice / fonte / (nome or sorgente.name)
+        destinazione.parent.mkdir(parents=True, exist_ok=True)
+        if not destinazione.exists():
+            destinazione.symlink_to(sorgente.resolve())
+        conteggio[fonte] += 1
+
+    for fonte, scelte in SEQUENZE_SCELTE.items():
+        for immagini in sorted(cartella_input.glob(f"**/{fonte}/*/{fonte}-*/img1")):
+            sequenza = immagini.parent
+            if scelte is not None and sequenza.name not in scelte:
+                continue
+            destinazione = radice / fonte.lower() / f"{sequenza.name}.mp4"
+            destinazione.parent.mkdir(parents=True, exist_ok=True)
+            if not destinazione.exists():
+                subprocess.run(["ffmpeg", "-v", "error", "-y", "-framerate", str(fps_della_sequenza(sequenza, fonte)),
+                                "-i", str(immagini / "%06d.jpg"), "-c:v", "libx264", "-crf", "18", "-pix_fmt",
+                                "yuv420p", str(destinazione)], check=True)
+            conteggio[fonte.lower()] += 1
+
+    # ShanghaiTech: i video normali del training originale hanno il nome a 3 cifre (01_001.avi)
+    per_scena = defaultdict(list)
+    for video in sorted(cartella_input.glob("**/*.avi")):
+        if re.fullmatch(r"\d\d_\d{3}", video.stem) and "shanghai" in str(video).lower():
+            per_scena[video.stem[:2]].append(video)
+    for scena in sorted(per_scena):
+        for video in per_scena[scena][:VIDEO_SHANGHAITECH_PER_SCENA]:
+            collega(video, "shanghaitech")
+
+    # UBI-Fights: solo i normali (N_*), presi a passo regolare finché si arriva ai minuti voluti
+    normali_ubi = sorted(cartella_input.glob("**/UBI_FIGHTS/normal/N_*.mp4"))
+    secondi = 0.0
+    for video in normali_ubi[::6]:
+        if secondi >= MINUTI_UBI_FIGHTS_NORMALI * 60:
+            break
+        secondi += leggi_info_video(str(video)).durata_secondi
+        collega(video, "ubi_fights")
+
+    # Avenue: solo i video di training (tutti normali)
+    for video in sorted(cartella_input.glob("**/training_videos/*.avi")):
+        collega(video, "avenue")
+
+    if scarica_hieve:
+        import urllib.request
+        import zipfile
+        for url in URL_HIEVE:
+            archivio = cartella_uscita / Path(url).name
+            urllib.request.urlretrieve(url, archivio)
+            with zipfile.ZipFile(archivio) as zip_hieve:
+                for nome in zip_hieve.namelist():
+                    if Path(nome).suffix.lower() not in ESTENSIONI_VIDEO or \
+                            any(parola in Path(nome).stem.lower() for parola in PAROLE_HIEVE_DA_ESCLUDERE):
+                        continue
+                    destinazione = radice / "hieve" / Path(nome).name
+                    destinazione.parent.mkdir(parents=True, exist_ok=True)
+                    destinazione.write_bytes(zip_hieve.read(nome))
+                    conteggio["hieve"] += 1
+            archivio.unlink()
+    return conteggio
+
+
+def elenca_clip_normali_folla(radice_dataset: str | Path) -> list[ClipAnnotata]:
+    clip = []
+    for video in sorted(Path(radice_dataset).glob("**/normali_folla/*/*")):
+        if video.suffix.lower() not in ESTENSIONI_VIDEO:
+            continue
+        fonte = video.parent.name
+        # stessa scena = stesso gruppo (mai divisa tra train e test): ShanghaiTech per numero di scena, Avenue è
+        # una sola telecamera, le altre fonti hanno una scena per video
+        gruppo = {"shanghaitech": video.stem[:2], "avenue": "unica"}.get(fonte, video.stem)
+        clip.append(ClipAnnotata(id_clip=f"normali_folla/{fonte}/{video.stem}", sorgente=f"folla_{fonte}",
+                                 gruppo=f"folla_{fonte}/{gruppo}", percorso_video=str(video), classe_intera="normale"))
+    return clip
+
+
+def comando_prepara_normali(argomenti: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input", default="/kaggle/input")
+    parser.add_argument("--uscita", required=True)
+    parser.add_argument("--hieve", action="store_true", help="scarica anche HiEve (1,5 GB, senza registrazione)")
+    argomenti = parser.parse_args(argomenti)
+    for fonte, numero in sorted(prepara_normali(Path(argomenti.input), Path(argomenti.uscita), argomenti.hieve).items()):
+        print(f"{fonte:14s} {numero} video")
+
+
+# ==============================================================================================================
 # prepara_elenchi
 # Costruisce annotazioni.jsonl (ClipAnnotata) ed elenco.jsonl (VideoDaEstrarre) da tutte le sorgenti trovate.
 #
@@ -517,7 +641,7 @@ def clip_da_tempi_annotati(percorsi_video: list[Path], file_tempi: Path, sorgent
 
 SORGENTI = {"rwf2000": elenca_clip_rwf2000, "cctv_fights": elenca_clip_cctv_fights, "scvd": elenca_clip_scvd,
             "ucf_uca": elenca_clip_ucf_uca, "chain_snatching": elenca_clip_chain_snatching,
-            "phone_snatching": elenca_clip_phone_snatching}
+            "phone_snatching": elenca_clip_phone_snatching, "normali_folla": elenca_clip_normali_folla}
 
 
 def prepara(cartella_input: Path, cartella_uscita: Path, sorgenti=tuple(SORGENTI)):
@@ -612,7 +736,7 @@ def dividi_per_gruppi(gruppi: np.ndarray, etichette: np.ndarray, sorgenti: np.nd
 # ==============================================================================================================
 # riga di comando: python -m sicurezza.dati <comando> [opzioni]
 # ==============================================================================================================
-COMANDI = {"prepara-elenchi": comando_prepara_elenchi}
+COMANDI = {"prepara-elenchi": comando_prepara_elenchi, "prepara-normali": comando_prepara_normali}
 
 
 def main(argomenti: list[str] | None = None) -> None:

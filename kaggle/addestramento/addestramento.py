@@ -18,16 +18,22 @@ poi taratura del WARNING ARMA (D35) e analisi per sorgente. Le estrazioni devono
 si sovrascriverebbero.
 Addestramento 2 (19/10): dopo l'addestramento 1 il Graph-Transformer andava in overfitting dall'epoca 4 → più
 regolarizzazione; pazienza 6 (le epoche costano 10-20 minuti); tetto ORE_MASSIME per stare nella quota GPU."""
-import subprocess, sys
+import json, subprocess, sys
 from pathlib import Path
 
 ORE_MASSIME = 4.0   # per ciascun modello (girano in parallelo): da fissare sulla quota rimasta (`kaggle quota`)
 OPZIONI = {"graph_transformer": ["--epoche", "25", "--pazienza", "6", "--dropout", "0.3", "--decadimento-pesi", "0.1"],
            "stgcn": ["--epoche", "30", "--pazienza", "6"]}
 
-ingresso = next(Path("/kaggle/input").glob("**/annotazioni.jsonl"))
+# più sorgenti (es. aggiungi-armi + estrazione-normali, D46): si uniscono le annotazioni, un id_clip una volta sola
+righe_annotazioni = {}
+for file_annotazioni in sorted(Path("/kaggle/input").glob("**/annotazioni.jsonl")):
+    for riga in file_annotazioni.read_text().splitlines():
+        righe_annotazioni.setdefault(json.loads(riga)["id_clip"], riga)
+ingresso = Path("/tmp/annotazioni.jsonl")
+ingresso.write_text("\n".join(righe_annotazioni.values()) + "\n")
 cartelle_estratti = [str(c) for c in Path("/kaggle/input").glob("**/estratti") if c.is_dir()]
-print("annotazioni:", ingresso, "| estratti:", cartelle_estratti, flush=True)
+print("clip annotate:", len(righe_annotazioni), "| estratti:", cartelle_estratti, flush=True)
 ambiente = {**os.environ, "PYTHONPATH": "/tmp/repo/src"}
 subprocess.run([sys.executable, "-m", "sicurezza.modelli", "dataset-finestre", "--annotazioni", str(ingresso),
                 "--estratti", *cartelle_estratti, "--uscita", "/tmp/finestre.npz"], check=True, env=ambiente)

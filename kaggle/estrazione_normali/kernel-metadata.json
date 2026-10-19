@@ -1,0 +1,24 @@
+{
+  "id": "KAGGLE_UTENTE/roma-safe-cctv-estrazione-normali",
+  "title": "roma-safe-cctv estrazione normali",
+  "code_file": "estrazione_normali.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "machine_shape": "NvidiaTeslaT4",
+  "dataset_sources": [
+    "ismailelbouknify/mot-20",
+    "hoangxuanviet/crohd-head-tracking-21",
+    "ahmedsamir1598/mot17challenge",
+    "flowerb123/shanghaitech-campus",
+    "smmohiuddinkhanshiam/ubi-fights",
+    "hihnguynth/cuhk-avenue-dataset"
+  ],
+  "kernel_sources": [
+    "KAGGLE_UTENTE/roma-safe-cctv-detector-armi-v3"
+  ],
+  "competition_sources": [],
+  "model_sources": []
+}

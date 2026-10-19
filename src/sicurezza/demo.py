@@ -14,7 +14,7 @@ import torch
 
 from .dati import CLASSI, FPS_ANALISI, FRAME_PER_FINESTRA, OSSA, PASSO_FINESTRE, POLSI, leggi_frame, leggi_info_video
 from .modelli import TimelineVideo, costruisci_finestra, crea_modello, timeline_da_dati
-from .visione import Estrattore, MODELLO_POSE_PREDEFINITO, impacchetta_estrazione, probabilita_armi_in_mano
+from .visione import Estrattore, MODELLO_POSE_PREDEFINITO, impacchetta_estrazione
 
 
 # ==============================================================================================================
@@ -216,21 +216,15 @@ def analizza_video(percorso_video: str, percorso_classificatore: str, cartella_u
     cartella_uscita = Path(cartella_uscita)
     cartella_uscita.mkdir(parents=True, exist_ok=True)
     info = leggi_info_video(percorso_video)
-    estrattore = Estrattore(percorso_modello_pose, percorso_modello_armi, dispositivo)
+    estrattore = Estrattore(percorso_modello_pose, percorso_modello_armi, dispositivo,
+                            percorso_modello_mani=percorso_modello_mani)   # D44: anche le mani, se c'è il modello
     classificatore = carica_classificatore(percorso_classificatore, dispositivo)
-    modello_mani = None
-    if percorso_modello_mani:   # D44: ingrandimento sulle mani delle persone tracciate
-        from ultralytics import YOLO
-        modello_mani = YOLO(percorso_modello_mani)
     scrittore = ScrittoreVideo(cartella_uscita / "video_annotato.mp4", info.larghezza, info.altezza)
 
     ultimi_frame = deque(maxlen=FRAME_PER_FINESTRA)   # (persone, armi) degli ultimi 40 frame
     eventi, decisione = [], {"probabilita": None, "classe": None, "warning": False}
     for indice_frame, frame in enumerate(leggi_frame(percorso_video)):
         persone, armi = estrattore.analizza_frame(frame, primo_frame_del_video=indice_frame == 0)
-        if modello_mani is not None:
-            persone = {**persone, "mani": probabilita_armi_in_mano(modello_mani, frame, persone["box"],
-                                                                   persone["keypoint"], dispositivo)}
         ultimi_frame.append((persone, armi))
         inizio_finestra = indice_frame - FRAME_PER_FINESTRA + 1
         if inizio_finestra >= 0 and inizio_finestra % PASSO_FINESTRE == 0:
