@@ -1,0 +1,17 @@
+{
+  "id": "KAGGLE_UTENTE/roma-safe-cctv-analisi",
+  "title": "roma-safe-cctv analisi",
+  "code_file": "analisi.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "kernel_sources": [
+    "KAGGLE_UTENTE/roma-safe-cctv-estrazione",
+    "KAGGLE_UTENTE/roma-safe-cctv-addestramento"
+  ],
+  "competition_sources": [],
+  "model_sources": []
+}

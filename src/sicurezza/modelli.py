@@ -697,6 +697,13 @@ def predici(modello, finestre, indici, dispositivo, dimensione_lotto=256) -> tup
     return probabilita, finestre["etichetta"][indici]
 
 
+def indici_degli_split(finestre: dict, seme: int = 0) -> dict[str, np.ndarray]:
+    """Split P4 per video (D33) + D26. Deterministico: rifatto sulle stesse finestre dà gli stessi indici."""
+    split = dividi_per_gruppi(finestre["gruppo"], finestre["etichetta"], finestre["sorgente"], seme=seme,
+                              gruppi_sempre_in_train=gruppi_visti_dal_detector())
+    return {nome: np.flatnonzero(split == numero) for numero, nome in enumerate(NOMI_SPLIT)}
+
+
 def addestra(finestre: dict, nome_modello: str, cartella_uscita: Path, epoche: int = 50, dimensione_lotto: int = 64,
              tasso_apprendimento: float = 5e-4, decadimento_pesi: float = 0.05, pazienza: int = 10,
              bilanciamento: str = "pesi", seme: int = 0, iperparametri_modello: dict | None = None) -> dict:
@@ -705,9 +712,7 @@ def addestra(finestre: dict, nome_modello: str, cartella_uscita: Path, epoche: i
     dispositivo = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cartella_uscita.mkdir(parents=True, exist_ok=True)
 
-    split = dividi_per_gruppi(finestre["gruppo"], finestre["etichetta"], finestre["sorgente"], seme=seme,
-                              gruppi_sempre_in_train=gruppi_visti_dal_detector())
-    indici_split = {nome: np.flatnonzero(split == numero) for numero, nome in enumerate(NOMI_SPLIT)}
+    indici_split = indici_degli_split(finestre, seme)
     # anche i video di ogni split: servono a scegliere i video della demo tra quelli MAI visti in addestramento
     np.savez(cartella_uscita / "split.npz", **indici_split,
              **{f"clip_{nome}": np.unique(finestre["id_clip"][indici]) for nome, indici in indici_split.items()})
@@ -806,9 +811,64 @@ def comando_addestra(argomenti: list[str] | None = None) -> None:
                      indent=2, ensure_ascii=False))
 
 # ==============================================================================================================
+# analisi_predizioni
+# Dove sbagliano i modelli: metriche per sorgente e classe prevalente per video, dalle probabilità salvate da
+# `addestra` (probabilita_test.npy) e dalle stesse finestre (lo split si ricalcola identico). Serve anche a
+# scegliere i video della demo tra quelli del test (mai visti in addestramento).
+#
+# Uso:
+#     python -m sicurezza.modelli analizza-predizioni --finestre finestre.npz \
+#         --probabilita stgcn=runs/.../probabilita_test.npy graph_transformer=... --uscita analisi_test.json
+# ==============================================================================================================
+
+def analizza_predizioni(finestre: dict, probabilita_per_modello: dict[str, np.ndarray], nome_split: str = "test",
+                        seme: int = 0) -> dict:
+    indici = indici_degli_split(finestre, seme)[nome_split]
+    vere, sorgenti, id_clip = finestre["etichetta"][indici], finestre["sorgente"][indici], finestre["id_clip"][indici]
+    analisi = {"split": nome_split, "finestre": len(indici), "modelli": {}}
+    for nome_modello, probabilita in probabilita_per_modello.items():
+        if len(probabilita) != len(indici):
+            raise ValueError(f"{nome_modello}: {len(probabilita)} probabilità per {len(indici)} finestre di {nome_split}"
+                             " (finestre diverse da quelle dell'addestramento?)")
+        predette = probabilita.argmax(1)
+        per_sorgente = {}
+        for sorgente in sorted(set(sorgenti.tolist())):
+            della_sorgente = sorgenti == sorgente
+            misure = metriche(vere[della_sorgente], predette[della_sorgente])
+            per_sorgente[sorgente] = {"finestre": int(della_sorgente.sum()), "macro_f1": round(misure["macro_f1"], 4),
+                                      "accuratezza": round(misure["accuratezza"], 4), "recall": misure["recall"],
+                                      "matrice_confusione": misure["matrice_confusione"]}
+        per_clip = []
+        for clip in sorted(set(id_clip.tolist())):
+            della_clip = id_clip == clip
+            per_clip.append({"id_clip": clip, "finestre": int(della_clip.sum()),
+                             "classi_vere": dict(Counter(CLASSI[c] for c in vere[della_clip].tolist())),
+                             "classi_predette": dict(Counter(CLASSI[c] for c in predette[della_clip].tolist())),
+                             "corrette": round(float((vere[della_clip] == predette[della_clip]).mean()), 3)})
+        analisi["modelli"][nome_modello] = {"per_sorgente": per_sorgente, "per_clip": per_clip}
+    return analisi
+
+
+def comando_analizza_predizioni(argomenti: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--finestre", required=True)
+    parser.add_argument("--probabilita", nargs="+", required=True, help="nome_modello=probabilita_test.npy")
+    parser.add_argument("--split", default="test", choices=NOMI_SPLIT)
+    parser.add_argument("--uscita", required=True)
+    argomenti = parser.parse_args(argomenti)
+    probabilita = {voce.split("=", 1)[0]: np.load(voce.split("=", 1)[1]) for voce in argomenti.probabilita}
+    analisi = analizza_predizioni(carica_finestre(argomenti.finestre), probabilita, argomenti.split)
+    Path(argomenti.uscita).write_text(json.dumps(analisi, indent=1, ensure_ascii=False))
+    for nome_modello, dati_modello in analisi["modelli"].items():
+        for sorgente, misure in dati_modello["per_sorgente"].items():
+            print(f"{nome_modello:18s} {sorgente:16s} finestre {misure['finestre']:6d}  macro-F1 {misure['macro_f1']:.3f}  "
+                  f"accuratezza {misure['accuratezza']:.3f}")
+
+# ==============================================================================================================
 # riga di comando: python -m sicurezza.modelli <comando> [opzioni]
 # ==============================================================================================================
-COMANDI = {"dataset-finestre": comando_dataset_finestre, "addestra": comando_addestra}
+COMANDI = {"dataset-finestre": comando_dataset_finestre, "addestra": comando_addestra,
+           "analizza-predizioni": comando_analizza_predizioni}
 
 
 def main(argomenti: list[str] | None = None) -> None:

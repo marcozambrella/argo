@@ -10,7 +10,7 @@ import yaml
 
 from sicurezza.dati import gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
 from sicurezza.demo import confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
-from sicurezza.modelli import armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
+from sicurezza.modelli import analizza_predizioni, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.strumenti import risultati_per_il_sito, scegli_candidati_scippo_telefono, scegli_immagini_coco
 from sicurezza.visione import prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
 
@@ -716,6 +716,11 @@ def test_risultati_per_il_sito_dal_vero_addestramento(dataset_finto, tmp_path):
     assert not set(split["clip_test"]) & set(split["clip_train"]) and len(split["clip_test"]) > 0
     finestre_test = np.load(tmp_path / "stgcn" / "finestre_test.npz")
     assert len(finestre_test["sorgente"]) == len(split["test"]) == len(np.load(tmp_path / "stgcn" / "probabilita_test.npy"))
+    # l'analisi rifà lo split sulle stesse finestre e si allinea alle probabilità salvate
+    analisi = analizza_predizioni(dataset_finto, {"stgcn": np.load(tmp_path / "stgcn" / "probabilita_test.npy")})
+    per_clip = analisi["modelli"]["stgcn"]["per_clip"]
+    assert [c["id_clip"] for c in per_clip] == sorted(split["clip_test"].tolist())
+    assert analisi["modelli"]["stgcn"]["per_sorgente"]["finto"]["finestre"] == len(split["test"])
     assert sito["warning_arma"]["frame_minimi"] == 5 and risultati_per_il_sito([])["modelli"] == []
 
 
