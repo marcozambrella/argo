@@ -778,6 +778,11 @@ def addestra(finestre: dict, nome_modello: str, cartella_uscita: Path, epoche: i
         probabilita, vere = predici(modello, finestre, indici_split[nome], dispositivo)
         risultati[nome] = metriche(vere, probabilita.argmax(1)) if len(vere) else None
         np.save(cartella_uscita / f"probabilita_{nome}.npy", probabilita)
+        # per analizzare gli errori per sorgente e per video senza il file delle finestre (resta su Kaggle)
+        indici = indici_split[nome]
+        np.savez(cartella_uscita / f"finestre_{nome}.npz", etichetta=finestre["etichetta"][indici],
+                 sorgente=finestre["sorgente"][indici], id_clip=finestre["id_clip"][indici],
+                 inizio_finestra=finestre["inizio_finestra"][indici])
     risultati["latenza_cpu_ms_per_finestra"] = latenza_cpu_millisecondi(modello)
     (cartella_uscita / "risultati.json").write_text(json.dumps(risultati, indent=2, ensure_ascii=False))
     return risultati

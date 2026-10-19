@@ -714,6 +714,8 @@ def test_risultati_per_il_sito_dal_vero_addestramento(dataset_finto, tmp_path):
     split = np.load(tmp_path / "stgcn" / "split.npz")
     assert modello["finestre_test"] == len(split["test"])
     assert not set(split["clip_test"]) & set(split["clip_train"]) and len(split["clip_test"]) > 0
+    finestre_test = np.load(tmp_path / "stgcn" / "finestre_test.npz")
+    assert len(finestre_test["sorgente"]) == len(split["test"]) == len(np.load(tmp_path / "stgcn" / "probabilita_test.npy"))
     assert sito["warning_arma"]["frame_minimi"] == 5 and risultati_per_il_sito([])["modelli"] == []
 
 
