@@ -1,6 +1,6 @@
 {
-  "id": "KAGGLE_UTENTE/roma-safe-cctv-detector-armi",
-  "title": "roma-safe-cctv detector armi",
+  "id": "KAGGLE_UTENTE/roma-safe-cctv-detector-armi-v3",
+  "title": "roma-safe-cctv detector armi v3",
   "code_file": "detector_armi.py",
   "language": "python",
   "kernel_type": "script",

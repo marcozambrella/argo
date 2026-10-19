@@ -12,24 +12,55 @@ if shutil.which("ffprobe") is None:  # il lettore video usa ffmpeg/ffprobe: buil
                    "tar -xJ -C /tmp && cp /tmp/ffmpeg-*-static/ff* /usr/local/bin/", shell=True, check=True)
 # =====
 
-"""Passo 3: fine-tuning YOLO26s sul dataset armi unito: export Roboflow (dataset Kaggle privato) + US Mock Attack
-(D30, scaricato qui da Hugging Face e convertito da VOC, split per sequenza)."""
-import subprocess, sys, urllib.request, zipfile
+"""Passo 3, detector v3 (D37-D39): fine-tuning YOLO26s su 2 GPU con
+- export Roboflow (dataset Kaggle privato) + US Mock Attack (D30, CCTV vera, da Hugging Face);
+- Sohas di DaSCI (D39: coltelli e pistole impugnati + oggetti innocui impugnati come negativi difficili);
+- negativi difficili COCO (telefoni, coltelli da cucina, telecomandi, ...) diversi da quelli della prova;
+- via da train/val i primi piani: armi con riquadro > 10% dell'immagine (D37). Il test resta intero.
+Tetto D37: l'addestramento si ferma a ORE_MASSIME_ADDESTRAMENTO (best.pt si salva a ogni epoca)."""
+import signal, subprocess, sys, time, urllib.request, zipfile
 from pathlib import Path
 
+ORE_MASSIME_ADDESTRAMENTO = 4.75     # D37: "se ci mette meno di 5h"
+AREA_MASSIMA_TRAIN = 0.10            # D37: primi piani fuori (in CCTV le armi stanno sotto l'1% del frame)
 ambiente = {**os.environ, "PYTHONPATH": "/tmp/repo/src"}
+visione = lambda *argomenti: subprocess.run([sys.executable, "-m", "sicurezza.visione", *argomenti], check=True,
+                                            env=ambiente)
 
 # US Mock Attack: ~1,5 GB da Hugging Face, estratto e convertito in /tmp (non finisce nell'output del kernel)
-from sicurezza.visione import URL_MOCK_ATTACK
+from sicurezza.visione import CARTELLA_SOHAS_NEL_REPO, URL_DASCI, URL_MOCK_ATTACK
 urllib.request.urlretrieve(URL_MOCK_ATTACK, "/tmp/mock_attack.zip")
 zipfile.ZipFile("/tmp/mock_attack.zip").extractall("/tmp/mock_attack_voc")
 Path("/tmp/mock_attack.zip").unlink()
-subprocess.run([sys.executable, "-m", "sicurezza.visione", "converti-mock-attack", "--sorgente", "/tmp/mock_attack_voc",
-                "--uscita", "/tmp/mock_attack"], check=True, env=ambiente)
+visione("converti-mock-attack", "--sorgente", "/tmp/mock_attack_voc", "--uscita", "/tmp/mock_attack")
 
-export = sorted({p.parent for p in Path("/kaggle/input").glob("**/data.yaml")}) + [Path("/tmp/mock_attack")]
+# Sohas (DaSCI): solo la cartella che serve del repo (~1,8 GB)
+subprocess.run(["git", "clone", "-q", "--depth", "1", "--filter=blob:none", "--sparse", URL_DASCI, "/tmp/dasci"],
+               check=True)
+subprocess.run(["git", "-C", "/tmp/dasci", "sparse-checkout", "set", CARTELLA_SOHAS_NEL_REPO], check=True)
+visione("prepara-sohas", "--sorgente", f"/tmp/dasci/{CARTELLA_SOHAS_NEL_REPO}", "--uscita", "/tmp/sohas")
+
+# negativi difficili COCO per il train (le immagini della prova dei falsi allarmi sono escluse)
+subprocess.run([sys.executable, "-m", "sicurezza.strumenti", "scarica-negativi-coco", "--cartella",
+                "/tmp/negativi_coco", "--per-categoria", "100", "--per-addestramento"], check=True, env=ambiente)
+
+export = sorted({p.parent for p in Path("/kaggle/input").glob("**/data.yaml")})
+export += [Path("/tmp/mock_attack"), Path("/tmp/sohas"), Path("/tmp/negativi_coco")]
 print("export:", export, flush=True)
-subprocess.run([sys.executable, "-m", "sicurezza.visione", "unisci-armi", "--sorgenti", *map(str, export),
-                "--uscita", "/tmp/armi_unite"], check=True, env=ambiente)
-subprocess.run([sys.executable, "-m", "sicurezza.visione", "addestra-detector", "--dati", "/tmp/armi_unite/data.yaml",
-                "--uscita", "/kaggle/working", "--dispositivo", "0"], check=True, env=ambiente)
+visione("unisci-armi", "--sorgenti", *map(str, export), "--uscita", "/tmp/armi_unite",
+        "--area-massima-train", str(AREA_MASSIMA_TRAIN))
+
+inizio = time.time()
+addestramento = subprocess.Popen([sys.executable, "-m", "sicurezza.visione", "addestra-detector", "--dati",
+                                  "/tmp/armi_unite/data.yaml", "--uscita", "/kaggle/working", "--dispositivo", "0,1",
+                                  "--lotto", "32"], env=ambiente, start_new_session=True)
+try:
+    if addestramento.wait(timeout=ORE_MASSIME_ADDESTRAMENTO * 3600):
+        raise SystemExit(f"addestramento fallito (codice {addestramento.returncode})")
+    print(f"addestramento finito in {(time.time() - inizio) / 3600:.2f} h", flush=True)
+except subprocess.TimeoutExpired:   # ferma anche i processi DDP figli; best.pt resta quello dell'epoca migliore
+    os.killpg(addestramento.pid, signal.SIGTERM)
+    addestramento.wait()
+    print(f"FERMATO dopo {ORE_MASSIME_ADDESTRAMENTO} h (tetto D37): si valuta il best.pt salvato", flush=True)
+    visione("addestra-detector", "--dati", "/tmp/armi_unite/data.yaml", "--uscita", "/kaggle/working",
+            "--dispositivo", "0", "--solo-valutazione")

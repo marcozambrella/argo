@@ -319,7 +319,9 @@ def nomi_classi_export(cartella_export: Path) -> list[str]:
     return [nomi[indice] for indice in sorted(nomi)] if isinstance(nomi, dict) else list(nomi)
 
 
-def unisci(cartelle_export: list[Path], cartella_uscita: Path) -> Counter:
+def unisci(cartelle_export: list[Path], cartella_uscita: Path, area_massima_train: float | None = None) -> Counter:
+    """area_massima_train (D37): in train e val si tolgono le immagini con un'arma il cui riquadro supera questa
+    frazione dell'immagine (primi piani, lontani dalla CCTV). Il test resta intero, per confrontare i detector."""
     conteggio = Counter()
     for numero_sorgente, cartella_export in enumerate(cartelle_export):
         nomi = nomi_classi_export(cartella_export)
@@ -335,17 +337,24 @@ def unisci(cartelle_export: list[Path], cartella_uscita: Path) -> Counter:
                 if immagine.suffix.lower() not in ESTENSIONI_IMMAGINE:
                     continue
                 nome_nuovo = f"s{numero_sorgente}_{immagine.name}"   # niente collisioni tra export diversi
-                shutil.copy2(immagine, cartella_uscita / "images" / split / nome_nuovo)
                 file_etichette = cartella_export / cartella_split_export / "labels" / (immagine.stem + ".txt")
-                righe_nuove = []
+                righe_nuove, classi_tolte = [], []
                 if file_etichette.exists():
                     for riga in file_etichette.read_text().splitlines():
                         valori = riga.split()
                         if valori and int(valori[0]) in nuovo_indice:
                             righe_nuove.append(" ".join([str(nuovo_indice[int(valori[0])]), *valori[1:]]))
-                            conteggio[(split, CLASSI_ARMA[nuovo_indice[int(valori[0])]])] += 1
                         elif valori:
-                            conteggio[(split, f"tolta:{nomi[int(valori[0])]}")] += 1
+                            classi_tolte.append(nomi[int(valori[0])])
+                if area_massima_train is not None and split != "test" and any(
+                        float(riga.split()[3]) * float(riga.split()[4]) > area_massima_train for riga in righe_nuove):
+                    conteggio[(split, "tolta:primo_piano")] += 1
+                    continue
+                for riga in righe_nuove:
+                    conteggio[(split, CLASSI_ARMA[int(riga.split()[0])])] += 1
+                for nome_classe in classi_tolte:
+                    conteggio[(split, f"tolta:{nome_classe}")] += 1
+                shutil.copy2(immagine, cartella_uscita / "images" / split / nome_nuovo)
                 (cartella_uscita / "labels" / split / (Path(nome_nuovo).stem + ".txt")).write_text(
                     "\n".join(righe_nuove) + ("\n" if righe_nuove else ""))
                 conteggio[(split, "immagini")] += 1
@@ -360,8 +369,11 @@ def comando_unisci_armi(argomenti: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--sorgenti", nargs="+", required=True)
     parser.add_argument("--uscita", required=True)
+    parser.add_argument("--area-massima-train", type=float, default=None,
+                        help="toglie da train/val le immagini con armi più grandi di questa frazione (D37)")
     argomenti = parser.parse_args(argomenti)
-    for (split, voce), numero in sorted(unisci([Path(s) for s in argomenti.sorgenti], Path(argomenti.uscita)).items()):
+    for (split, voce), numero in sorted(unisci([Path(s) for s in argomenti.sorgenti], Path(argomenti.uscita),
+                                               argomenti.area_massima_train).items()):
         print(f"{split:6s} {voce:20s} {numero}")
 
 
@@ -448,6 +460,57 @@ def comando_converti_mock_attack(argomenti: list[str] | None = None) -> None:
 
 
 # ==============================================================================================================
+# Sohas (DaSCI, Univ. Granada, CC BY-SA 4.0) — D39
+# "Small Objects Handled Similarly to a weapon": pistole e coltelli impugnati + smartphone, borsellini, banconote e
+# tessere impugnati come un'arma. Contiene quasi tutto DaSCI Knife_detection (1985 immagini su 2078 con lo stesso
+# nome), quindi basta questo. Le 4 classi innocue non sono in SINONIMI: `unisci` le toglie dalle etichette e le
+# immagini restano come negativi difficili. Il loro test resta il nostro test; dal loro train si prende il 10% per val.
+# Si scarica con: git clone --depth 1 --filter=blob:none --sparse https://github.com/ari-dasci/OD-WeaponDetection
+#                 git sparse-checkout set "Weapons and similar handled objects/Sohas_weapon-Detection-YOLOv5"
+# ==============================================================================================================
+URL_DASCI = "https://github.com/ari-dasci/OD-WeaponDetection"
+CARTELLA_SOHAS_NEL_REPO = "Weapons and similar handled objects/Sohas_weapon-Detection-YOLOv5"
+
+
+def prepara_sohas(cartella_sohas: Path, cartella_uscita: Path, quota_val: float = 0.1, seme: int = 0) -> Counter:
+    """cartella_sohas: quella con dataset.yaml e obj_train_data/{images,labels}/{train,test} → export in stile
+    Roboflow (train/valid/test + data.yaml)."""
+    import random
+    nomi = yaml.safe_load((cartella_sohas / "dataset.yaml").read_text())["names"]
+    dati = cartella_sohas / "obj_train_data"
+    conteggio = Counter()
+    for split_sohas in ("train", "test"):
+        immagini = sorted(p for p in (dati / "images" / split_sohas).iterdir() if p.suffix.lower() in ESTENSIONI_IMMAGINE)
+        random.Random(seme).shuffle(immagini)
+        quante_val = round(len(immagini) * quota_val) if split_sohas == "train" else 0
+        for posizione, immagine in enumerate(immagini):
+            split = "test" if split_sohas == "test" else ("valid" if posizione < quante_val else "train")
+            (cartella_uscita / split / "images").mkdir(parents=True, exist_ok=True)
+            (cartella_uscita / split / "labels").mkdir(parents=True, exist_ok=True)
+            shutil.copy2(immagine, cartella_uscita / split / "images" / immagine.name)
+            etichette = dati / "labels" / split_sohas / (immagine.stem + ".txt")
+            testo = etichette.read_text() if etichette.exists() else ""
+            (cartella_uscita / split / "labels" / (immagine.stem + ".txt")).write_text(testo)
+            conteggio[(split, "immagini")] += 1
+            for riga in testo.splitlines():
+                if riga.strip():
+                    conteggio[(split, nomi[int(riga.split()[0])])] += 1
+    (cartella_uscita / "data.yaml").write_text(yaml.safe_dump(
+        {"train": "../train/images", "val": "../valid/images", "test": "../test/images", "nc": len(nomi),
+         "names": list(nomi)}, sort_keys=False))
+    return conteggio
+
+
+def comando_prepara_sohas(argomenti: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--sorgente", required=True, help=f"la cartella '{CARTELLA_SOHAS_NEL_REPO}' del repo DaSCI")
+    parser.add_argument("--uscita", required=True)
+    argomenti = parser.parse_args(argomenti)
+    for (split, voce), numero in sorted(prepara_sohas(Path(argomenti.sorgente), Path(argomenti.uscita)).items()):
+        print(f"{split:6s} {voce:20s} {numero}")
+
+
+# ==============================================================================================================
 # armi/addestra_detector
 # Fine-tuning di YOLO26s sul dataset armi unito (D4). Iperparametri PROVVISORI (DA DECIDERE).
 #
@@ -458,13 +521,24 @@ def comando_converti_mock_attack(argomenti: list[str] | None = None) -> None:
 def addestra_detector(percorso_data_yaml: str, cartella_uscita: str, modello_base: str = "yolo26s.pt",
                       epoche: int = 100, pazienza: int = 20, dimensione_immagine: int = 640, lotto: int = 16,
                       dispositivo: str | int | None = None):
+    """dispositivo "0,1" = due GPU (DDP). Niente `time` di Ultralytics: allungherebbe le epoche fino a riempire tutto
+    il tempo (quota GPU sprecata); il tetto delle 5 h di D37 lo mette il kernel fermando il processo."""
     from ultralytics import YOLO
 
-    modello = YOLO(modello_base)
-    modello.train(data=percorso_data_yaml, epochs=epoche, patience=pazienza, imgsz=dimensione_immagine,
-                  batch=lotto, device=dispositivo, project=cartella_uscita, name="yolo26s_armi", exist_ok=True,
-                  seed=0)
-    return modello.val(data=percorso_data_yaml, split="test" if _ha_test(percorso_data_yaml) else "val")
+    YOLO(modello_base).train(data=percorso_data_yaml, epochs=epoche, patience=pazienza, imgsz=dimensione_immagine,
+                             batch=lotto, device=dispositivo, project=cartella_uscita, name="yolo26s_armi",
+                             exist_ok=True, seed=0)
+    return valuta_detector(Path(cartella_uscita) / "yolo26s_armi" / "weights" / "best.pt", percorso_data_yaml,
+                           dispositivo)
+
+
+def valuta_detector(percorso_pesi: Path, percorso_data_yaml: str, dispositivo: str | int | None = None):
+    """Con più GPU l'addestramento gira in sottoprocessi: si rilegge il migliore da disco e si valuta su UNA GPU."""
+    from ultralytics import YOLO
+
+    prima_gpu = str(dispositivo).split(",")[0] if dispositivo is not None else None
+    return YOLO(str(percorso_pesi)).val(data=percorso_data_yaml, device=prima_gpu,
+                                        split="test" if _ha_test(percorso_data_yaml) else "val")
 
 
 def _ha_test(percorso_data_yaml: str) -> bool:
@@ -477,10 +551,17 @@ def comando_addestra_detector(argomenti: list[str] | None = None) -> None:
     parser.add_argument("--dati", required=True)
     parser.add_argument("--uscita", required=True)
     parser.add_argument("--epoche", type=int, default=100)
-    parser.add_argument("--dispositivo", default=None)
+    parser.add_argument("--lotto", type=int, default=16, help="totale: con 2 GPU metà per GPU")
+    parser.add_argument("--dispositivo", default=None, help='"0", oppure "0,1" per due GPU')
+    parser.add_argument("--solo-valutazione", action="store_true",
+                        help="valuta best.pt già in --uscita (es. dopo che il kernel ha fermato l'addestramento)")
     argomenti = parser.parse_args(argomenti)
-    metriche = addestra_detector(argomenti.dati, argomenti.uscita, epoche=argomenti.epoche,
-                                 dispositivo=argomenti.dispositivo)
+    if argomenti.solo_valutazione:
+        metriche = valuta_detector(Path(argomenti.uscita) / "yolo26s_armi" / "weights" / "best.pt", argomenti.dati,
+                                   argomenti.dispositivo)
+    else:
+        metriche = addestra_detector(argomenti.dati, argomenti.uscita, epoche=argomenti.epoche, lotto=argomenti.lotto,
+                                     dispositivo=argomenti.dispositivo)
     print(f"mAP50 {metriche.box.map50:.4f}  mAP50-95 {metriche.box.map:.4f}")
 
 
@@ -550,7 +631,7 @@ def comando_falsi_allarmi(argomenti: list[str] | None = None) -> None:
 # ==============================================================================================================
 # riga di comando: python -m sicurezza.visione <comando> [opzioni]
 # ==============================================================================================================
-COMANDI = {"estrai": comando_estrai, "aggiungi-armi": comando_aggiungi_armi, "unisci-armi": comando_unisci_armi, "converti-mock-attack": comando_converti_mock_attack, "addestra-detector": comando_addestra_detector, "falsi-allarmi": comando_falsi_allarmi}
+COMANDI = {"estrai": comando_estrai, "aggiungi-armi": comando_aggiungi_armi, "unisci-armi": comando_unisci_armi, "converti-mock-attack": comando_converti_mock_attack, "prepara-sohas": comando_prepara_sohas, "addestra-detector": comando_addestra_detector, "falsi-allarmi": comando_falsi_allarmi}
 
 
 def main(argomenti: list[str] | None = None) -> None:

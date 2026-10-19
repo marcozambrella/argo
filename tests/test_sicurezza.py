@@ -10,9 +10,9 @@ import yaml
 
 from sicurezza.dati import gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
 from sicurezza.demo import confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
-from sicurezza.modelli import ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
+from sicurezza.modelli import armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.strumenti import risultati_per_il_sito, scegli_immagini_coco
-from sicurezza.visione import conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
+from sicurezza.visione import prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
 
 
 # ==============================================================================================================
@@ -704,3 +704,53 @@ def test_risultati_per_il_sito_dal_vero_addestramento(dataset_finto, tmp_path):
     assert sito["classi"] == ["normale", "violenza", "violenza_con_arma", "scippo"]
     assert modello["finestre_test"] == len(np.load(tmp_path / "stgcn" / "split.npz")["test"])
     assert sito["warning_arma"]["frame_minimi"] == 5 and risultati_per_il_sito([])["modelli"] == []
+
+
+def test_arma_piu_grande_della_persona_scartata():
+    """D38: la pistola nella mano resta; un "fucile" grande come mezza scena vicino alle persone si scarta."""
+    dati = dict(estrazione_finta(numero_frame=4, numero_persone=2))   # pistola 20×20 px nei frame pari
+    dati["armi_frame"] = np.append(dati["armi_frame"], [1, 3]).astype(np.int32)
+    dati["armi_box"] = np.concatenate([dati["armi_box"], [[0, 0, 600, 450], [5, 5, 15, 15]]]).astype(np.float32)
+    dati["armi_classe"] = np.append(dati["armi_classe"], [2, 1]).astype(np.int32)
+    dati["armi_confidenza"] = np.append(dati["armi_confidenza"], [0.9, 0.9]).astype(np.float16)
+    tenute = armi_non_piu_grandi_della_persona(dati)
+    assert tenute.tolist() == [True, True, False, True]        # 2 pistole, il riquadro enorme no, il coltellino sì
+    timeline = timeline_da_dati(dati)
+    assert len(timeline.armi_frame) == 3 and 2 not in timeline.armi_classe.tolist()
+    assert len(timeline_da_dati(dati, filtra_armi_grandi=False).armi_frame) == 4
+
+
+def scrivi_export_yolo(cartella, split, nome, righe):
+    (cartella / split / "images").mkdir(parents=True, exist_ok=True)
+    (cartella / split / "labels").mkdir(parents=True, exist_ok=True)
+    (cartella / split / "images" / f"{nome}.jpg").write_bytes(b"jpg")
+    (cartella / split / "labels" / f"{nome}.txt").write_text("".join(f"{riga}\n" for riga in righe))
+
+
+def test_sohas_classi_innocue_tolte_e_primi_piani_fuori_dal_train(tmp_path):
+    sohas = tmp_path / "Sohas_weapon-Detection-YOLOv5"
+    (sohas).mkdir()
+    (sohas / "dataset.yaml").write_text("nc: 6\nnames: ['pistol', 'smartphone', 'knife', 'monedero', 'billete', 'tarjeta']\n")
+    for numero in range(20):                 # train: coltelli piccoli, 1 pistola in primo piano, telefoni impugnati
+        righe = ["2 0.5 0.5 0.1 0.1"] if numero < 10 else ["1 0.5 0.5 0.2 0.2"] if numero < 19 else ["0 0.5 0.5 0.8 0.8"]
+        (sohas / "obj_train_data" / "images" / "train").mkdir(parents=True, exist_ok=True)
+        (sohas / "obj_train_data" / "labels" / "train").mkdir(parents=True, exist_ok=True)
+        (sohas / "obj_train_data" / "images" / "train" / f"img{numero}.jpg").write_bytes(b"jpg")
+        (sohas / "obj_train_data" / "labels" / "train" / f"img{numero}.txt").write_text(righe[0] + "\n")
+    (sohas / "obj_train_data" / "images" / "test").mkdir(parents=True)
+    (sohas / "obj_train_data" / "labels" / "test").mkdir(parents=True)
+    (sohas / "obj_train_data" / "images" / "test" / "prova.jpg").write_bytes(b"jpg")
+    (sohas / "obj_train_data" / "labels" / "test" / "prova.txt").write_text("0 0.5 0.5 0.9 0.9\n")
+    conteggio = prepara_sohas(sohas, tmp_path / "sohas_export")
+    assert conteggio[("train", "immagini")] == 18 and conteggio[("valid", "immagini")] == 2
+    assert conteggio[("test", "immagini")] == 1
+
+    unito = unisci([tmp_path / "sohas_export"], tmp_path / "unito", area_massima_train=0.1)
+    assert sum(unito[(split, voce)] for split in ("train", "val") for voce in ("immagini", "tolta:primo_piano")) == 20
+    assert unito[("train", "tolta:primo_piano")] + unito[("val", "tolta:primo_piano")] == 1   # la pistola 0,8×0,8
+    assert unito[("train", "knife")] + unito[("val", "knife")] == 10                         # 0,1×0,1 = 1%: resta
+    assert unito[("train", "tolta:smartphone")] + unito[("val", "tolta:smartphone")] == 9    # immagini restano negative
+    assert unito[("test", "pistol")] == 1                         # il test resta intero, anche coi primi piani
+    righe_knife = [r for f in (tmp_path / "unito" / "labels").rglob("*.txt") for r in f.read_text().splitlines()]
+    assert {r.split()[0] for r in righe_knife} == {"0", "1"}   # knife → indice 1 di CLASSI_ARMA, pistol → 0
+

@@ -290,16 +290,20 @@ def comando_scarica_campioni(argomenti: list[str] | None = None) -> None:
 URL_ANNOTAZIONI_COCO = "http://images.cocodataset.org/annotations/annotations_trainval2017.zip"
 URL_IMMAGINI_COCO = "http://images.cocodataset.org/val2017/"
 CATEGORIE_NEGATIVE_COCO = ("knife", "cell phone", "scissors", "umbrella")
+# D37: negativi difficili per ADDESTRARE il detector v3 (oggetti impugnati o allungati come un'arma). Si prendono
+# immagini diverse da quelle della prova (--escludi-prova), che resta così una misura pulita.
+CATEGORIE_NEGATIVE_ADDESTRAMENTO = ("knife", "cell phone", "scissors", "umbrella", "remote", "fork",
+                                    "baseball bat", "hair drier", "toothbrush")
 
 
-def scegli_immagini_coco(annotazioni: dict, categorie=CATEGORIE_NEGATIVE_COCO, per_categoria: int = 100
-                         ) -> dict[str, list[str]]:
+def scegli_immagini_coco(annotazioni: dict, categorie=CATEGORIE_NEGATIVE_COCO, per_categoria: int = 100,
+                         escludi: set[str] = frozenset()) -> dict[str, list[str]]:
     id_categoria = {categoria["name"]: categoria["id"] for categoria in annotazioni["categories"]}
     immagini_con_categoria: dict[int, set[int]] = {}
     for oggetto in annotazioni["annotations"]:
         immagini_con_categoria.setdefault(oggetto["category_id"], set()).add(oggetto["image_id"])
     nome_file = {immagine["id"]: immagine["file_name"] for immagine in annotazioni["images"]}
-    gia_prese, scelte = set(), {}
+    gia_prese, scelte = {id_immagine for id_immagine, nome in nome_file.items() if nome in escludi}, {}
     for categoria in categorie:
         candidate = sorted(immagini_con_categoria.get(id_categoria[categoria], set()) - gia_prese)[:per_categoria]
         gia_prese.update(candidate)
@@ -311,6 +315,9 @@ def comando_scarica_negativi_coco(argomenti: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cartella", default="data/negativi_coco")
     parser.add_argument("--per-categoria", type=int, default=100)
+    parser.add_argument("--per-addestramento", action="store_true",
+                        help="categorie di CATEGORIE_NEGATIVE_ADDESTRAMENTO, senza le immagini della prova, salvate "
+                             "come export YOLO (train/images + data.yaml senza classi) per `visione unisci-armi`")
     argomenti = parser.parse_args(argomenti)
     cartella = Path(argomenti.cartella)
     cartella.mkdir(parents=True, exist_ok=True)
@@ -321,10 +328,16 @@ def comando_scarica_negativi_coco(argomenti: list[str] | None = None) -> None:
         with zipfile.ZipFile(archivio_zip) as archivio:
             file_annotazioni.write_bytes(archivio.read("annotations/instances_val2017.json"))
         archivio_zip.unlink()
-    scelte = scegli_immagini_coco(json.loads(file_annotazioni.read_text()), per_categoria=argomenti.per_categoria)
+    annotazioni = json.loads(file_annotazioni.read_text())
+    if argomenti.per_addestramento:
+        prova = {nome for nomi in scegli_immagini_coco(annotazioni).values() for nome in nomi}
+        scelte = scegli_immagini_coco(annotazioni, CATEGORIE_NEGATIVE_ADDESTRAMENTO, argomenti.per_categoria, prova)
+        (cartella / "data.yaml").write_text("train: ../train/images\nnames: []\n")
+    else:
+        scelte = scegli_immagini_coco(annotazioni, per_categoria=argomenti.per_categoria)
     for categoria, nomi_file in scelte.items():
-        sottocartella = cartella / categoria.replace(" ", "_")
-        sottocartella.mkdir(exist_ok=True)
+        sottocartella = cartella / ("train/images" if argomenti.per_addestramento else categoria.replace(" ", "_"))
+        sottocartella.mkdir(parents=True, exist_ok=True)
         for nome in nomi_file:
             if not (sottocartella / nome).exists():
                 urllib.request.urlretrieve(URL_IMMAGINI_COCO + nome, sottocartella / nome)

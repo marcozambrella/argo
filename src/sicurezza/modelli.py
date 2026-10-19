@@ -52,7 +52,25 @@ def carica_timeline(percorso_npz, ricuci: bool = True) -> TimelineVideo:
     return timeline_da_dati(np.load(percorso_npz), ricuci)
 
 
-def timeline_da_dati(dati, ricuci: bool = True) -> TimelineVideo:
+def armi_non_piu_grandi_della_persona(dati) -> np.ndarray:
+    """D38: un'arma vera non è più grande di chi la impugna. Per ogni arma rilevata si prende la persona più vicina
+    (centro dei box) nello stesso frame: se il riquadro dell'arma ha area maggiore, l'arma si scarta (riquadri su
+    mezza scena: reti, barche, porte). Senza persone nel frame l'arma resta: non c'è niente con cui confrontarla."""
+    area = lambda box: (box[..., 2] - box[..., 0]) * (box[..., 3] - box[..., 1])
+    centro = lambda box: np.stack([(box[..., 0] + box[..., 2]) / 2, (box[..., 1] + box[..., 3]) / 2], -1)
+    armi_frame, armi_box = np.asarray(dati["armi_frame"]), np.asarray(dati["armi_box"])  # un .npz rilegge a ogni accesso
+    ordine = np.argsort(dati["persone_frame"], kind="stable")
+    persone_frame, persone_box = np.asarray(dati["persone_frame"])[ordine], np.asarray(dati["persone_box"])[ordine]
+    inizi, fini = np.searchsorted(persone_frame, armi_frame, "left"), np.searchsorted(persone_frame, armi_frame, "right")
+    da_tenere = np.ones(len(armi_frame), bool)
+    for indice in np.flatnonzero(fini > inizi):
+        box_persone = persone_box[inizi[indice]:fini[indice]]
+        distanze = np.linalg.norm(centro(box_persone) - centro(armi_box[indice]), axis=-1)
+        da_tenere[indice] = area(armi_box[indice]) <= area(box_persone[np.argmin(distanze)])
+    return da_tenere
+
+
+def timeline_da_dati(dati, ricuci: bool = True, filtra_armi_grandi: bool = True) -> TimelineVideo:
     """Come carica_timeline, ma da un dizionario già in memoria (es. il buffer della demo)."""
     numero_frame = int(dati["numero_frame"])
     keypoint_per_traccia, box_per_traccia = {}, {}
@@ -67,9 +85,10 @@ def timeline_da_dati(dati, ricuci: bool = True) -> TimelineVideo:
         box_per_traccia[int(id_traccia)] = box
     if ricuci:
         keypoint_per_traccia, box_per_traccia = ricuci_tracce(keypoint_per_traccia, box_per_traccia)
+    armi = armi_non_piu_grandi_della_persona(dati) if filtra_armi_grandi else slice(None)
     return TimelineVideo(numero_frame, int(dati["larghezza"]), int(dati["altezza"]), keypoint_per_traccia,
-                         box_per_traccia, dati["armi_frame"], dati["armi_box"], dati["armi_classe"],
-                         dati["armi_confidenza"].astype(np.float32))
+                         box_per_traccia, np.asarray(dati["armi_frame"])[armi], np.asarray(dati["armi_box"])[armi],
+                         np.asarray(dati["armi_classe"])[armi], np.asarray(dati["armi_confidenza"])[armi].astype(np.float32))
 
 
 BUCO_MASSIMO_FRAME = 15            # PROVVISORIO: 0,6 s senza la persona al massimo
