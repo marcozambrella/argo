@@ -12,7 +12,7 @@ import cv2
 import numpy as np
 import torch
 
-from .dati import CLASSI, FPS_ANALISI, FRAME_PER_FINESTRA, OSSA, PASSO_FINESTRE, leggi_frame, leggi_info_video
+from .dati import CLASSI, FPS_ANALISI, FRAME_PER_FINESTRA, OSSA, PASSO_FINESTRE, POLSI, leggi_frame, leggi_info_video
 from .modelli import TimelineVideo, costruisci_finestra, crea_modello, timeline_da_dati
 from .visione import Estrattore, MODELLO_POSE_PREDEFINITO, impacchetta_estrazione
 
@@ -41,8 +41,35 @@ def arma_vicina_a_persona(box_arma: np.ndarray, box_persone: np.ndarray, margine
     return bool(dentro.any())
 
 
+# 19/10: la demo ha mostrato scarpe nere prese per pistole (vicine alla persona, ma ai piedi). Secondo criterio:
+# "polso:d" = centro dell'arma entro d × altezza della persona da uno dei suoi polsi (un'arma vera è in mano).
+# Quale criterio usare lo decide la taratura (D35) sul validation set, insieme a soglia e frame minimi.
+VICINANZA_PREDEFINITA = f"persona:{MARGINE_VICINANZA}"
+VICINANZE_DA_PROVARE = ("persona:0.25", "persona:0.5", "persona:1.0", "polso:0.1", "polso:0.2", "polso:0.35")
+
+
+def persone_nel_frame(timeline: TimelineVideo, frame: int) -> tuple[np.ndarray, np.ndarray]:
+    """(box [n, 4], polsi [n, 2, 3]) delle persone tracciate presenti nel frame."""
+    presenti = [id_traccia for id_traccia, box in timeline.box_per_traccia.items() if not np.isnan(box[frame, 0])]
+    box = np.array([timeline.box_per_traccia[i][frame] for i in presenti], np.float32).reshape(-1, 4)
+    polsi = np.array([timeline.keypoint_per_traccia[i][frame][list(POLSI)] for i in presenti], np.float32).reshape(-1, 2, 3)
+    return box, polsi
+
+
+def arma_vicina(box_arma: np.ndarray, box_persone: np.ndarray, polsi_persone: np.ndarray, vicinanza: str) -> bool:
+    criterio, valore = vicinanza.split(":")
+    if criterio == "persona":
+        return arma_vicina_a_persona(box_arma, box_persone, float(valore))
+    if len(box_persone) == 0:
+        return False
+    centro = np.array([(box_arma[0] + box_arma[2]) / 2, (box_arma[1] + box_arma[3]) / 2])
+    distanze = np.linalg.norm(polsi_persone[:, :, :2] - centro, axis=-1)          # [persone, 2 polsi]
+    distanze = np.where(np.isnan(distanze), np.inf, distanze).min(axis=1)
+    return bool((distanze <= float(valore) * (box_persone[:, 3] - box_persone[:, 1])).any())
+
+
 def frame_con_arma(timeline: TimelineVideo, inizio_finestra: int, frame_per_finestra: int = FRAME_PER_FINESTRA,
-                   soglia_confidenza: float = SOGLIA_CONFIDENZA_ARMA, margine: float = MARGINE_VICINANZA) -> int:
+                   soglia_confidenza: float = SOGLIA_CONFIDENZA_ARMA, vicinanza: str = VICINANZA_PREDEFINITA) -> int:
     """Quanti frame della finestra hanno almeno un'arma sicura vicino a una persona tracciata."""
     frame_validi = set()
     fine_finestra = inizio_finestra + frame_per_finestra
@@ -52,8 +79,7 @@ def frame_con_arma(timeline: TimelineVideo, inizio_finestra: int, frame_per_fine
         frame = int(timeline.armi_frame[indice])
         if frame in frame_validi:
             continue
-        box_persone = np.array([box[frame] for box in timeline.box_per_traccia.values() if not np.isnan(box[frame, 0])])
-        if arma_vicina_a_persona(timeline.armi_box[indice], box_persone.reshape(-1, 4), margine):
+        if arma_vicina(timeline.armi_box[indice], *persone_nel_frame(timeline, frame), vicinanza):
             frame_validi.add(frame)
     return len(frame_validi)
 
@@ -186,7 +212,12 @@ class ScrittoreVideo:
 @torch.no_grad()
 def analizza_video(percorso_video: str, percorso_classificatore: str, cartella_uscita: str | Path,
                    percorso_modello_armi: str | None = None, percorso_modello_pose: str = MODELLO_POSE_PREDEFINITO,
-                   dispositivo: str = "cpu") -> list[dict]:
+                   dispositivo: str = "cpu", taratura: dict | None = None) -> list[dict]:
+    """taratura: la combinazione "migliore" di `tara-warning` (soglia, frame minimi, vicinanza); senza, i valori
+    provvisori del piano."""
+    regola = {"soglia_confidenza": SOGLIA_CONFIDENZA_ARMA, "frame_minimi": FRAME_MINIMI_CON_ARMA,
+              "vicinanza": VICINANZA_PREDEFINITA}
+    regola.update({chiave: (taratura or {})[chiave] for chiave in regola if chiave in (taratura or {})})
     cartella_uscita = Path(cartella_uscita)
     cartella_uscita.mkdir(parents=True, exist_ok=True)
     info = leggi_info_video(percorso_video)
@@ -210,7 +241,7 @@ def analizza_video(percorso_video: str, percorso_classificatore: str, cartella_u
                                    torch.from_numpy(maschera)[None].to(dispositivo),
                                    torch.from_numpy(classe_arma.astype(np.int64))[None].to(dispositivo))
             probabilita = torch.softmax(logit, -1)[0].cpu().numpy()
-            warning = warning_arma(timeline, 0)
+            warning = warning_arma(timeline, 0, **regola)
             decisione = {"probabilita": probabilita, "classe": classe_finale(probabilita, warning), "warning": warning}
             eventi.append({"inizio_secondi": inizio_finestra / FPS_ANALISI,
                            "fine_secondi": (indice_frame + 1) / FPS_ANALISI, "classe": decisione["classe"],
@@ -218,7 +249,7 @@ def analizza_video(percorso_video: str, percorso_classificatore: str, cartella_u
                            "probabilita": dict(zip(CLASSI, np.round(probabilita, 4).tolist()))})
         annotato = frame.copy()
         disegna_persone(annotato, persone)
-        disegna_armi(annotato, armi, SOGLIA_CONFIDENZA_ARMA)
+        disegna_armi(annotato, armi, regola["soglia_confidenza"])
         disegna_pannello(annotato, decisione["probabilita"], decisione["classe"], decisione["warning"])
         scrittore.scrivi(annotato)
     scrittore.chiudi()
@@ -241,41 +272,41 @@ def comando_analizza_video(argomenti: list[str] | None = None) -> None:
     parser.add_argument("--modello-pose", default=MODELLO_POSE_PREDEFINITO)
     parser.add_argument("--uscita", required=True)
     parser.add_argument("--dispositivo", default="cpu")
+    parser.add_argument("--taratura", default=None, help="taratura_warning.json di `tara-warning` (D35)")
     argomenti = parser.parse_args(argomenti)
+    taratura = json.loads(Path(argomenti.taratura).read_text())["migliore"] if argomenti.taratura else None
     eventi = analizza_video(argomenti.video, argomenti.classificatore, argomenti.uscita, argomenti.modello_armi,
-                            argomenti.modello_pose, argomenti.dispositivo)
+                            argomenti.modello_pose, argomenti.dispositivo, taratura)
     print(f"{len(eventi)} finestre analizzate → {argomenti.uscita}")
 
 # ==============================================================================================================
 # taratura del WARNING ARMA (D35: massimo F1 sul validation set)
 # Riferimento: una finestra "ha un'arma" se la sua etichetta è violenza_con_arma (le altre classi non hanno armi
 # annotate). Per ogni finestra si calcola, per frame, la confidenza massima di un'arma vicina a una persona; poi si
-# provano tutte le combinazioni di soglia di confidenza, frame minimi e margine di vicinanza.
+# provano tutte le combinazioni di soglia di confidenza, frame minimi e criterio di vicinanza.
 # ==============================================================================================================
 SOGLIE_DA_PROVARE = tuple(round(0.25 + 0.05 * passo, 2) for passo in range(12))      # 0,25 … 0,80
 FRAME_MINIMI_DA_PROVARE = tuple(range(1, 16))
-MARGINI_DA_PROVARE = (0.25, 0.5, 1.0)
 
 
-def confidenza_arma_per_frame(timeline: TimelineVideo, inizio_finestra: int, margine: float,
+def confidenza_arma_per_frame(timeline: TimelineVideo, inizio_finestra: int, vicinanza: str,
                               frame_per_finestra: int = FRAME_PER_FINESTRA) -> np.ndarray:
     """[frame_per_finestra]: confidenza massima di un'arma vicina a una persona in ogni frame (0 se nessuna)."""
     confidenze = np.zeros(frame_per_finestra, np.float32)
     fine_finestra = inizio_finestra + frame_per_finestra
     for indice in np.flatnonzero((timeline.armi_frame >= inizio_finestra) & (timeline.armi_frame < fine_finestra)):
         frame = int(timeline.armi_frame[indice])
-        box_persone = np.array([box[frame] for box in timeline.box_per_traccia.values() if not np.isnan(box[frame, 0])])
-        if arma_vicina_a_persona(timeline.armi_box[indice], box_persone.reshape(-1, 4), margine):
+        if arma_vicina(timeline.armi_box[indice], *persone_nel_frame(timeline, frame), vicinanza):
             posizione = frame - inizio_finestra
             confidenze[posizione] = max(confidenze[posizione], float(timeline.armi_confidenza[indice]))
     return confidenze
 
 
-def tara_warning_arma(confidenze_per_margine: dict[float, np.ndarray], arma_vera: np.ndarray) -> dict:
-    """confidenze_per_margine: margine → [finestre, frame]; arma_vera: [finestre] bool. Ritorna la combinazione con
-    F1 massimo e la tabella completa."""
+def tara_warning_arma(confidenze_per_vicinanza: dict[str, np.ndarray], arma_vera: np.ndarray) -> dict:
+    """confidenze_per_vicinanza: criterio di vicinanza → [finestre, frame]; arma_vera: [finestre] bool. Ritorna la
+    combinazione con F1 massimo e la tabella completa."""
     tabella = []
-    for margine, confidenze in confidenze_per_margine.items():
+    for vicinanza, confidenze in confidenze_per_vicinanza.items():
         for soglia in SOGLIE_DA_PROVARE:
             frame_sopra_soglia = (confidenze >= soglia).sum(axis=1)
             for frame_minimi in FRAME_MINIMI_DA_PROVARE:
@@ -284,7 +315,7 @@ def tara_warning_arma(confidenze_per_margine: dict[float, np.ndarray], arma_vera
                 precisione = veri_positivi / max(int(previsto.sum()), 1)
                 recall = veri_positivi / max(int(arma_vera.sum()), 1)
                 f1 = 2 * precisione * recall / max(precisione + recall, 1e-12)
-                tabella.append({"margine": margine, "soglia_confidenza": soglia, "frame_minimi": frame_minimi,
+                tabella.append({"vicinanza": vicinanza, "soglia_confidenza": soglia, "frame_minimi": frame_minimi,
                                 "precisione": round(precisione, 4), "recall": round(recall, 4), "f1": round(f1, 4)})
     migliore = max(tabella, key=lambda riga: (riga["f1"], riga["precisione"]))
     return {"migliore": migliore, "tabella": tabella}
@@ -305,14 +336,15 @@ def comando_tara_warning(argomenti: list[str] | None = None) -> None:
         id_clip, inizi, etichette = finestre["id_clip"], finestre["inizio_finestra"], finestre["etichetta"]
     indici_val = np.load(argomenti.split)["val"]
     percorso_per_nome = {file.name: file for cartella in argomenti.estratti for file in Path(cartella).glob("*.npz")}
-    confidenze = {margine: [] for margine in MARGINI_DA_PROVARE}
+    confidenze = {vicinanza: [] for vicinanza in VICINANZE_DA_PROVARE}
     timeline_in_memoria = {}
     for indice in indici_val:
         nome = nome_file_estratto(str(id_clip[indice]))
         if nome not in timeline_in_memoria:
             timeline_in_memoria = {nome: carica_timeline(percorso_per_nome[nome])}  # una clip alla volta in memoria
-        for margine in MARGINI_DA_PROVARE:
-            confidenze[margine].append(confidenza_arma_per_frame(timeline_in_memoria[nome], int(inizi[indice]), margine))
+        for vicinanza in VICINANZE_DA_PROVARE:
+            confidenze[vicinanza].append(confidenza_arma_per_frame(timeline_in_memoria[nome], int(inizi[indice]),
+                                                                   vicinanza))
     arma_vera = etichette[indici_val] == INDICE_CLASSE["violenza_con_arma"]
     risultato = tara_warning_arma({m: np.stack(c) for m, c in confidenze.items()}, arma_vera)
     Path(argomenti.uscita).write_text(json.dumps(risultato, indent=1, ensure_ascii=False))

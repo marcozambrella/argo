@@ -9,7 +9,7 @@ import torch
 import yaml
 
 from sicurezza.dati import gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
-from sicurezza.demo import confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
+from sicurezza.demo import arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import analizza_predizioni, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.strumenti import risultati_per_il_sito, scegli_candidati_scippo_telefono, scegli_immagini_coco
 from sicurezza.visione import prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
@@ -508,6 +508,20 @@ def test_warning_su_finestra(tmp_path):
     assert not warning_arma(timeline, 0, soglia_confidenza=0.9)
 
 
+
+def test_arma_in_mano_si_scarpa_no(tmp_path):
+    """Criterio "polso": la pistola nella mano destra conta, la stessa "arma" sulla caviglia (scarpa nera) no."""
+    np.savez(tmp_path / "f.npz", **estrazione_finta(con_arma=True))     # arma attaccata al polso nei frame pari
+    timeline = carica_timeline(tmp_path / "f.npz")
+    assert frame_con_arma(timeline, 0, vicinanza="polso:0.1") == 20
+    box_persone, polsi = persone_nel_frame(timeline, 0)
+    caviglia = timeline.keypoint_per_traccia[1][0][16, :2]
+    scarpa = np.array([*caviglia - 10, *caviglia + 10])
+    assert arma_vicina(scarpa, box_persone, polsi, "persona:0.5")       # vicino alla persona: sì
+    assert not arma_vicina(scarpa, box_persone, polsi, "polso:0.2")     # vicino a un polso: no
+    assert not arma_vicina(scarpa, np.empty((0, 4)), np.empty((0, 2, 3)), "polso:0.2")
+
+
 def test_regola_violenza_piu_arma():
     probabilita_violenza = np.array([0.1, 0.7, 0.1, 0.1])
     assert classe_finale(probabilita_violenza, arma_confermata=True) == "violenza_con_arma"
@@ -656,7 +670,7 @@ def test_taratura_warning_arma_trova_la_soglia_giusta(tmp_path):
     """D35: finestre con arma sicura in 8 frame e finestre con un falso positivo debole in 2 frame."""
     np.savez(tmp_path / "f.npz", **estrazione_finta(con_arma=True))       # arma 0,8 nei frame pari
     timeline = carica_timeline(tmp_path / "f.npz")
-    confidenze = confidenza_arma_per_frame(timeline, 0, margine=0.5)
+    confidenze = confidenza_arma_per_frame(timeline, 0, vicinanza="persona:0.5")
     assert confidenze.shape == (40,) and (confidenze[0::2] > 0.79).all() and not confidenze[1::2].any()
 
     generatore = np.random.default_rng(0)
@@ -664,7 +678,7 @@ def test_taratura_warning_arma_trova_la_soglia_giusta(tmp_path):
     con_arma[:, :8] = 0.8                                                  # arma vera: 8 frame a 0,8
     senza_arma = np.zeros((50, 40), np.float32)
     senza_arma[:, :2] = generatore.uniform(0.3, 0.45, (50, 2))            # rumore: 2 frame deboli
-    risultato = tara_warning_arma({0.5: np.concatenate([con_arma, senza_arma])},
+    risultato = tara_warning_arma({"persona:0.5": np.concatenate([con_arma, senza_arma])},
                                   np.array([True] * 50 + [False] * 50))
     migliore = risultato["migliore"]
     assert migliore["f1"] == 1.0 and migliore["precisione"] == 1.0
@@ -713,7 +727,7 @@ def test_falsi_allarmi_contati_per_categoria(tmp_path):
 def test_risultati_per_il_sito_dal_vero_addestramento(dataset_finto, tmp_path):
     """Il formato letto da site/app.js (nome, macro_f1, latenza_cpu_ms) esce dai risultati.json veri di addestra."""
     risultati = addestra(dataset_finto, "stgcn", tmp_path / "stgcn", epoche=1, dimensione_lotto=16)
-    taratura = {"migliore": {"soglia": 0.5, "frame_minimi": 5, "margine": 0.5, "f1": 0.8}, "tabella": []}
+    taratura = {"migliore": {"soglia": 0.5, "frame_minimi": 5, "vicinanza": "polso:0.2", "f1": 0.8}, "tabella": []}
     sito = risultati_per_il_sito([json.loads(json.dumps(risultati))], taratura)
     modello = sito["modelli"][0]
     assert modello["nome"] == "ST-GCN" and 0 <= modello["macro_f1"] <= 1 and modello["latenza_cpu_ms"] > 0
