@@ -857,6 +857,14 @@ def test_valuta_mani_combina_mani_e_detector(tmp_path, monkeypatch):
     assert valutazione["combinati"]["knife"]["falsi_allarmi"] == 1.0       # la b: 0,6 del detector ≥ 0,5
 
 
+def test_titolo_della_presentazione_con_due_punti_e_percentuali(tmp_path):
+    """drawtext di ffmpeg: ":" e "%" vanno protetti (con "82-98%" il montaggio si fermava)."""
+    from sicurezza.strumenti import scena_titolo
+    scena_titolo({"testo": "Folle: niente falsi allarmi", "sottotitolo": "82-98% giuste, 100 %{pts}", "secondi": 1},
+                 320, 180, 25, tmp_path / "titolo.mp4")
+    assert leggi_info_video(str(tmp_path / "titolo.mp4")).durata_secondi == 1.0
+
+
 def test_scarica_con_riprova_riprova_e_poi_si_arrende(tmp_path, monkeypatch):
     tentativi = []
 

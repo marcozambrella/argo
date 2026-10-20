@@ -504,7 +504,8 @@ def ffmpeg(*argomenti: str) -> None:
 
 
 def testo_sicuro(testo: str) -> str:
-    return testo.replace("\\", "\\\\").replace(":", "\\:").replace("'", "’")
+    # drawtext: ":" separa le opzioni, "%" apre un'espansione (es. %{pts}) → vanno protetti
+    return testo.replace("\\", "\\\\").replace(":", "\\:").replace("%", "\\\\%").replace("'", "’")
 
 
 def scena_titolo(scena, larghezza, altezza, fps, uscita: Path) -> None:
