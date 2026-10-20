@@ -21,7 +21,7 @@ regolarizzazione; pazienza 6 (le epoche costano 10-20 minuti); tetto ORE_MASSIME
 import json, subprocess, sys
 from pathlib import Path
 
-ORE_MASSIME = 2.2   # per ciascun modello (in parallelo). 20/10 05:40: quota 3,55 h − ~1,2 h tra finestre, un epoca oltre il tetto, taratura e margine
+ORE_MASSIME = 2.2   # per ciascun modello (in parallelo). 20/10 05:40: quota 3,55 h − ~1,2 h tra finestre, un'epoca oltre il tetto, taratura e margine
 OPZIONI = {"graph_transformer": ["--epoche", "25", "--pazienza", "6", "--dropout", "0.3", "--decadimento-pesi", "0.1"],
            "stgcn": ["--epoche", "30", "--pazienza", "6"]}
 
@@ -35,9 +35,14 @@ ingresso.write_text("\n".join(righe_annotazioni.values()) + "\n")
 cartelle_estratti = [str(c) for c in Path("/kaggle/input").glob("**/estratti") if c.is_dir()]
 print("clip annotate:", len(righe_annotazioni), "| estratti:", cartelle_estratti, flush=True)
 ambiente = {**os.environ, "PYTHONPATH": "/tmp/repo/src"}
-subprocess.run([sys.executable, "-m", "sicurezza.modelli", "dataset-finestre", "--annotazioni", str(ingresso),
-                "--estratti", *cartelle_estratti, "--uscita", "/tmp/finestre.npz"], check=True, env=ambiente)
-processi = [subprocess.Popen([sys.executable, "-m", "sicurezza.modelli", "addestra", "--finestre", "/tmp/finestre.npz",
+# finestre già costruite dal kernel solo CPU `roma-safe-cctv-finestre` (se è tra le sorgenti): niente GPU sprecata
+finestre_pronte = sorted(Path("/kaggle/input").glob("**/finestre.npz"))
+percorso_finestre = str(finestre_pronte[0]) if finestre_pronte else "/tmp/finestre.npz"
+if not finestre_pronte:
+    subprocess.run([sys.executable, "-m", "sicurezza.modelli", "dataset-finestre", "--annotazioni", str(ingresso),
+                    "--estratti", *cartelle_estratti, "--uscita", percorso_finestre], check=True, env=ambiente)
+print("finestre:", percorso_finestre, flush=True)
+processi = [subprocess.Popen([sys.executable, "-m", "sicurezza.modelli", "addestra", "--finestre", percorso_finestre,
                               "--modello", modello, "--uscita", f"/kaggle/working/{modello}",
                               "--ore-massime", str(ORE_MASSIME), *OPZIONI[modello]],
                              env={**ambiente, "CUDA_VISIBLE_DEVICES": str(gpu)})
@@ -46,17 +51,17 @@ for processo in processi:
     processo.wait()
 
 # D35: taratura del WARNING ARMA sul validation set (stesso split del Graph-Transformer)
-subprocess.run([sys.executable, "-m", "sicurezza.demo", "tara-warning", "--finestre", "/tmp/finestre.npz",
+subprocess.run([sys.executable, "-m", "sicurezza.demo", "tara-warning", "--finestre", percorso_finestre,
                 "--split", "/kaggle/working/graph_transformer/split.npz", "--estratti", *cartelle_estratti,
                 "--uscita", "/kaggle/working/taratura_warning.json"], check=True, env=ambiente)
 # il sistema intero sul test: modello + WARNING ARMA tarato + "rissa + warning = rissa con arma" (D6)
 for modello in OPZIONI:
-    subprocess.run([sys.executable, "-m", "sicurezza.demo", "valuta-sistema", "--finestre", "/tmp/finestre.npz",
+    subprocess.run([sys.executable, "-m", "sicurezza.demo", "valuta-sistema", "--finestre", percorso_finestre,
                     "--split", f"/kaggle/working/{modello}/split.npz",
                     "--probabilita", f"/kaggle/working/{modello}/probabilita_test.npy",
                     "--taratura", "/kaggle/working/taratura_warning.json", "--estratti", *cartelle_estratti,
                     "--uscita", f"/kaggle/working/{modello}/sistema_test.json"], check=True, env=ambiente)
 # dove sbagliano: metriche per sorgente e per video del test
-subprocess.run([sys.executable, "-m", "sicurezza.modelli", "analizza-predizioni", "--finestre", "/tmp/finestre.npz",
+subprocess.run([sys.executable, "-m", "sicurezza.modelli", "analizza-predizioni", "--finestre", percorso_finestre,
                 "--probabilita", *[f"{m}=/kaggle/working/{m}/probabilita_test.npy" for m in OPZIONI],
                 "--uscita", "/kaggle/working/analisi_test.json"], check=True, env=ambiente)

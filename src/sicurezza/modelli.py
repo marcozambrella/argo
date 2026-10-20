@@ -721,6 +721,15 @@ def indici_degli_split(finestre: dict, seme: int = 0) -> dict[str, np.ndarray]:
     return {nome: np.flatnonzero(split == numero) for numero, nome in enumerate(NOMI_SPLIT)}
 
 
+def salva_split(finestre: dict, percorso_uscita: Path, seme: int = 0) -> dict[str, np.ndarray]:
+    """split.npz: indici delle finestre per split + i video di ogni split (servono a scegliere i video della demo tra
+    quelli MAI visti in addestramento, e a tarare il WARNING ARMA sul validation senza addestrare niente)."""
+    indici_split = indici_degli_split(finestre, seme)
+    np.savez(percorso_uscita, **indici_split,
+             **{f"clip_{nome}": np.unique(finestre["id_clip"][indici]) for nome, indici in indici_split.items()})
+    return indici_split
+
+
 def addestra(finestre: dict, nome_modello: str, cartella_uscita: Path, epoche: int = 50, dimensione_lotto: int = 64,
              tasso_apprendimento: float = 5e-4, decadimento_pesi: float = 0.05, pazienza: int = 10,
              bilanciamento: str = "pesi", seme: int = 0, iperparametri_modello: dict | None = None,
@@ -732,10 +741,7 @@ def addestra(finestre: dict, nome_modello: str, cartella_uscita: Path, epoche: i
     dispositivo = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cartella_uscita.mkdir(parents=True, exist_ok=True)
 
-    indici_split = indici_degli_split(finestre, seme)
-    # anche i video di ogni split: servono a scegliere i video della demo tra quelli MAI visti in addestramento
-    np.savez(cartella_uscita / "split.npz", **indici_split,
-             **{f"clip_{nome}": np.unique(finestre["id_clip"][indici]) for nome, indici in indici_split.items()})
+    indici_split = salva_split(finestre, cartella_uscita / "split.npz", seme)
 
     iperparametri_modello = iperparametri_modello or {}
     modello = crea_modello(nome_modello, **iperparametri_modello).to(dispositivo)
@@ -897,8 +903,18 @@ def comando_analizza_predizioni(argomenti: list[str] | None = None) -> None:
 # ==============================================================================================================
 # riga di comando: python -m sicurezza.modelli <comando> [opzioni]
 # ==============================================================================================================
+def comando_salva_split(argomenti: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--finestre", required=True)
+    parser.add_argument("--uscita", required=True, help="split.npz (lo stesso che scrive `addestra`)")
+    parser.add_argument("--seme", type=int, default=0)
+    argomenti = parser.parse_args(argomenti)
+    indici_split = salva_split(carica_finestre(argomenti.finestre), Path(argomenti.uscita), argomenti.seme)
+    print({nome: len(indici) for nome, indici in indici_split.items()})
+
+
 COMANDI = {"dataset-finestre": comando_dataset_finestre, "addestra": comando_addestra,
-           "analizza-predizioni": comando_analizza_predizioni}
+           "analizza-predizioni": comando_analizza_predizioni, "salva-split": comando_salva_split}
 
 
 def main(argomenti: list[str] | None = None) -> None:

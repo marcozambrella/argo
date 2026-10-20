@@ -907,6 +907,17 @@ def test_falsi_allarmi_contati_per_categoria(tmp_path):
     assert risultato["immagini_con_allarme"] == [{"immagine": "knife/falso_b.jpg", "armi": [("knife", 0.7, 0.02)]}]
 
 
+def test_salva_split_senza_addestrare_uguale_a_quello_di_addestra(dataset_finto, tmp_path):
+    """La taratura del WARNING ARMA (kernel solo CPU) usa lo split senza addestrare: deve essere lo stesso."""
+    from sicurezza.modelli import comando_salva_split, indici_degli_split
+    np.savez(tmp_path / "finestre.npz", **dataset_finto)
+    comando_salva_split(["--finestre", str(tmp_path / "finestre.npz"), "--uscita", str(tmp_path / "split.npz")])
+    split, attesi = np.load(tmp_path / "split.npz"), indici_degli_split(dataset_finto)
+    for nome, indici in attesi.items():
+        np.testing.assert_array_equal(split[nome], indici)
+        assert set(split[f"clip_{nome}"]) == set(dataset_finto["id_clip"][indici])
+
+
 @pytest.mark.lento  # un'epoca vera di ST-GCN su CPU: ~50 s
 def test_risultati_per_il_sito_dal_vero_addestramento(dataset_finto, tmp_path):
     """Il formato letto da site/app.js (nome, macro_f1, latenza_cpu_ms) esce dai risultati.json veri di addestra."""
