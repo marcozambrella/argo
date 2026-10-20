@@ -1,0 +1,20 @@
+{
+  "id": "KAGGLE_UTENTE/roma-safe-cctv-valutazione",
+  "title": "roma-safe-cctv valutazione",
+  "code_file": "valutazione.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": true,
+  "dataset_sources": [
+    "KAGGLE_UTENTE/roma-safe-cctv-addestramento-2"
+  ],
+  "kernel_sources": [
+    "KAGGLE_UTENTE/roma-safe-cctv-finestre",
+    "KAGGLE_UTENTE/roma-safe-cctv-aggiungi-armi",
+    "KAGGLE_UTENTE/roma-safe-cctv-estrazione-normali"
+  ],
+  "competition_sources": [],
+  "model_sources": []
+}
