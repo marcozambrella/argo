@@ -9,7 +9,7 @@ import torch
 import yaml
 
 from sicurezza.dati import elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
-from sicurezza.demo import valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
+from sicurezza.demo import probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import analizza_predizioni, ricuci_tracce, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.strumenti import risultati_per_il_sito, scarica_con_riprova, scegli_candidati_scippo_telefono, scegli_immagini_coco
 from sicurezza.visione import mani_di_una_persona, precisione_media, probabilita_armi_in_mano, ritaglio_quadrato, ritagli_per_addestramento, prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
@@ -664,6 +664,20 @@ def test_demo_su_video_vero_con_classificatore_non_addestrato(tmp_path):
     assert info.durata_secondi == pytest.approx(2.0, abs=0.1)
     assert json.loads((tmp_path / "demo" / "eventi.json").read_text()) == eventi
     assert (tmp_path / "demo" / "probabilita.csv").read_text().count("\n") == 3
+
+
+def test_media_dei_classificatori():
+    """DA DECIDERE 22 d: un checkpoint = la sua softmax; due checkpoint = la media delle due softmax."""
+    torch.manual_seed(0)
+    modelli = [crea_modello("stgcn").eval(), crea_modello("graph_transformer").eval()]
+    nodi, maschera, classe_arma = (tensore[0].numpy() for tensore in lotto_finto())
+    with torch.no_grad():
+        singole = [probabilita_media([modello], nodi, maschera, classe_arma) for modello in modelli]
+        media = probabilita_media(modelli, nodi, maschera, classe_arma)
+        diretta = torch.softmax(modelli[0](*(torch.from_numpy(x)[None] for x in (nodi, maschera, classe_arma))), -1)[0]
+    np.testing.assert_allclose(singole[0], diretta.numpy(), atol=1e-6)
+    np.testing.assert_allclose(media, (singole[0] + singole[1]) / 2, atol=1e-6)
+    assert media.shape == (4,) and abs(media.sum() - 1) < 1e-5
 
 
 # ==============================================================================================================

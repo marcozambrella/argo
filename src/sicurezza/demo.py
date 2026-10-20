@@ -188,6 +188,15 @@ def carica_classificatore(percorso_checkpoint: str, dispositivo: str = "cpu"):
     return modello.to(dispositivo).eval()
 
 
+# DA DECIDERE 22 d: con più checkpoint la probabilità è la media delle softmax (sulle clip mai viste, add. 1 + add. 2:
+# macro-F1 0,409 contro 0,395 del solo add. 1). Con un solo checkpoint è il classificatore di sempre.
+def probabilita_media(classificatori: list, nodi: np.ndarray, maschera: np.ndarray, classe_arma: np.ndarray,
+                      dispositivo: str = "cpu") -> np.ndarray:
+    ingressi = (torch.from_numpy(nodi)[None].to(dispositivo), torch.from_numpy(maschera)[None].to(dispositivo),
+                torch.from_numpy(classe_arma.astype(np.int64))[None].to(dispositivo))
+    return np.mean([torch.softmax(modello(*ingressi), -1)[0].cpu().numpy() for modello in classificatori], axis=0)
+
+
 class ScrittoreVideo:
     def __init__(self, percorso: Path, larghezza: int, altezza: int, fps: int = FPS_ANALISI):
         self.processo = subprocess.Popen(
@@ -204,12 +213,13 @@ class ScrittoreVideo:
 
 
 @torch.no_grad()
-def analizza_video(percorso_video: str, percorso_classificatore: str, cartella_uscita: str | Path,
+def analizza_video(percorso_video: str, percorso_classificatore: str | list[str], cartella_uscita: str | Path,
                    percorso_modello_armi: str | None = None, percorso_modello_pose: str = MODELLO_POSE_PREDEFINITO,
                    dispositivo: str = "cpu", taratura: dict | None = None,
                    percorso_modello_mani: str | None = None, tracker: str = TRACKER_PREDEFINITO) -> list[dict]:
     """taratura: la combinazione "migliore" di `tara-warning` (soglia, frame minimi, vicinanza); senza, i valori
-    provvisori del piano. tracker: lo stesso usato per estrarre i dati di addestramento del classificatore (D3)."""
+    provvisori del piano. tracker: lo stesso usato per estrarre i dati di addestramento del classificatore (D3).
+    percorso_classificatore: un checkpoint, oppure una lista di checkpoint di cui fare la media (DA DECIDERE 22 d)."""
     regola = {"soglia_confidenza": SOGLIA_CONFIDENZA_ARMA, "frame_minimi": FRAME_MINIMI_CON_ARMA,
               "vicinanza": VICINANZA_PREDEFINITA}
     regola.update({chiave: (taratura or {})[chiave] for chiave in regola if chiave in (taratura or {})})
@@ -218,7 +228,8 @@ def analizza_video(percorso_video: str, percorso_classificatore: str, cartella_u
     info = leggi_info_video(percorso_video)
     estrattore = Estrattore(percorso_modello_pose, percorso_modello_armi, dispositivo, tracker=tracker,
                             percorso_modello_mani=percorso_modello_mani)   # D44: anche le mani, se c'è il modello
-    classificatore = carica_classificatore(percorso_classificatore, dispositivo)
+    percorsi = [percorso_classificatore] if isinstance(percorso_classificatore, str) else percorso_classificatore
+    classificatori = [carica_classificatore(percorso, dispositivo) for percorso in percorsi]
     scrittore = ScrittoreVideo(cartella_uscita / "video_annotato.mp4", info.larghezza, info.altezza)
 
     ultimi_frame = deque(maxlen=FRAME_PER_FINESTRA)   # (persone, armi) degli ultimi 40 frame
@@ -233,10 +244,7 @@ def analizza_video(percorso_video: str, percorso_classificatore: str, cartella_u
             timeline = timeline_da_dati(impacchetta_estrazione(righe_persone, righe_armi, FRAME_PER_FINESTRA,
                                                                info.larghezza, info.altezza, 0.0))
             nodi, maschera, classe_arma = costruisci_finestra(timeline, 0)
-            logit = classificatore(torch.from_numpy(nodi)[None].to(dispositivo),
-                                   torch.from_numpy(maschera)[None].to(dispositivo),
-                                   torch.from_numpy(classe_arma.astype(np.int64))[None].to(dispositivo))
-            probabilita = torch.softmax(logit, -1)[0].cpu().numpy()
+            probabilita = probabilita_media(classificatori, nodi, maschera, classe_arma, dispositivo)
             warning = warning_arma(timeline, 0, **regola)
             decisione = {"probabilita": probabilita, "classe": classe_finale(probabilita, warning), "warning": warning}
             eventi.append({"inizio_secondi": inizio_finestra / FPS_ANALISI,
@@ -263,7 +271,8 @@ def analizza_video(percorso_video: str, percorso_classificatore: str, cartella_u
 def comando_analizza_video(argomenti: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--video", required=True)
-    parser.add_argument("--classificatore", required=True, help="migliore.pt prodotto da `python -m sicurezza.modelli addestra`")
+    parser.add_argument("--classificatore", required=True, nargs="+",
+                        help="migliore.pt di `python -m sicurezza.modelli addestra`; con più file, media delle probabilità")
     parser.add_argument("--modello-armi", default=None)
     parser.add_argument("--modello-pose", default=MODELLO_POSE_PREDEFINITO)
     parser.add_argument("--uscita", required=True)
