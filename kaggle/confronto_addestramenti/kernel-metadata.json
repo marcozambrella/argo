@@ -1,0 +1,21 @@
+{
+  "id": "KAGGLE_UTENTE/roma-safe-cctv-confronto-addestramenti",
+  "title": "roma-safe-cctv confronto addestramenti",
+  "code_file": "confronto_addestramenti.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": true,
+  "dataset_sources": [
+    "KAGGLE_UTENTE/roma-safe-cctv-addestramento-1"
+  ],
+  "kernel_sources": [
+    "KAGGLE_UTENTE/roma-safe-cctv-finestre",
+    "KAGGLE_UTENTE/roma-safe-cctv-addestramento",
+    "KAGGLE_UTENTE/roma-safe-cctv-aggiungi-armi",
+    "KAGGLE_UTENTE/roma-safe-cctv-estrazione-normali"
+  ],
+  "competition_sources": [],
+  "model_sources": []
+}

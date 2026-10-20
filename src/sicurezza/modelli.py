@@ -913,8 +913,28 @@ def comando_salva_split(argomenti: list[str] | None = None) -> None:
     print({nome: len(indici) for nome, indici in indici_split.items()})
 
 
+def comando_predici(argomenti: list[str] | None = None) -> None:
+    """Probabilità di un classificatore salvato (migliore.pt) sulle finestre di uno split: serve a confrontare sulle
+    STESSE finestre modelli addestrati su dati diversi (es. l'addestramento 1 sui dati dell'addestramento 2)."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--finestre", required=True)
+    parser.add_argument("--checkpoint", required=True, help="migliore.pt di `addestra`")
+    parser.add_argument("--split", required=True, help="split.npz con gli indici delle finestre")
+    parser.add_argument("--nome-split", default="test")
+    parser.add_argument("--uscita", required=True, help="file .npy [finestre, classi]")
+    argomenti = parser.parse_args(argomenti)
+    salvato = torch.load(argomenti.checkpoint, map_location="cpu")
+    modello = crea_modello(salvato["nome_modello"], **salvato["iperparametri_modello"])
+    modello.load_state_dict(salvato["stato"])
+    indici = np.load(argomenti.split)[argomenti.nome_split]
+    probabilita, _ = predici(modello, carica_finestre(argomenti.finestre), indici, torch.device("cpu"))
+    np.save(argomenti.uscita, probabilita)
+    print(f"{salvato['nome_modello']} (epoca {salvato.get('epoca')}): {len(indici)} finestre → {argomenti.uscita}")
+
+
 COMANDI = {"dataset-finestre": comando_dataset_finestre, "addestra": comando_addestra,
-           "analizza-predizioni": comando_analizza_predizioni, "salva-split": comando_salva_split}
+           "analizza-predizioni": comando_analizza_predizioni, "salva-split": comando_salva_split,
+           "predici": comando_predici}
 
 
 def main(argomenti: list[str] | None = None) -> None:

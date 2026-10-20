@@ -918,6 +918,20 @@ def test_salva_split_senza_addestrare_uguale_a_quello_di_addestra(dataset_finto,
         assert set(split[f"clip_{nome}"]) == set(dataset_finto["id_clip"][indici])
 
 
+def test_predici_da_checkpoint_sulle_finestre_di_uno_split(dataset_finto, tmp_path):
+    from sicurezza.modelli import CLASSI, comando_predici, crea_modello, indici_degli_split
+    modello = crea_modello("stgcn")
+    torch.save({"nome_modello": "stgcn", "iperparametri_modello": {}, "classi": CLASSI, "stato": modello.state_dict(),
+                "epoca": 1}, tmp_path / "migliore.pt")
+    np.savez(tmp_path / "finestre.npz", **dataset_finto)
+    np.savez(tmp_path / "split.npz", **indici_degli_split(dataset_finto))
+    comando_predici(["--finestre", str(tmp_path / "finestre.npz"), "--checkpoint", str(tmp_path / "migliore.pt"),
+                     "--split", str(tmp_path / "split.npz"), "--uscita", str(tmp_path / "probabilita.npy")])
+    probabilita = np.load(tmp_path / "probabilita.npy")
+    assert probabilita.shape == (len(indici_degli_split(dataset_finto)["test"]), len(CLASSI))
+    np.testing.assert_allclose(probabilita.sum(1), 1, atol=1e-4)
+
+
 @pytest.mark.lento  # un'epoca vera di ST-GCN su CPU: ~50 s
 def test_risultati_per_il_sito_dal_vero_addestramento(dataset_finto, tmp_path):
     """Il formato letto da site/app.js (nome, macro_f1, latenza_cpu_ms) esce dai risultati.json veri di addestra."""
