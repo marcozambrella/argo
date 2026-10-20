@@ -10,7 +10,7 @@ import yaml
 
 from sicurezza.dati import elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
 from sicurezza.demo import valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
-from sicurezza.modelli import analizza_predizioni, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
+from sicurezza.modelli import analizza_predizioni, ricuci_tracce, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.strumenti import risultati_per_il_sito, scarica_con_riprova, scegli_candidati_scippo_telefono, scegli_immagini_coco
 from sicurezza.visione import mani_di_una_persona, precisione_media, probabilita_armi_in_mano, ritaglio_quadrato, ritagli_per_addestramento, prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
 
@@ -436,6 +436,95 @@ def test_ricucitura_unisce_frammenti_ma_non_persone_diverse():
     keypoint, box = ricuci_tracce({k: v[0] for k, v in tracce.items()}, {k: v[1] for k, v in tracce.items()})
     assert sorted(box) == [1, 3, 4]
     assert (~np.isnan(box[1][:, 0])).sum() == 55 and not np.isnan(keypoint[1][59]).any()
+
+
+def ricuci_tracce_di_riferimento(keypoint_per_traccia, box_per_traccia, buco_massimo=15, distanza_massima=0.5,
+                                 rapporto_altezze_massimo=1.5):
+    """La prima versione (tutte contro tutte, lenta ma ovvia): la nuova deve dare esattamente lo stesso risultato."""
+    def estremi(box):
+        presenti = np.flatnonzero(~np.isnan(box[:, 0]))
+        return presenti[0], presenti[-1]
+
+    def centro_e_altezza(riga):
+        return np.array([(riga[0] + riga[2]) / 2, (riga[1] + riga[3]) / 2]), riga[3] - riga[1]
+
+    keypoint_per_traccia = dict(keypoint_per_traccia)
+    box_per_traccia = {chiave: box.copy() for chiave, box in box_per_traccia.items()}
+    for id_nuova in sorted(box_per_traccia, key=lambda chiave: estremi(box_per_traccia[chiave])[0]):
+        if id_nuova not in box_per_traccia:
+            continue
+        inizio_nuova, _ = estremi(box_per_traccia[id_nuova])
+        centro_nuova, altezza_nuova = centro_e_altezza(box_per_traccia[id_nuova][inizio_nuova])
+        migliore, distanza_migliore = None, np.inf
+        for id_vecchia, box_vecchia in box_per_traccia.items():
+            _, fine_vecchia = estremi(box_vecchia)
+            if id_vecchia == id_nuova or not (0 < inizio_nuova - fine_vecchia <= buco_massimo):
+                continue
+            centro_vecchia, altezza_vecchia = centro_e_altezza(box_vecchia[fine_vecchia])
+            if max(altezza_vecchia, altezza_nuova) > rapporto_altezze_massimo * max(min(altezza_vecchia, altezza_nuova), 1):
+                continue
+            distanza = np.linalg.norm(centro_nuova - centro_vecchia) / max(altezza_vecchia, 1)
+            if distanza <= distanza_massima and distanza < distanza_migliore:
+                migliore, distanza_migliore = id_vecchia, distanza
+        if migliore is not None:
+            presenti = ~np.isnan(box_per_traccia[id_nuova][:, 0])
+            box_per_traccia[migliore][presenti] = box_per_traccia[id_nuova][presenti]
+            keypoint_unito = keypoint_per_traccia[migliore].copy()
+            keypoint_unito[presenti] = keypoint_per_traccia[id_nuova][presenti]
+            keypoint_per_traccia[migliore] = keypoint_unito
+            del box_per_traccia[id_nuova], keypoint_per_traccia[id_nuova]
+    return keypoint_per_traccia, box_per_traccia
+
+
+@pytest.mark.parametrize("seme", range(5))
+def test_ricuci_tracce_veloce_uguale_alla_versione_di_riferimento(seme):
+    """Folla finta: tante tracce brevi e vicine, con buchi e pareggi di distanza (stesse posizioni ripetute)."""
+    generatore = np.random.default_rng(seme)
+    frame, keypoint_per_traccia, box_per_traccia = 120, {}, {}
+    for id_traccia in generatore.permutation(80):
+        dal = int(generatore.integers(0, 110))
+        al = min(frame, dal + int(generatore.integers(1, 25)))
+        x, y = generatore.choice([100.0, 120.0, 140.0]), generatore.choice([200.0, 210.0])
+        altezza = generatore.choice([150.0, 200.0, 320.0])
+        box = np.full((frame, 4), np.nan, np.float32)
+        box[dal:al] = [x - 30, y, x + 30, y + altezza]
+        keypoint = np.full((frame, 17, 3), np.nan, np.float32)
+        keypoint[dal:al] = generatore.random((al - dal, 17, 3))
+        keypoint_per_traccia[int(id_traccia)], box_per_traccia[int(id_traccia)] = keypoint, box
+    attesi = ricuci_tracce_di_riferimento(keypoint_per_traccia, box_per_traccia)
+    ottenuti = ricuci_tracce(keypoint_per_traccia, box_per_traccia)
+    assert list(ottenuti[1]) == list(attesi[1]) and len(ottenuti[1]) < len(box_per_traccia)   # qualcuna si è unita
+    for chiave in attesi[1]:
+        np.testing.assert_array_equal(ottenuti[1][chiave], attesi[1][chiave])
+        np.testing.assert_array_equal(ottenuti[0][chiave], attesi[0][chiave])
+
+
+def test_timeline_di_una_folla_si_carica_in_fretta(tmp_path):
+    """Migliaia di tracce brevi (scene di folla): prima ci volevano decine di minuti per una clip."""
+    import time
+    generatore = np.random.default_rng(0)
+    frame, persone_per_frame = 600, 100
+    righe_frame, righe_id, prossimo_id, attive = [], [], 0, []
+    for numero in range(frame):
+        attive = [(id_traccia, fine) for id_traccia, fine in attive if fine > numero]
+        while len(attive) < persone_per_frame:
+            attive.append((prossimo_id, numero + int(generatore.integers(10, 40))))
+            prossimo_id += 1
+        righe_frame += [numero] * len(attive)
+        righe_id += [id_traccia for id_traccia, _ in attive]
+    righe = len(righe_frame)
+    box = generatore.uniform(0, 1000, (righe, 4)).astype(np.float32)
+    box[:, 2:] = box[:, :2] + 80
+    np.savez_compressed(tmp_path / "folla.npz", numero_frame=np.int32(frame), larghezza=np.int32(1920),
+                        altezza=np.int32(1080), persone_frame=np.array(righe_frame, np.int32),
+                        persone_id_traccia=np.array(righe_id, np.int32), persone_box=box,
+                        persone_keypoint=generatore.random((righe, 17, 3), np.float32),
+                        armi_frame=np.zeros(0, np.int32), armi_box=np.zeros((0, 4), np.float32),
+                        armi_classe=np.zeros(0, np.int32), armi_confidenza=np.zeros(0, np.float16))
+    inizio = time.perf_counter()
+    timeline = carica_timeline(tmp_path / "folla.npz")
+    assert prossimo_id > 2000 and len(timeline.box_per_traccia) <= prossimo_id
+    assert time.perf_counter() - inizio < 60
 
 
 # ==============================================================================================================

@@ -1,6 +1,6 @@
 """Sicurezza NN — modelli. File unico (richiesta di Marco: massimo 5 file Python)."""
 
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 import argparse
@@ -74,14 +74,19 @@ def armi_non_piu_grandi_della_persona(dati) -> np.ndarray:
 def timeline_da_dati(dati, ricuci: bool = True, filtra_armi_grandi: bool = True) -> TimelineVideo:
     """Come carica_timeline, ma da un dizionario già in memoria (es. il buffer della demo)."""
     numero_frame = int(dati["numero_frame"])
+    # ogni array si legge UNA volta: un .npz lo decomprime a ogni accesso (con migliaia di tracce, nelle scene di
+    # folla, voleva dire ore per una clip); le righe di ogni traccia si prendono già raggruppate (argsort stabile)
+    id_tracce, frame_persone = np.asarray(dati["persone_id_traccia"]), np.asarray(dati["persone_frame"])
+    keypoint_persone, box_persone = np.asarray(dati["persone_keypoint"]), np.asarray(dati["persone_box"])
+    ordine = np.argsort(id_tracce, kind="stable")
+    id_distinti, inizi = np.unique(id_tracce[ordine], return_index=True)
     keypoint_per_traccia, box_per_traccia = {}, {}
-    for id_traccia in np.unique(dati["persone_id_traccia"]):
-        righe = dati["persone_id_traccia"] == id_traccia
-        frame_traccia = dati["persone_frame"][righe]
+    for id_traccia, righe in zip(id_distinti, np.split(ordine, inizi[1:])):
+        frame_traccia = frame_persone[righe]
         keypoint = np.full((numero_frame, NUMERO_KEYPOINT, 3), np.nan, np.float32)
         box = np.full((numero_frame, 4), np.nan, np.float32)
-        keypoint[frame_traccia] = dati["persone_keypoint"][righe]
-        box[frame_traccia] = dati["persone_box"][righe]
+        keypoint[frame_traccia] = keypoint_persone[righe]
+        box[frame_traccia] = box_persone[righe]
         keypoint_per_traccia[int(id_traccia)] = keypoint
         box_per_traccia[int(id_traccia)] = box
     if ricuci:
@@ -108,43 +113,49 @@ def ricuci_tracce(keypoint_per_traccia: dict, box_per_traccia: dict, buco_massim
     """D17: unisce i frammenti di traccia della stessa persona.
 
     Una traccia B continua una traccia A se B inizia dopo la fine di A (mai sovrapposte nel tempo), entro
-    `buco_massimo` frame, vicino all'ultimo box di A e con altezza simile. Tra più candidate si sceglie la più vicina.
+    `buco_massimo` frame, vicino all'ultimo box di A e con altezza simile. Tra più candidate si sceglie la più vicina
+    (a parità, la prima nell'ordine delle tracce). Le tracce sono indicizzate per frame di fine: ogni traccia nuova
+    guarda solo quelle finite nei `buco_massimo` frame prima (il confronto tutte-con-tutte era quadratico: ore sulle
+    scene di folla con migliaia di tracce).
     """
-    def estremi(box):
-        presenti = np.flatnonzero(~np.isnan(box[:, 0]))
-        return presenti[0], presenti[-1]
-
     def centro_e_altezza(riga_box):
         return np.array([(riga_box[0] + riga_box[2]) / 2, (riga_box[1] + riga_box[3]) / 2]), riga_box[3] - riga_box[1]
 
     keypoint_per_traccia = dict(keypoint_per_traccia)
     box_per_traccia = {id_traccia: box.copy() for id_traccia, box in box_per_traccia.items()}
-    ordine_per_inizio = sorted(box_per_traccia, key=lambda id_traccia: estremi(box_per_traccia[id_traccia])[0])
-    for id_nuova in ordine_per_inizio:
-        if id_nuova not in box_per_traccia:
-            continue
-        inizio_nuova, _ = estremi(box_per_traccia[id_nuova])
+    posizione = {id_traccia: indice for indice, id_traccia in enumerate(box_per_traccia)}
+    estremi = {}
+    for id_traccia, box in box_per_traccia.items():
+        presenti = np.flatnonzero(~np.isnan(box[:, 0]))
+        estremi[id_traccia] = (int(presenti[0]), int(presenti[-1]))
+    finite_al_frame = defaultdict(set)
+    for id_traccia, (_, fine) in estremi.items():
+        finite_al_frame[fine].add(id_traccia)
+
+    for id_nuova in sorted(box_per_traccia, key=lambda id_traccia: estremi[id_traccia][0]):
+        inizio_nuova = estremi[id_nuova][0]
         centro_nuova, altezza_nuova = centro_e_altezza(box_per_traccia[id_nuova][inizio_nuova])
+        candidate = sorted((id_vecchia for frame in range(inizio_nuova - buco_massimo, inizio_nuova)
+                            for id_vecchia in finite_al_frame.get(frame, ())), key=posizione.get)
         migliore, distanza_migliore = None, np.inf
-        for id_vecchia, box_vecchia in box_per_traccia.items():
-            if id_vecchia == id_nuova:
-                continue
-            _, fine_vecchia = estremi(box_vecchia)
-            if not (0 < inizio_nuova - fine_vecchia <= buco_massimo):
-                continue
-            centro_vecchia, altezza_vecchia = centro_e_altezza(box_vecchia[fine_vecchia])
+        for id_vecchia in candidate:
+            centro_vecchia, altezza_vecchia = centro_e_altezza(box_per_traccia[id_vecchia][estremi[id_vecchia][1]])
             if max(altezza_vecchia, altezza_nuova) > rapporto_altezze_massimo * max(min(altezza_vecchia, altezza_nuova), 1):
                 continue
             distanza = np.linalg.norm(centro_nuova - centro_vecchia) / max(altezza_vecchia, 1)
             if distanza <= distanza_massima and distanza < distanza_migliore:
                 migliore, distanza_migliore = id_vecchia, distanza
-        if migliore is not None:  # la traccia nuova diventa il seguito di quella vecchia
+        if migliore is not None:  # la traccia nuova diventa il seguito di quella vecchia (che ora finisce dove lei)
             presenti = ~np.isnan(box_per_traccia[id_nuova][:, 0])
             box_per_traccia[migliore][presenti] = box_per_traccia[id_nuova][presenti]
             keypoint_unito = keypoint_per_traccia[migliore].copy()
             keypoint_unito[presenti] = keypoint_per_traccia[id_nuova][presenti]
             keypoint_per_traccia[migliore] = keypoint_unito
-            del box_per_traccia[id_nuova], keypoint_per_traccia[id_nuova]
+            finite_al_frame[estremi[migliore][1]].discard(migliore)
+            finite_al_frame[estremi[id_nuova][1]].discard(id_nuova)
+            estremi[migliore] = (estremi[migliore][0], estremi[id_nuova][1])
+            finite_al_frame[estremi[migliore][1]].add(migliore)
+            del box_per_traccia[id_nuova], keypoint_per_traccia[id_nuova], estremi[id_nuova]
     return keypoint_per_traccia, box_per_traccia
 
 
