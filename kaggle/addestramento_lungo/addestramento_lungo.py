@@ -20,7 +20,7 @@ classificatore). ORE_MASSIME = ore di quota − ~0,7 h (avvio, ultima epoca oltr
 import subprocess, sys
 from pathlib import Path
 
-ORE_MASSIME = 5.0   # per ciascun modello (in parallelo): da regolare sulla quota GPU dell'account che lo lancia
+ORE_MASSIME = 6.0   # per ciascun modello (in parallelo). 20/10 23:40: account gigibosi, 30 h libere → ~6,7 h di sessione
 OPZIONI = {"graph_transformer": ["--epoche", "30", "--pazienza", "8", "--dropout", "0.3", "--decadimento-pesi", "0.1"],
            "stgcn": ["--epoche", "40", "--pazienza", "8"]}
 
