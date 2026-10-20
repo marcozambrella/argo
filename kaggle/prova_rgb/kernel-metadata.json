@@ -1,0 +1,21 @@
+{
+  "id": "KAGGLE_UTENTE/roma-safe-cctv-prova-rgb",
+  "title": "roma-safe-cctv prova rgb",
+  "code_file": "prova_rgb.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": true,
+  "dataset_sources": [
+    "vulamnguyen/rwf2000",
+    "mohamedtariki/vsd-cctv-fights",
+    "toluwaniaremu/smartcity-cctv-violence-detection-dataset-scvd",
+    "bypktt/ucf-crimes"
+  ],
+  "kernel_sources": [
+    "KAGGLE_UTENTE/roma-safe-cctv-finestre"
+  ],
+  "competition_sources": [],
+  "model_sources": []
+}
