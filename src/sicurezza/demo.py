@@ -422,10 +422,112 @@ def comando_valuta_sistema(argomenti: list[str] | None = None) -> None:
 
 
 # ==============================================================================================================
+# Allarme di violenza per video (DA DECIDERE 23): media mobile delle probabilità sulle ultime K finestre della stessa
+# clip (si può fare in diretta) e allarme quando almeno N finestre di fila sono violenza o violenza con arma.
+# Un video è "violento" se ha almeno una finestra etichettata violenza o violenza con arma (indipendente da N).
+# N e K si scelgono sul validation (massima accuratezza per video, a parità meno falsi allarmi) e si misurano sul test.
+#
+# Uso (le probabilità di più file vengono mediate, DA DECIDERE 22 d):
+#     python -m sicurezza.demo valuta-allarme --finestre-val finestre_val.npz --probabilita-val a_val.npy b_val.npy
+#         --finestre-test finestre_test.npz --probabilita-test a_test.npy b_test.npy --uscita allarme.json
+# ==============================================================================================================
+CLASSI_VIOLENTE = ("violenza", "violenza_con_arma")
+FINESTRE_DI_FILA_DA_PROVARE = tuple(range(1, 9))
+MEDIE_MOBILI_DA_PROVARE = (1, 3, 5)
+
+
+def media_mobile(probabilita: np.ndarray, id_clip: np.ndarray, inizi: np.ndarray, finestre: int) -> np.ndarray:
+    """Per ogni finestra, la media delle probabilità sue e delle (finestre - 1) precedenti della stessa clip."""
+    uscita = np.asarray(probabilita, np.float64).copy()
+    if finestre <= 1:
+        return uscita
+    ordine = np.lexsort((inizi, id_clip))
+    _, primi = np.unique(np.asarray(id_clip)[ordine], return_index=True)
+    for righe in np.split(ordine, np.sort(primi)[1:]):
+        somme = np.vstack([np.zeros((1, uscita.shape[1])), np.cumsum(probabilita[righe], axis=0)])
+        fine = np.arange(1, len(righe) + 1)
+        inizio = np.maximum(0, fine - finestre)
+        uscita[righe] = (somme[fine] - somme[inizio]) / (fine - inizio)[:, None]
+    return uscita
+
+
+def pezzi_di_video(id_clip: np.ndarray, inizi: np.ndarray, secondi: float | None) -> np.ndarray:
+    """I video lunghi contano come tanti pezzi da `secondi`: un video lungo con una rissa da qualche parte farebbe
+    scattare l'allarme quasi sempre, e "per video" gonfierebbe l'accuratezza (CCTV-Fights: tutti i video hanno una rissa)."""
+    if not secondi:
+        return np.asarray(id_clip)
+    pezzo = (np.asarray(inizi) // int(round(secondi * FPS_ANALISI))).astype(str)
+    return np.char.add(np.char.add(np.asarray(id_clip).astype(str), "#"), pezzo)
+
+
+def finestre_di_fila_massime(valori: np.ndarray) -> int:
+    massimo = corrente = 0
+    for valore in valori:
+        corrente = corrente + 1 if valore else 0
+        massimo = max(massimo, corrente)
+    return massimo
+
+
+def allarmi_per_video(probabilita: np.ndarray, etichette: np.ndarray, id_clip: np.ndarray, inizi: np.ndarray,
+                      finestre_di_fila: int, media: int = 1) -> dict:
+    indici_violenti = [CLASSI.index(classe) for classe in CLASSI_VIOLENTE]
+    predette = np.isin(media_mobile(probabilita, id_clip, inizi, media).argmax(1), indici_violenti)
+    vere = np.isin(etichette, indici_violenti)
+    video_veri, video_allarme = [], []
+    for clip in np.unique(id_clip):
+        righe = np.where(id_clip == clip)[0]
+        righe = righe[np.argsort(inizi[righe], kind="stable")]
+        video_veri.append(vere[righe].any())
+        video_allarme.append(finestre_di_fila_massime(predette[righe]) >= finestre_di_fila)
+    video_veri, video_allarme = np.array(video_veri), np.array(video_allarme)
+    quota = lambda maschera, valori: round(float(valori[maschera].mean()), 4) if maschera.any() else None
+    return {"finestre_di_fila": finestre_di_fila, "media_mobile": media, "video": len(video_veri),
+            "video_violenti": int(video_veri.sum()),
+            "accuratezza": round(float((video_veri == video_allarme).mean()), 4),
+            "recall": quota(video_veri, video_allarme), "falsi_allarmi": quota(~video_veri, video_allarme),
+            "precisione": quota(video_allarme, video_veri)}
+
+
+def tara_allarme(probabilita: np.ndarray, etichette: np.ndarray, id_clip: np.ndarray, inizi: np.ndarray) -> dict:
+    tabella = [allarmi_per_video(probabilita, etichette, id_clip, inizi, di_fila, media)
+               for media in MEDIE_MOBILI_DA_PROVARE for di_fila in FINESTRE_DI_FILA_DA_PROVARE]
+    migliore = max(tabella, key=lambda riga: (riga["accuratezza"], -(riga["falsi_allarmi"] or 0)))
+    return {"migliore": migliore, "tabella": tabella}
+
+
+def comando_valuta_allarme(argomenti: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--finestre-val", required=True, help="finestre_val.npz di `addestra` (etichetta, id_clip, ...)")
+    parser.add_argument("--probabilita-val", required=True, nargs="+", help="uno o più .npy: si fa la media")
+    parser.add_argument("--finestre-test", required=True)
+    parser.add_argument("--probabilita-test", required=True, nargs="+")
+    parser.add_argument("--secondi-pezzo", type=float, default=None,
+                        help="misura per pezzi di video di questa durata invece che per video interi (es. 10)")
+    parser.add_argument("--uscita", required=True)
+    argomenti = parser.parse_args(argomenti)
+    insiemi = {}
+    for nome, percorso_finestre, percorsi_probabilita in (("val", argomenti.finestre_val, argomenti.probabilita_val),
+                                                          ("test", argomenti.finestre_test, argomenti.probabilita_test)):
+        with np.load(percorso_finestre) as finestre:
+            insiemi[nome] = (np.mean([np.load(percorso) for percorso in percorsi_probabilita], axis=0),
+                             finestre["etichetta"],
+                             pezzi_di_video(finestre["id_clip"], finestre["inizio_finestra"], argomenti.secondi_pezzo),
+                             finestre["inizio_finestra"])
+    taratura = tara_allarme(*insiemi["val"])
+    scelta = taratura["migliore"]
+    risultato = {"secondi_pezzo": argomenti.secondi_pezzo, "scelta_sul_val": scelta, "tabella_val": taratura["tabella"],
+                 "test": allarmi_per_video(*insiemi["test"], scelta["finestre_di_fila"], scelta["media_mobile"]),
+                 "test_allarme_alla_prima_finestra": allarmi_per_video(*insiemi["test"], 1, 1)}
+    Path(argomenti.uscita).write_text(json.dumps(risultato, indent=1, ensure_ascii=False))
+    print("scelta sul validation:", scelta)
+    print("test:", risultato["test"])
+
+
+# ==============================================================================================================
 # riga di comando: python -m sicurezza.demo <comando> [opzioni]
 # ==============================================================================================================
 COMANDI = {"analizza-video": comando_analizza_video, "tara-warning": comando_tara_warning,
-           "valuta-sistema": comando_valuta_sistema}
+           "valuta-sistema": comando_valuta_sistema, "valuta-allarme": comando_valuta_allarme}
 
 
 def main(argomenti: list[str] | None = None) -> None:

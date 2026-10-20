@@ -9,7 +9,7 @@ import torch
 import yaml
 
 from sicurezza.dati import elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
-from sicurezza.demo import probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
+from sicurezza.demo import pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import analizza_predizioni, ricuci_tracce, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.strumenti import risultati_per_il_sito, scarica_con_riprova, scegli_candidati_scippo_telefono, scegli_immagini_coco
 from sicurezza.visione import mani_di_una_persona, precisione_media, probabilita_armi_in_mano, ritaglio_quadrato, ritagli_per_addestramento, prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
@@ -678,6 +678,41 @@ def test_media_dei_classificatori():
     np.testing.assert_allclose(singole[0], diretta.numpy(), atol=1e-6)
     np.testing.assert_allclose(media, (singole[0] + singole[1]) / 2, atol=1e-6)
     assert media.shape == (4,) and abs(media.sum() - 1) < 1e-5
+
+
+def test_media_mobile_resta_dentro_la_clip():
+    probabilita = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [1, 0, 0, 0]], float)
+    id_clip = np.array(["b", "a", "a", "b", "a"])
+    inizi = np.array([0, 20, 0, 10, 10])          # a: righe 2 (0), 4 (10), 1 (20); b: righe 0 (0), 3 (10)
+    media = media_mobile(probabilita, id_clip, inizi, 2)
+    np.testing.assert_allclose(media[2], [0, 0, 1, 0])               # prima finestra di a: solo sé stessa
+    np.testing.assert_allclose(media[4], [.5, 0, .5, 0])             # a 10: media con a 0
+    np.testing.assert_allclose(media[1], [.5, .5, 0, 0])             # a 20: media con a 10, non con a 0
+    np.testing.assert_allclose(media[3], [.5, .5, 0, 0])             # b 10: media con b 0 (non con le righe di a)
+    np.testing.assert_allclose(media_mobile(probabilita, id_clip, inizi, 1), probabilita)
+
+
+def test_allarme_per_video():
+    assert finestre_di_fila_massime(np.array([1, 1, 0, 1, 1, 1, 0], bool)) == 3
+    assert finestre_di_fila_massime(np.zeros(4, bool)) == 0
+    normale, violenza = np.eye(4)[0], np.eye(4)[1]
+    # clip "rissa": violenza vera e predetta in 3 finestre di fila; "picco": normale vera, 1 finestra predetta violenta;
+    # "persa": violenza vera, predetta normale
+    probabilita = np.array([normale, violenza, violenza, violenza, normale, violenza, normale, normale, normale])
+    etichette = np.array([0, 1, 1, 1, 0, 0, 0, 1, 1])
+    id_clip = np.array(["rissa"] * 4 + ["picco"] * 3 + ["persa"] * 2)
+    inizi = np.array([0, 10, 20, 30, 0, 10, 20, 0, 10])
+    con_una = allarmi_per_video(probabilita, etichette, id_clip, inizi, 1)
+    assert (con_una["video"], con_una["video_violenti"], con_una["recall"], con_una["falsi_allarmi"]) == (3, 2, .5, 1.0)
+    con_tre = allarmi_per_video(probabilita, etichette, id_clip, inizi, 3)
+    assert (con_tre["accuratezza"], con_tre["recall"], con_tre["falsi_allarmi"]) == (round(2 / 3, 4), .5, 0.0)
+    assert tara_allarme(probabilita, etichette, id_clip, inizi)["migliore"]["falsi_allarmi"] == 0.0
+
+
+def test_pezzi_di_video():
+    id_clip, inizi = np.array(["a", "a", "a", "b"]), np.array([0, 240, 250, 10])     # 10 s = 250 frame a 25 fps
+    assert pezzi_di_video(id_clip, inizi, 10).tolist() == ["a#0", "a#0", "a#1", "b#0"]
+    assert pezzi_di_video(id_clip, inizi, None).tolist() == ["a", "a", "a", "b"]
 
 
 # ==============================================================================================================
