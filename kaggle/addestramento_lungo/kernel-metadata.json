@@ -1,0 +1,17 @@
+{
+  "id": "KAGGLE_UTENTE/roma-safe-cctv-addestramento-lungo",
+  "title": "roma-safe-cctv addestramento lungo",
+  "code_file": "addestramento_lungo.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "machine_shape": "NvidiaTeslaT4",
+  "dataset_sources": [],
+  "kernel_sources": [
+    "marcozambrella/roma-safe-cctv-finestre"
+  ],
+  "competition_sources": [],
+  "model_sources": []
+}
