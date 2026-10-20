@@ -21,7 +21,7 @@ regolarizzazione; pazienza 6 (le epoche costano 10-20 minuti); tetto ORE_MASSIME
 import json, subprocess, sys
 from pathlib import Path
 
-ORE_MASSIME = 4.0   # per ciascun modello (girano in parallelo): da fissare sulla quota rimasta (`kaggle quota`)
+ORE_MASSIME = 2.2   # per ciascun modello (in parallelo). 20/10 05:40: quota 3,55 h − ~1,2 h tra finestre, un epoca oltre il tetto, taratura e margine
 OPZIONI = {"graph_transformer": ["--epoche", "25", "--pazienza", "6", "--dropout", "0.3", "--decadimento-pesi", "0.1"],
            "stgcn": ["--epoche", "30", "--pazienza", "6"]}
 
