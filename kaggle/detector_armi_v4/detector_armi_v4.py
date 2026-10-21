@@ -13,7 +13,7 @@ if shutil.which("ffprobe") is None:  # il lettore video usa ffmpeg/ffprobe: buil
 # =====
 
 """D53 (2), detector v4: come il v3 (stessi dati, stessi filtri) ma YOLO26m a 1280 px invece di YOLO26s a 640, per
-le armi piccole delle CCTV (v3 su Mock Attack: mAP50 0,20, coltelli ~0). Tetto 7 h (~20 epoche da ~20 min).
+le armi piccole delle CCTV (v3 su Mock Attack: mAP50 0,20, coltelli ~0). Tetto 7 h (~40 epoche da ~10 min).
 Il resto della descrizione è quella del v3 (D37-D39): fine-tuning su 2 GPU con
 - export Roboflow (dataset Kaggle privato) + US Mock Attack (D30, CCTV vera, da Hugging Face);
 - Sohas di DaSCI (D39: coltelli e pistole impugnati + oggetti innocui impugnati come negativi difficili);
@@ -24,7 +24,9 @@ import signal, subprocess, sys, time, zipfile
 from pathlib import Path
 
 ORE_MASSIME_ADDESTRAMENTO = 7.0      # D53: sessione da ~8 h con la preparazione dei dati
-GRANDE = ["--modello-base", "yolo26m.pt", "--dimensione-immagine", "1280", "--pazienza", "10"]   # D53
+# pazienza 30 (Marco, 21/10 18:00): con 10 la versione 1 rischiava di fermarsi all'epoca 11 (la migliore era ancora
+# la 1; il v3 ha superato la sua prima epoca solo alla 10 e ha avuto un buco di 11 epoche senza miglioramenti)
+GRANDE = ["--modello-base", "yolo26m.pt", "--dimensione-immagine", "1280", "--pazienza", "30"]   # D53
 AREA_MASSIMA_TRAIN = 0.10            # D37: primi piani fuori (in CCTV le armi stanno sotto l'1% del frame)
 ambiente = {**os.environ, "PYTHONPATH": "/tmp/repo/src"}
 visione = lambda *argomenti: subprocess.run([sys.executable, "-m", "sicurezza.visione", *argomenti], check=True,
