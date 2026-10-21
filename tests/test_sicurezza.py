@@ -9,7 +9,7 @@ import torch
 import yaml
 
 from sicurezza.dati import elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
-from sicurezza.demo import RamoPixel, classe_finale_con_pixel, fondi_con_pixel, riduci_per_pixel, pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
+from sicurezza.demo import AllarmeViolenza, RamoPixel, classe_finale_con_pixel, fondi_con_pixel, riduci_per_pixel, pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import analizza_predizioni, ricuci_tracce, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.strumenti import violenza_per_il_sito, risultati_per_il_sito, scarica_con_riprova, scegli_candidati_scippo_telefono, scegli_immagini_coco
 from sicurezza.visione import mani_di_una_persona, precisione_media, probabilita_armi_in_mano, ritaglio_quadrato, ritagli_per_addestramento, prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
@@ -1301,6 +1301,7 @@ def test_demo_con_ramo_pixel(tmp_path):
     eventi = analizza_video(str(VIDEO_PERSONE), str(tmp_path / "c.pt"), tmp_path / "demo",
                             percorso_modello_pose=str(PESI_POSE), percorso_testa_pixel=str(tmp_path / "testa.npz"))
     assert len(eventi) == 2 and all(evento["probabilita_violenza_pixel"] == 0.5 for evento in eventi)
+    assert not any(evento["allarme_violenza"] for evento in eventi)              # 2 finestre < 5 di fila
     for evento in eventi:
         assert abs(sum(evento["probabilita"].values()) - 1) < 1e-3
 
@@ -1318,3 +1319,23 @@ def test_violenza_per_il_sito():
     assert "precisione" not in violenza["sistema"]["pezzi_10s"] and violenza["sistema"]["pezzi_10s"]["ic95"] == [.6, .9]
     sito = risultati_per_il_sito([], None, "prova", violenza)
     assert sito["violenza"] == violenza and sito["modelli"] == []
+
+
+@pytest.mark.parametrize("con_pixel", [False, True])
+def test_allarme_violenza_come_la_misura(con_pixel):
+    """D52: l'allarme della demo, finestra dopo finestra, è la stessa regola di `allarmi_per_video` (media mobile
+    causale + finestre violente di fila); con i pixel "violenta" = gruppo violento > 0,5, come nella fusione."""
+    generatore = np.random.default_rng(3)
+    probabilita = generatore.dirichlet([1, 1, 0.5, 0.5], 60)
+    inizi, id_clip = np.arange(60) * 10, np.array(["a"] * 60)
+    media = media_mobile(probabilita, id_clip, inizi, 3)
+    violente = media[:, 1:3].sum(1) > 0.5 if con_pixel else np.isin(media.argmax(1), [1, 2])
+    allarme = AllarmeViolenza(finestre_di_fila=4, media=3, con_pixel=con_pixel)
+    ottenuti = [allarme.aggiorna(riga) for riga in probabilita]
+    di_fila, attesi = 0, []
+    for violenta in violente:
+        di_fila = di_fila + 1 if violenta else 0
+        attesi.append(di_fila >= 4)
+    assert ottenuti == attesi and any(attesi) and not all(attesi)
+    regola = allarmi_per_video(probabilita, np.zeros(60, int), id_clip, inizi, 4, 3) if not con_pixel else None
+    assert regola is None or regola["falsi_allarmi"] == float(any(attesi))   # un video normale: allarme sì/no

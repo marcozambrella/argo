@@ -115,6 +115,7 @@ STILE_OVERLAY = {  # SEGNAPOSTO DESIGN — colori in BGR
 TESTI_CLASSI = {"normale": "Normale", "violenza": "Violenza", "violenza_con_arma": "Violenza con arma",
                 "scippo": "Scippo"}  # SEGNAPOSTO DESIGN
 TESTO_WARNING_ARMA = "WARNING ARMA"     # SEGNAPOSTO DESIGN
+TESTO_ALLARME_VIOLENZA = "ALLARME VIOLENZA"   # SEGNAPOSTO DESIGN
 NOMI_ARMI = ("pistola", "coltello", "fucile")
 
 
@@ -143,11 +144,12 @@ def disegna_armi(frame: np.ndarray, armi: dict, soglia_confidenza: float) -> Non
                     stile["scala_font"], stile["colore_arma"], 1, cv2.LINE_AA)
 
 
-def disegna_pannello(frame: np.ndarray, probabilita: np.ndarray | None, classe: str | None, warning: bool) -> None:
-    """Pannello in alto a sinistra: classe decisa, barre delle probabilità, WARNING ARMA."""
+def disegna_pannello(frame: np.ndarray, probabilita: np.ndarray | None, classe: str | None, warning: bool,
+                     allarme: bool = False) -> None:
+    """Pannello in alto a sinistra: classe decisa, barre delle probabilità, WARNING ARMA, ALLARME VIOLENZA."""
     stile = STILE_OVERLAY
     larghezza_pannello, altezza_riga, inizio_barre = 330, 24, 160
-    altezza_pannello = altezza_riga * (len(CLASSI) + 2) + 10
+    altezza_pannello = altezza_riga * (len(CLASSI) + 3) + 10
     sovrapposizione = frame.copy()
     cv2.rectangle(sovrapposizione, (0, 0), (larghezza_pannello, altezza_pannello), stile["sfondo_pannello"], -1)
     cv2.addWeighted(sovrapposizione, stile["opacita_pannello"], frame, 1 - stile["opacita_pannello"], 0, frame)
@@ -167,6 +169,10 @@ def disegna_pannello(frame: np.ndarray, probabilita: np.ndarray | None, classe: 
         y = altezza_riga * (len(CLASSI) + 2)
         cv2.putText(frame, TESTO_WARNING_ARMA, (10, y), stile["font"], stile["scala_font"] * 1.2,
                     stile["colore_arma"], stile["spessore"], cv2.LINE_AA)
+    if allarme:
+        y = altezza_riga * (len(CLASSI) + 3)
+        cv2.putText(frame, TESTO_ALLARME_VIOLENZA, (10, y), stile["font"], stile["scala_font"] * 1.2,
+                    stile["colore_per_classe"]["violenza_con_arma"], stile["spessore"], cv2.LINE_AA)
 
 
 # ==============================================================================================================
@@ -260,6 +266,33 @@ def classe_finale_con_pixel(probabilita_fuse: np.ndarray, arma_confermata: bool)
     return classe
 
 
+# ALLARME VIOLENZA (D52): la stessa regola con cui si misura il sistema sui pezzi di video (`valuta-allarme`,
+# `runs/prova_rgb_clip/fusione_allarme.json`): probabilità mediate sulle ultime MEDIA_MOBILE_ALLARME finestre, allarme
+# quando FINESTRE_DI_FILA_ALLARME finestre di fila sono violente. 5 e 5 = scelti sul validation per pixel + scheletri a
+# pezzi da 30 s (0,82 sul test, D48). Con i pixel "violenta" = gruppo violento > 0,5 (come nella misura della fusione);
+# senza, la classe più probabile (come `allarmi_per_video`).
+FINESTRE_DI_FILA_ALLARME = 5
+MEDIA_MOBILE_ALLARME = 5
+
+
+class AllarmeViolenza:
+    def __init__(self, finestre_di_fila: int = FINESTRE_DI_FILA_ALLARME, media: int = MEDIA_MOBILE_ALLARME,
+                 con_pixel: bool = True):
+        self.finestre_di_fila, self.con_pixel = finestre_di_fila, con_pixel
+        self.ultime = deque(maxlen=media)
+        self.di_fila = 0
+
+    def aggiorna(self, probabilita: np.ndarray) -> bool:
+        self.ultime.append(probabilita)
+        media = np.mean(self.ultime, axis=0)
+        if self.con_pixel:
+            violenta = classe_finale_con_pixel(media, False) in CLASSI_VIOLENTE
+        else:
+            violenta = CLASSI[int(np.argmax(media))] in CLASSI_VIOLENTE
+        self.di_fila = self.di_fila + 1 if violenta else 0
+        return self.di_fila >= self.finestre_di_fila
+
+
 class ScrittoreVideo:
     def __init__(self, percorso: Path, larghezza: int, altezza: int, fps: int = FPS_ANALISI):
         self.processo = subprocess.Popen(
@@ -280,11 +313,13 @@ def analizza_video(percorso_video: str, percorso_classificatore: str | list[str]
                    percorso_modello_armi: str | None = None, percorso_modello_pose: str = MODELLO_POSE_PREDEFINITO,
                    dispositivo: str = "cpu", taratura: dict | None = None,
                    percorso_modello_mani: str | None = None, tracker: str = TRACKER_PREDEFINITO,
-                   percorso_testa_pixel: str | None = None) -> list[dict]:
+                   percorso_testa_pixel: str | None = None, finestre_di_fila: int = FINESTRE_DI_FILA_ALLARME,
+                   media_mobile_allarme: int = MEDIA_MOBILE_ALLARME) -> list[dict]:
     """taratura: la combinazione "migliore" di `tara-warning` (soglia, frame minimi, vicinanza); senza, i valori
     provvisori del piano. tracker: lo stesso usato per estrarre i dati di addestramento del classificatore (D3).
     percorso_classificatore: un checkpoint, oppure una lista di checkpoint di cui fare la media (DA DECIDERE 22 d).
-    percorso_testa_pixel: con la testa RGB, fusione pixel + scheletri sulla violenza (D48)."""
+    percorso_testa_pixel: con la testa RGB, fusione pixel + scheletri sulla violenza (D48).
+    finestre_di_fila, media_mobile_allarme: regola dell'ALLARME VIOLENZA (D52)."""
     regola = {"soglia_confidenza": SOGLIA_CONFIDENZA_ARMA, "frame_minimi": FRAME_MINIMI_CON_ARMA,
               "vicinanza": VICINANZA_PREDEFINITA}
     regola.update({chiave: (taratura or {})[chiave] for chiave in regola if chiave in (taratura or {})})
@@ -297,10 +332,11 @@ def analizza_video(percorso_video: str, percorso_classificatore: str | list[str]
     classificatori = [carica_classificatore(percorso, dispositivo) for percorso in percorsi]
     scrittore = ScrittoreVideo(cartella_uscita / "video_annotato.mp4", info.larghezza, info.altezza)
     ramo_pixel = RamoPixel(percorso_testa_pixel, dispositivo) if percorso_testa_pixel else None
+    allarme_violenza = AllarmeViolenza(finestre_di_fila, media_mobile_allarme, con_pixel=ramo_pixel is not None)
 
     ultimi_frame = deque(maxlen=FRAME_PER_FINESTRA)   # (persone, armi) degli ultimi 40 frame
     ultimi_ridotti = deque(maxlen=FRAME_PER_FINESTRA)  # gli stessi frame a 171×128 RGB, solo per il ramo pixel
-    eventi, decisione = [], {"probabilita": None, "classe": None, "warning": False}
+    eventi, decisione = [], {"probabilita": None, "classe": None, "warning": False, "allarme": False}
     for indice_frame, frame in enumerate(leggi_frame(percorso_video)):
         persone, armi = estrattore.analizza_frame(frame, primo_frame_del_video=indice_frame == 0)
         ultimi_frame.append((persone, armi))
@@ -321,27 +357,29 @@ def analizza_video(percorso_video: str, percorso_classificatore: str | list[str]
                 classe = classe_finale_con_pixel(probabilita, warning)
             else:
                 classe = classe_finale(probabilita, warning)
-            decisione = {"probabilita": probabilita, "classe": classe, "warning": warning}
+            allarme = allarme_violenza.aggiorna(probabilita)
+            decisione = {"probabilita": probabilita, "classe": classe, "warning": warning, "allarme": allarme}
             eventi.append({"inizio_secondi": inizio_finestra / FPS_ANALISI,
                            "fine_secondi": (indice_frame + 1) / FPS_ANALISI, "classe": decisione["classe"],
-                           "warning_arma": warning,
+                           "warning_arma": warning, "allarme_violenza": allarme,
                            "probabilita": dict(zip(CLASSI, np.round(probabilita, 4).tolist()))})
             if ramo_pixel:
                 eventi[-1]["probabilita_violenza_pixel"] = round(probabilita_pixel, 4)
         annotato = frame.copy()
         disegna_persone(annotato, persone)
         disegna_armi(annotato, armi, regola["soglia_confidenza"])
-        disegna_pannello(annotato, decisione["probabilita"], decisione["classe"], decisione["warning"])
+        disegna_pannello(annotato, decisione["probabilita"], decisione["classe"], decisione["warning"],
+                         decisione["allarme"])
         scrittore.scrivi(annotato)
     scrittore.chiudi()
 
     (cartella_uscita / "eventi.json").write_text(json.dumps(eventi, indent=2, ensure_ascii=False))
     with open(cartella_uscita / "probabilita.csv", "w", newline="") as file_csv:
         scrittore_csv = csv.writer(file_csv)
-        scrittore_csv.writerow(["inizio_secondi", "fine_secondi", *CLASSI, "classe", "warning_arma"])
+        scrittore_csv.writerow(["inizio_secondi", "fine_secondi", *CLASSI, "classe", "warning_arma", "allarme_violenza"])
         for evento in eventi:
-            scrittore_csv.writerow([evento["inizio_secondi"], evento["fine_secondi"],
-                                    *evento["probabilita"].values(), evento["classe"], evento["warning_arma"]])
+            scrittore_csv.writerow([evento["inizio_secondi"], evento["fine_secondi"], *evento["probabilita"].values(),
+                                    evento["classe"], evento["warning_arma"], evento["allarme_violenza"]])
     return eventi
 
 
@@ -359,11 +397,16 @@ def comando_analizza_video(argomenti: list[str] | None = None) -> None:
     parser.add_argument("--tracker", default=TRACKER_PREDEFINITO, help="lo stesso dell'estrazione dei dati (D3)")
     parser.add_argument("--testa-pixel", default=None,
                         help="pesi/testa_rgb.npz: fusione pixel + scheletri sulla violenza (D48)")
+    parser.add_argument("--finestre-di-fila", type=int, default=FINESTRE_DI_FILA_ALLARME,
+                        help="ALLARME VIOLENZA dopo tante finestre violente di fila (D52)")
+    parser.add_argument("--media-mobile", type=int, default=MEDIA_MOBILE_ALLARME,
+                        help="finestre su cui mediare le probabilità per l'allarme (D52)")
     argomenti = parser.parse_args(argomenti)
     taratura = json.loads(Path(argomenti.taratura).read_text())["migliore"] if argomenti.taratura else None
     eventi = analizza_video(argomenti.video, argomenti.classificatore, argomenti.uscita, argomenti.modello_armi,
                             argomenti.modello_pose, argomenti.dispositivo, taratura, argomenti.modello_mani,
-                            argomenti.tracker, argomenti.testa_pixel)
+                            argomenti.tracker, argomenti.testa_pixel, argomenti.finestre_di_fila,
+                            argomenti.media_mobile)
     print(f"{len(eventi)} finestre analizzate → {argomenti.uscita}")
 
 # ==============================================================================================================

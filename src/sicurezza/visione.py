@@ -573,9 +573,14 @@ def addestra_detector(percorso_data_yaml: str, cartella_uscita: str, modello_bas
     # percorso assoluto: con uno relativo Ultralytics 8.4 salva sotto runs/<task>/<percorso>
     YOLO(modello_base).train(data=percorso_data_yaml, epochs=epoche, patience=pazienza, imgsz=dimensione_immagine,
                              batch=lotto, device=dispositivo, project=str(Path(cartella_uscita).resolve()),
-                             name="yolo26s_armi", exist_ok=True, seed=0)
-    return valuta_detector(Path(cartella_uscita) / "yolo26s_armi" / "weights" / "best.pt", percorso_data_yaml,
-                           dispositivo)
+                             name=nome_detector(modello_base), exist_ok=True, seed=0)
+    return valuta_detector(Path(cartella_uscita) / nome_detector(modello_base) / "weights" / "best.pt",
+                           percorso_data_yaml, dispositivo)
+
+
+def nome_detector(modello_base: str) -> str:
+    """Cartella dell'addestramento: yolo26s.pt → yolo26s_armi (v1–v3), yolo26m.pt → yolo26m_armi (D53)."""
+    return f"{Path(modello_base).stem}_armi"
 
 
 def valuta_detector(percorso_pesi: Path, percorso_data_yaml: str, dispositivo: str | int | None = None):
@@ -599,15 +604,19 @@ def comando_addestra_detector(argomenti: list[str] | None = None) -> None:
     parser.add_argument("--epoche", type=int, default=100)
     parser.add_argument("--lotto", type=int, default=16, help="totale: con 2 GPU metà per GPU")
     parser.add_argument("--dispositivo", default=None, help='"0", oppure "0,1" per due GPU')
+    parser.add_argument("--modello-base", default="yolo26s.pt", help="D53: yolo26m.pt per il detector più grande")
+    parser.add_argument("--dimensione-immagine", type=int, default=640, help="D53: 1280 per armi piccole in CCTV")
+    parser.add_argument("--pazienza", type=int, default=20)
     parser.add_argument("--solo-valutazione", action="store_true",
                         help="valuta best.pt già in --uscita (es. dopo che il kernel ha fermato l'addestramento)")
     argomenti = parser.parse_args(argomenti)
     if argomenti.solo_valutazione:
-        metriche = valuta_detector(Path(argomenti.uscita) / "yolo26s_armi" / "weights" / "best.pt", argomenti.dati,
-                                   argomenti.dispositivo)
+        metriche = valuta_detector(Path(argomenti.uscita) / nome_detector(argomenti.modello_base) / "weights" / "best.pt",
+                                   argomenti.dati, argomenti.dispositivo)
     else:
-        metriche = addestra_detector(argomenti.dati, argomenti.uscita, epoche=argomenti.epoche, lotto=argomenti.lotto,
-                                     dispositivo=argomenti.dispositivo)
+        metriche = addestra_detector(argomenti.dati, argomenti.uscita, argomenti.modello_base, argomenti.epoche,
+                                     argomenti.pazienza, argomenti.dimensione_immagine, argomenti.lotto,
+                                     argomenti.dispositivo)
     print(f"mAP50 {metriche.box.map50:.4f}  mAP50-95 {metriche.box.map:.4f}")
 
 
