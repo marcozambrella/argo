@@ -1,6 +1,6 @@
 {
  "_nota": "Generato da `strumenti esporta-risultati-sito`: metriche sul test set (split per video, P4).",
- "versione": "addestramento 1 (19/10/2026): armi del detector v1, iperparametri provvisori",
+ "versione": "sistema consegnato (21/10/2026, D49): ST-GCN dell'addestramento 1 + ramo pixel R(2+1)D-18, detector armi v3, taratura del warning v2",
  "classi": [
   "normale",
   "violenza",
@@ -167,11 +167,75 @@
   }
  ],
  "warning_arma": {
-  "margine": 1.0,
-  "soglia_confidenza": 0.65,
-  "frame_minimi": 6,
-  "precisione": 0.0435,
-  "recall": 0.0158,
-  "f1": 0.0231
+  "vicinanza": "polso:0.35",
+  "soglia_confidenza": 0.7,
+  "frame_minimi": 5,
+  "precisione": 0.3478,
+  "recall": 0.0283,
+  "f1": 0.0523
+ },
+ "violenza": {
+  "sistema": {
+   "per_finestra": {
+    "accuratezza": 0.752,
+    "recall": 0.755,
+    "falsi_allarmi": 0.251
+   },
+   "pezzi_10s": {
+    "finestre_di_fila": 6,
+    "media_mobile": 5,
+    "accuratezza": 0.7904,
+    "recall": 0.8045,
+    "falsi_allarmi": 0.223,
+    "pezzi": 272,
+    "ic95": [
+     0.736,
+     0.854
+    ]
+   },
+   "pezzi_30s": {
+    "finestre_di_fila": 5,
+    "media_mobile": 5,
+    "accuratezza": 0.8204,
+    "recall": 0.8795,
+    "falsi_allarmi": 0.2381,
+    "pezzi": 167,
+    "ic95": [
+     0.761,
+     0.878
+    ]
+   }
+  },
+  "solo_scheletri": {
+   "per_finestra": {
+    "accuratezza": 0.712,
+    "recall": 0.58,
+    "falsi_allarmi": 0.188
+   },
+   "pezzi_10s": {
+    "finestre_di_fila": 5,
+    "media_mobile": 1,
+    "accuratezza": 0.75,
+    "recall": 0.6541,
+    "falsi_allarmi": 0.1583,
+    "pezzi": 272,
+    "ic95": [
+     0.684,
+     0.815
+    ]
+   },
+   "pezzi_30s": {
+    "finestre_di_fila": 5,
+    "media_mobile": 1,
+    "accuratezza": 0.7844,
+    "recall": 0.7108,
+    "falsi_allarmi": 0.1429,
+    "pezzi": 167,
+    "ic95": [
+     0.726,
+     0.847
+    ]
+   }
+  }
  }
 }

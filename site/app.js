@@ -37,4 +37,14 @@ fetch("dati/risultati.json").then((risposta) => risposta.json()).then((risultati
   const contenitore = document.getElementById("tabella-risultati");
   contenitore.className = "";
   contenitore.innerHTML = `<table><tr><th style="text-align:left">Modello</th><th>Macro-F1 (test)</th><th>ms/finestra (CPU)</th></tr>${righe}</table>`;
+  if (!risultati.violenza) return;
+  // Violenza sì/no (D48): sistema consegnato (pixel + scheletri) contro i soli scheletri, clip intere mai viste
+  const percento = (valore) => `${Math.round(valore * 100)}%`;
+  const cella = (misura) => `${percento(misura.accuratezza)}${misura.ic95 ? ` <small>(${percento(misura.ic95[0])}–${percento(misura.ic95[1])})</small>` : ""}`;
+  const rigaViolenza = (nome, dati) => `<tr><td style="text-align:left">${nome}</td><td>${cella(dati.per_finestra)}</td>
+    <td>${cella(dati.pezzi_10s)}</td><td>${cella(dati.pezzi_30s)}</td><td>${percento(dati.pezzi_30s.falsi_allarmi)}</td></tr>`;
+  contenitore.insertAdjacentHTML("beforeend", `<table><tr><th style="text-align:left">Violenza sì/no</th><th>Per finestra (1,6 s)</th>
+    <th>Pezzi da 10 s</th><th>Pezzi da 30 s</th><th>Falsi allarmi (30 s)</th></tr>
+    ${rigaViolenza("Pixel + scheletri (consegnato)", risultati.violenza.sistema)}${rigaViolenza("Solo scheletri", risultati.violenza.solo_scheletri)}</table>
+    <p class="nota">Accuratezza su ${risultati.violenza.sistema.pezzi_30s.pezzi} pezzi da 30 s di clip mai viste; tra parentesi l'intervallo al 95%. Un pezzo dà allarme se ${risultati.violenza.sistema.pezzi_30s.finestre_di_fila} finestre di fila sono violente, con la probabilità mediata sulle ultime ${risultati.violenza.sistema.pezzi_30s.media_mobile} (regola scelta sul validation).</p>`);
 }).catch(() => {});

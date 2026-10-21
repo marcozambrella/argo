@@ -443,14 +443,24 @@ def comando_scarica_video_cc(argomenti: list[str] | None = None) -> None:
 #
 # Uso:  uv run python -m sicurezza.strumenti esporta-risultati-sito \
 #           --risultati runs/addestramento/graph_transformer/risultati.json runs/addestramento/stgcn/risultati.json \
-#           [--taratura runs/addestramento/taratura_warning.json] [--uscita site/dati/risultati.json]
+#           [--taratura runs/addestramento/taratura_warning.json] [--uscita site/dati/risultati.json] \
+#           [--violenza runs/prova_rgb_clip/fusione_allarme.json --sistema "pixel + add1" --confronto "scheletri add1"]
+# --violenza (D48): violenza sì/no del sistema consegnato contro i soli scheletri, per finestra e con la regola
+# d'allarme sui pezzi da 10 e 30 s (clip intere mai viste, regola scelta sul validation; file di `fusione_allarme`).
 # ==============================================================================================================
 
 NOMI_MODELLI_SITO = {"graph_transformer": "Graph-Transformer", "stgcn": "ST-GCN"}
 
 
+def violenza_per_il_sito(fusione: dict, sistema: str, confronto: str) -> dict:
+    tieni = ("accuratezza", "recall", "falsi_allarmi", "pezzi", "ic95", "finestre_di_fila", "media_mobile")
+    return {nome: {misura: {chiave: valore for chiave, valore in fusione[chiave_fusione][misura].items() if chiave in tieni}
+                   for misura in ("per_finestra", "pezzi_10s", "pezzi_30s")}
+            for nome, chiave_fusione in (("sistema", sistema), ("solo_scheletri", confronto))}
+
+
 def risultati_per_il_sito(risultati_modelli: list[dict], taratura_warning: dict | None = None,
-                          versione: str = "") -> dict:
+                          versione: str = "", violenza: dict | None = None) -> dict:
     modelli = []
     for risultati in risultati_modelli:
         test = risultati["test"]
@@ -468,6 +478,8 @@ def risultati_per_il_sito(risultati_modelli: list[dict], taratura_warning: dict 
               "versione": versione, "classi": list(modelli[0]["recall"]) if modelli else [], "modelli": modelli}
     if taratura_warning:
         uscita["warning_arma"] = taratura_warning["migliore"]
+    if violenza:
+        uscita["violenza"] = violenza
     return uscita
 
 
@@ -477,10 +489,15 @@ def comando_esporta_risultati_sito(argomenti: list[str] | None = None) -> None:
     parser.add_argument("--taratura", default=None, help="taratura_warning.json (facoltativo)")
     parser.add_argument("--uscita", default="site/dati/risultati.json")
     parser.add_argument("--versione", default="", help='es. "addestramento 1, armi del detector v1"')
+    parser.add_argument("--violenza", default=None, help="fusione_allarme.json (D48), facoltativo")
+    parser.add_argument("--sistema", default="pixel + add1", help="chiave del sistema consegnato in --violenza")
+    parser.add_argument("--confronto", default="scheletri add1", help="chiave dei soli scheletri in --violenza")
     argomenti = parser.parse_args(argomenti)
     taratura = json.loads(Path(argomenti.taratura).read_text()) if argomenti.taratura else None
+    violenza = (violenza_per_il_sito(json.loads(Path(argomenti.violenza).read_text()), argomenti.sistema,
+                                     argomenti.confronto) if argomenti.violenza else None)
     uscita = risultati_per_il_sito([json.loads(Path(p).read_text()) for p in argomenti.risultati], taratura,
-                                   argomenti.versione)
+                                   argomenti.versione, violenza)
     Path(argomenti.uscita).write_text(json.dumps(uscita, indent=1, ensure_ascii=False))
     for modello in uscita["modelli"]:
         print(f"{modello['nome']:18s} macro-F1 test {modello['macro_f1']:.3f}  {modello['latenza_cpu_ms']:.1f} ms/finestra")

@@ -11,7 +11,7 @@ import yaml
 from sicurezza.dati import elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
 from sicurezza.demo import RamoPixel, classe_finale_con_pixel, fondi_con_pixel, riduci_per_pixel, pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import analizza_predizioni, ricuci_tracce, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
-from sicurezza.strumenti import risultati_per_il_sito, scarica_con_riprova, scegli_candidati_scippo_telefono, scegli_immagini_coco
+from sicurezza.strumenti import violenza_per_il_sito, risultati_per_il_sito, scarica_con_riprova, scegli_candidati_scippo_telefono, scegli_immagini_coco
 from sicurezza.visione import mani_di_una_persona, precisione_media, probabilita_armi_in_mano, ritaglio_quadrato, ritagli_per_addestramento, prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
 
 
@@ -1303,3 +1303,18 @@ def test_demo_con_ramo_pixel(tmp_path):
     assert len(eventi) == 2 and all(evento["probabilita_violenza_pixel"] == 0.5 for evento in eventi)
     for evento in eventi:
         assert abs(sum(evento["probabilita"].values()) - 1) < 1e-3
+
+
+def test_violenza_per_il_sito():
+    """D48: il sito riceve solo le misure di violenza del sistema e dei soli scheletri, senza campi interni."""
+    misure = lambda acc: {"per_finestra": {"accuratezza": acc, "recall": .7, "falsi_allarmi": .2},
+                          "pezzi_10s": {"accuratezza": acc, "recall": .8, "falsi_allarmi": .2, "video": 9, "pezzi": 9,
+                                        "ic95": [.6, .9], "finestre_di_fila": 6, "media_mobile": 5, "precisione": .8},
+                          "pezzi_30s": {"accuratezza": acc, "recall": .9, "falsi_allarmi": .2, "video": 5, "pezzi": 5}}
+    fusione = {"pixel + add1": misure(0.82), "scheletri add1": misure(0.78), "pixel": misure(0.7)}
+    violenza = violenza_per_il_sito(fusione, "pixel + add1", "scheletri add1")
+    assert set(violenza) == {"sistema", "solo_scheletri"}
+    assert violenza["sistema"]["pezzi_30s"]["accuratezza"] == 0.82 and violenza["solo_scheletri"]["pezzi_30s"]["accuratezza"] == 0.78
+    assert "precisione" not in violenza["sistema"]["pezzi_10s"] and violenza["sistema"]["pezzi_10s"]["ic95"] == [.6, .9]
+    sito = risultati_per_il_sito([], None, "prova", violenza)
+    assert sito["violenza"] == violenza and sito["modelli"] == []
