@@ -1,0 +1,22 @@
+{
+  "id": "KAGGLE_UTENTE/roma-safe-cctv-finetune-rgb",
+  "title": "roma-safe-cctv finetune rgb",
+  "code_file": "finetune_rgb.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "machine_shape": "NvidiaTeslaT4",
+  "dataset_sources": [
+    "vulamnguyen/rwf2000",
+    "mohamedtariki/vsd-cctv-fights",
+    "toluwaniaremu/smartcity-cctv-violence-detection-dataset-scvd",
+    "bypktt/ucf-crimes"
+  ],
+  "kernel_sources": [
+    "marcozambrella/roma-safe-cctv-finestre"
+  ],
+  "competition_sources": [],
+  "model_sources": []
+}
