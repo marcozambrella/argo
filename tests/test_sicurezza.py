@@ -1339,3 +1339,19 @@ def test_allarme_violenza_come_la_misura(con_pixel):
     assert ottenuti == attesi and any(attesi) and not all(attesi)
     regola = allarmi_per_video(probabilita, np.zeros(60, int), id_clip, inizi, 4, 3) if not con_pixel else None
     assert regola is None or regola["falsi_allarmi"] == float(any(attesi))   # un video normale: allarme sì/no
+
+
+@pytest.mark.skipif(not PESI_KINETICS.exists(), reason="pesi R(2+1)D-18 Kinetics non scaricati da torchvision")
+def test_ramo_pixel_con_rete_fine_tunata(tmp_path):
+    """D53: con --rete-pixel la rete usa i pesi salvati dal kernel (fp16, senza fc), non quelli di Kinetics."""
+    import torchvision
+    torch.manual_seed(0)
+    rete = torchvision.models.video.r2plus1d_18()
+    rete.fc = torch.nn.Identity()
+    torch.save({chiave: valore.half() for chiave, valore in rete.state_dict().items()}, tmp_path / "rete.pt")
+    np.savez(tmp_path / "testa.npz", media=np.zeros(512), scala=np.ones(512), pesi=np.zeros(512, np.float32),
+             bias=np.float32(0))
+    ramo = RamoPixel(str(tmp_path / "testa.npz"), percorso_rete=str(tmp_path / "rete.pt"))
+    for chiave, valore in rete.state_dict().items():
+        if valore.is_floating_point():   # num_batches_tracked è intero
+            torch.testing.assert_close(ramo.rete.state_dict()[chiave], valore.half().float())

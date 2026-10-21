@@ -220,11 +220,16 @@ def riduci_per_pixel(frame: np.ndarray) -> np.ndarray:
 
 
 class RamoPixel:
-    def __init__(self, percorso_testa: str, dispositivo: str = "cpu"):
+    """percorso_rete: pesi della rete fine-tunata sulla violenza (D53, `rete_violenza.pt` del kernel finetune-rgb,
+    con la sua `testa_violenza.npz`); senza, la rete Kinetics congelata di D48."""
+    def __init__(self, percorso_testa: str, dispositivo: str = "cpu", percorso_rete: str | None = None):
         import torchvision
-        pesi = torchvision.models.video.R2Plus1D_18_Weights.KINETICS400_V1
+        pesi = None if percorso_rete else torchvision.models.video.R2Plus1D_18_Weights.KINETICS400_V1
         self.rete = torchvision.models.video.r2plus1d_18(weights=pesi)
         self.rete.fc = torch.nn.Identity()
+        if percorso_rete:
+            stato = torch.load(percorso_rete, map_location="cpu")
+            self.rete.load_state_dict({chiave: valore.float() for chiave, valore in stato.items()})
         self.rete = self.rete.to(dispositivo).eval()
         self.dispositivo = dispositivo
         with np.load(percorso_testa) as testa:
@@ -314,7 +319,7 @@ def analizza_video(percorso_video: str, percorso_classificatore: str | list[str]
                    dispositivo: str = "cpu", taratura: dict | None = None,
                    percorso_modello_mani: str | None = None, tracker: str = TRACKER_PREDEFINITO,
                    percorso_testa_pixel: str | None = None, finestre_di_fila: int = FINESTRE_DI_FILA_ALLARME,
-                   media_mobile_allarme: int = MEDIA_MOBILE_ALLARME) -> list[dict]:
+                   media_mobile_allarme: int = MEDIA_MOBILE_ALLARME, percorso_rete_pixel: str | None = None) -> list[dict]:
     """taratura: la combinazione "migliore" di `tara-warning` (soglia, frame minimi, vicinanza); senza, i valori
     provvisori del piano. tracker: lo stesso usato per estrarre i dati di addestramento del classificatore (D3).
     percorso_classificatore: un checkpoint, oppure una lista di checkpoint di cui fare la media (DA DECIDERE 22 d).
@@ -331,7 +336,7 @@ def analizza_video(percorso_video: str, percorso_classificatore: str | list[str]
     percorsi = [percorso_classificatore] if isinstance(percorso_classificatore, str) else percorso_classificatore
     classificatori = [carica_classificatore(percorso, dispositivo) for percorso in percorsi]
     scrittore = ScrittoreVideo(cartella_uscita / "video_annotato.mp4", info.larghezza, info.altezza)
-    ramo_pixel = RamoPixel(percorso_testa_pixel, dispositivo) if percorso_testa_pixel else None
+    ramo_pixel = RamoPixel(percorso_testa_pixel, dispositivo, percorso_rete_pixel) if percorso_testa_pixel else None
     allarme_violenza = AllarmeViolenza(finestre_di_fila, media_mobile_allarme, con_pixel=ramo_pixel is not None)
 
     ultimi_frame = deque(maxlen=FRAME_PER_FINESTRA)   # (persone, armi) degli ultimi 40 frame
@@ -397,6 +402,8 @@ def comando_analizza_video(argomenti: list[str] | None = None) -> None:
     parser.add_argument("--tracker", default=TRACKER_PREDEFINITO, help="lo stesso dell'estrazione dei dati (D3)")
     parser.add_argument("--testa-pixel", default=None,
                         help="pesi/testa_rgb.npz: fusione pixel + scheletri sulla violenza (D48)")
+    parser.add_argument("--rete-pixel", default=None,
+                        help="rete_violenza.pt fine-tunata (D53), da usare con la sua --testa-pixel testa_violenza.npz")
     parser.add_argument("--finestre-di-fila", type=int, default=FINESTRE_DI_FILA_ALLARME,
                         help="ALLARME VIOLENZA dopo tante finestre violente di fila (D52)")
     parser.add_argument("--media-mobile", type=int, default=MEDIA_MOBILE_ALLARME,
@@ -406,7 +413,7 @@ def comando_analizza_video(argomenti: list[str] | None = None) -> None:
     eventi = analizza_video(argomenti.video, argomenti.classificatore, argomenti.uscita, argomenti.modello_armi,
                             argomenti.modello_pose, argomenti.dispositivo, taratura, argomenti.modello_mani,
                             argomenti.tracker, argomenti.testa_pixel, argomenti.finestre_di_fila,
-                            argomenti.media_mobile)
+                            argomenti.media_mobile, argomenti.rete_pixel)
     print(f"{len(eventi)} finestre analizzate → {argomenti.uscita}")
 
 # ==============================================================================================================
