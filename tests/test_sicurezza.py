@@ -1355,3 +1355,27 @@ def test_ramo_pixel_con_rete_fine_tunata(tmp_path):
     for chiave, valore in rete.state_dict().items():
         if valore.is_floating_point():   # num_batches_tracked è intero
             torch.testing.assert_close(ramo.rete.state_dict()[chiave], valore.half().float())
+
+
+def test_confronta_detector_passa_il_lotto(tmp_path, monkeypatch):
+    """D53: --lotto arriva al val e ai falsi allarmi; senza, restano 4 e 8 come nei confronti di v1–v3."""
+    import ultralytics
+    import sicurezza.visione as visione
+    lotti_val, lotti_falsi = [], []
+
+    class YoloFinto:
+        def __init__(self, percorso):
+            pass
+
+        def val(self, **nominali):
+            lotti_val.append(nominali["batch"])
+            box = type("Box", (), {"map50": 0.5, "mp": 0.5, "mr": 0.5, "ap50": [0.5], "ap_class_index": [0]})()
+            return type("Misure", (), {"box": box, "names": {0: "pistol"}})()
+
+    monkeypatch.setattr(ultralytics, "YOLO", YoloFinto)
+    monkeypatch.setattr(visione, "conta_falsi_allarmi", lambda modello, cartella, dispositivo, dimensione_lotto:
+                        lotti_falsi.append(dimensione_lotto) or {"per_categoria": {}})
+    for lotto in ([], ["--lotto", "1"]):
+        visione.comando_confronta_detector(["--pesi", "v4=best.pt", "--test", "roboflow=data.yaml", "--negativi",
+                                            str(tmp_path), "--uscita", str(tmp_path / "confronto.json"), *lotto])
+    assert lotti_val == [4, 1] and lotti_falsi == [8, 1]

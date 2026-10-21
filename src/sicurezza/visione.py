@@ -960,7 +960,9 @@ def comando_valuta_mani(argomenti: list[str] | None = None) -> None:
 # ==============================================================================================================
 
 def confronta_detector(pesi: dict[str, str], test: dict[str, str], cartella_negativi: Path | None = None,
-                       dispositivo: str = "cpu") -> dict:
+                       dispositivo: str = "cpu", lotto: int | None = None) -> dict:
+    """lotto: immagini per passata (default 4 nel val e 8 nei falsi allarmi, come per v1–v3); 1 per YOLO26m a 1280
+    su un PC con poca RAM (D53)."""
     from ultralytics import YOLO
 
     cartella_temporanea = tempfile.mkdtemp()   # Ultralytics salva sempre qualcosa: non nel repo
@@ -968,8 +970,8 @@ def confronta_detector(pesi: dict[str, str], test: dict[str, str], cartella_nega
     for nome_detector, percorso_pesi in pesi.items():
         riga = {}
         for nome_test, data_yaml in test.items():
-            misure = YOLO(percorso_pesi).val(data=data_yaml, split="test", device=dispositivo, batch=4, workers=0,
-                                             plots=False, verbose=False, project=cartella_temporanea,
+            misure = YOLO(percorso_pesi).val(data=data_yaml, split="test", device=dispositivo, batch=lotto or 4,
+                                             workers=0, plots=False, verbose=False, project=cartella_temporanea,
                                              name=f"{nome_detector}_{nome_test}")
             riga[nome_test] = {"map50": round(float(misure.box.map50), 3), "precisione": round(float(misure.box.mp), 3),
                                "recall": round(float(misure.box.mr), 3),
@@ -977,7 +979,8 @@ def confronta_detector(pesi: dict[str, str], test: dict[str, str], cartella_nega
                                   for posizione, classe in enumerate(misure.box.ap_class_index)}}
             print(nome_detector, nome_test, riga[nome_test], flush=True)
         if cartella_negativi:
-            falsi = conta_falsi_allarmi(YOLO(percorso_pesi), Path(cartella_negativi), dispositivo=dispositivo)
+            falsi = conta_falsi_allarmi(YOLO(percorso_pesi), Path(cartella_negativi), dispositivo=dispositivo,
+                                        dimensione_lotto=lotto or 8)
             per_categoria = {categoria: valori["con_allarme"] for categoria, valori in falsi["per_categoria"].items()}
             riga["falsi_allarmi"] = {**per_categoria, "totale": sum(per_categoria.values()),
                                      "immagini": sum(v["immagini"] for v in falsi["per_categoria"].values())}
@@ -994,10 +997,11 @@ def comando_confronta_detector(argomenti: list[str] | None = None) -> None:
     parser.add_argument("--negativi", default=None, help="cartella di `strumenti scarica-negativi-coco`")
     parser.add_argument("--dispositivo", default="cpu")
     parser.add_argument("--uscita", required=True)
+    parser.add_argument("--lotto", type=int, default=None, help="immagini per passata (1 se la RAM è poca)")
     argomenti = parser.parse_args(argomenti)
     coppie = lambda valori: dict(valore.split("=", 1) for valore in valori)
     tabella = confronta_detector(coppie(argomenti.pesi), coppie(argomenti.test), argomenti.negativi,
-                                 argomenti.dispositivo)
+                                 argomenti.dispositivo, argomenti.lotto)
     Path(argomenti.uscita).write_text(json.dumps(tabella, indent=1, ensure_ascii=False))
 
 # ==============================================================================================================
