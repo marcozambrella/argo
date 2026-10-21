@@ -209,7 +209,7 @@ if __name__ == "__main__":
               f"({time.time() - inizio_epoca:.0f} s, {trascorse():.2f} h)", flush=True)
         if accuratezza > migliore:
             migliore, senza_miglioramenti = accuratezza, 0
-            torch.save({k: v.half() for k, v in base.state_dict().items()}, "/tmp/migliore.pt")
+            torch.save({k: v.half().cpu() for k, v in base.state_dict().items()}, uscita / "migliore_completo.pt")
         else:
             senza_miglioramenti += 1
             if senza_miglioramenti >= PAZIENZA:
@@ -217,7 +217,8 @@ if __name__ == "__main__":
                 break
     (uscita / "storia.json").write_text(json.dumps(storia, indent=1))
 
-    stato = {k: v.float() for k, v in torch.load("/tmp/migliore.pt").items()}
+    # v2 (21/10 10:05): senza map_location i tensori restavano su GPU e .numpy() falliva dopo l'addestramento
+    stato = {k: v.float() for k, v in torch.load(uscita / "migliore_completo.pt", map_location="cpu").items()}
     base.load_state_dict(stato)
     torch.save({k: v.half() for k, v in stato.items() if not k.startswith("fc.")}, uscita / "rete_violenza.pt")
     np.savez(uscita / "testa_violenza.npz", media=np.zeros(512), scala=np.ones(512),
