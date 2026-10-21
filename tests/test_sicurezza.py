@@ -9,7 +9,7 @@ import torch
 import yaml
 
 from sicurezza.dati import elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
-from sicurezza.demo import pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
+from sicurezza.demo import RamoPixel, classe_finale_con_pixel, fondi_con_pixel, riduci_per_pixel, pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import analizza_predizioni, ricuci_tracce, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.strumenti import risultati_per_il_sito, scarica_con_riprova, scegli_candidati_scippo_telefono, scegli_immagini_coco
 from sicurezza.visione import mani_di_una_persona, precisione_media, probabilita_armi_in_mano, ritaglio_quadrato, ritagli_per_addestramento, prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
@@ -1242,3 +1242,64 @@ def test_normali_folla_preparati_e_letti(tmp_path):
     assert gruppi["normali_folla/shanghaitech/01_001"] == gruppi["normali_folla/shanghaitech/01_002"] == "folla_shanghaitech/01"
     assert {c.sorgente for c in clip} == {"folla_mot20", "folla_shanghaitech", "folla_ubi_fights", "folla_avenue"}
 
+
+
+# ==============================================================================================================
+# test_ramo_pixel (BOZZA per DA DECIDERE 23 c)
+# ==============================================================================================================
+
+PESI_KINETICS = Path(torch.hub.get_dir()) / "checkpoints" / "r2plus1d_18-91a641e6.pth"
+
+
+def test_fondi_con_pixel():
+    """Violenza = media tra pixel e scheletri; dentro i gruppi restano le proporzioni degli scheletri."""
+    scheletri = np.array([0.5, 0.3, 0.1, 0.1], np.float32)          # normale, violenza, con arma, scippo
+    fuse = fondi_con_pixel(scheletri, 0.9)
+    assert abs(fuse.sum() - 1) < 1e-6 and abs(fuse[1] + fuse[2] - 0.65) < 1e-6
+    np.testing.assert_allclose(fuse[1] / fuse[2], 3, rtol=1e-5)
+    np.testing.assert_allclose(fuse[0] / fuse[3], 5, rtol=1e-5)
+    vuote = fondi_con_pixel(np.array([1, 0, 0, 0], np.float32), 0.6)   # scheletri senza violenza: metà e metà
+    np.testing.assert_allclose(vuote, [0.7, 0.15, 0.15, 0], atol=1e-6)
+
+
+def test_classe_finale_con_pixel():
+    """Prima il gruppo (violento se > 0,5), poi la classe più probabile del gruppo, poi la regola dell'arma (D6)."""
+    assert classe_finale_con_pixel(np.array([0.45, 0.3, 0.25, 0]), False) == "violenza"   # argmax direbbe normale
+    assert classe_finale_con_pixel(np.array([0.45, 0.3, 0.25, 0]), True) == "violenza_con_arma"
+    assert classe_finale_con_pixel(np.array([0.2, 0.26, 0.25, 0.29]), False) == "violenza"   # 0,51 > 0,5
+    assert classe_finale_con_pixel(np.array([0.3, 0.2, 0.1, 0.4]), True) == "scippo"
+
+
+@pytest.mark.skipif(not PESI_KINETICS.exists(), reason="pesi R(2+1)D-18 Kinetics non scaricati da torchvision")
+def test_ramo_pixel_come_nei_kernel(tmp_path):
+    """Stessa preparazione dei kernel prova-rgb (16 frame dei 40, ritaglio 112, normalizzazione Kinetics)."""
+    generatore = np.random.default_rng(0)
+    np.savez(tmp_path / "testa.npz", media=generatore.normal(0, 1, 512), scala=generatore.uniform(0.5, 2, 512),
+             pesi=generatore.normal(0, 0.05, 512).astype(np.float32), bias=np.float32(0.1))
+    ramo = RamoPixel(str(tmp_path / "testa.npz"))
+    frame = [riduci_per_pixel(generatore.integers(0, 256, (240, 320, 3), dtype=np.uint8)) for _ in range(40)]
+    assert frame[0].shape == (128, 171, 3)
+    finestra = np.stack(frame)            # come `vettori_clip` di kaggle/prova_rgb_clip
+    scelti = finestra[np.linspace(0, 39, 16).round().astype(int), 8:120, 29:141]
+    media = torch.tensor([0.43216, 0.394666, 0.37645]).view(1, 3, 1, 1, 1)
+    deviazione = torch.tensor([0.22803, 0.22145, 0.216989]).view(1, 3, 1, 1, 1)
+    with torch.no_grad():
+        atteso = ramo.rete((torch.from_numpy(scelti.copy()).permute(3, 0, 1, 2)[None].float() / 255 - media) / deviazione)[0]
+    vettore = ramo.vettore(frame)
+    np.testing.assert_allclose(vettore, atteso.numpy(), atol=1e-4)
+    logit = ((vettore - ramo.testa["media"]) / ramo.testa["scala"]) @ ramo.testa["pesi"] + 0.1
+    assert ramo.probabilita_violenza(frame) == pytest.approx(1 / (1 + np.exp(-logit)), abs=1e-5)
+
+
+@pytest.mark.skipif(not (PESI_POSE.exists() and PESI_KINETICS.exists()), reason="pesi pose o Kinetics mancanti")
+def test_demo_con_ramo_pixel(tmp_path):
+    iperparametri = {"dimensione": 32, "blocchi": 1}
+    torch.save({"nome_modello": "graph_transformer", "iperparametri_modello": iperparametri,
+                "stato": crea_modello("graph_transformer", **iperparametri).state_dict()}, tmp_path / "c.pt")
+    np.savez(tmp_path / "testa.npz", media=np.zeros(512), scala=np.ones(512), pesi=np.zeros(512, np.float32),
+             bias=np.float32(0))                                            # pixel = 0,5 sempre
+    eventi = analizza_video(str(VIDEO_PERSONE), str(tmp_path / "c.pt"), tmp_path / "demo",
+                            percorso_modello_pose=str(PESI_POSE), percorso_testa_pixel=str(tmp_path / "testa.npz"))
+    assert len(eventi) == 2 and all(evento["probabilita_violenza_pixel"] == 0.5 for evento in eventi)
+    for evento in eventi:
+        assert abs(sum(evento["probabilita"].values()) - 1) < 1e-3

@@ -197,6 +197,69 @@ def probabilita_media(classificatori: list, nodi: np.ndarray, maschera: np.ndarr
     return np.mean([torch.softmax(modello(*ingressi), -1)[0].cpu().numpy() for modello in classificatori], axis=0)
 
 
+# BOZZA per DA DECIDERE 23 c (opzione c1), attiva solo con --testa-pixel: R(2+1)D-18 di torchvision preaddestrato su
+# Kinetics-400 e CONGELATO → vettore da 512 → regressione logistica violenza sì/no (testa allenata sul train
+# dell'add. 2, `runs/prova_rgb/testa_rgb.npz`). Stessa preparazione dei kernel `prova-rgb`: 16 frame dei 40, 171×128,
+# ritaglio centrale 112×112. Fusione: media tra la probabilità dei pixel e quella di violenza degli scheletri; sulle
+# clip intere mai viste 0,82 per pezzi da 30 s e 0,75 per finestra (scheletri da soli 0,78 e 0,71). ~1 s di CPU per finestra.
+LATO_PIXEL = (171, 128)                 # larghezza, altezza prima del ritaglio centrale 112×112
+FRAME_PIXEL = 16
+MEDIA_KINETICS = np.array([0.43216, 0.394666, 0.37645], np.float32)
+DEVIAZIONE_KINETICS = np.array([0.22803, 0.22145, 0.216989], np.float32)
+
+
+def riduci_per_pixel(frame: np.ndarray) -> np.ndarray:
+    """Frame BGR del lettore → RGB 171×128 (come `scale=171:128` di ffmpeg nei kernel, che è bicubico)."""
+    return cv2.cvtColor(cv2.resize(frame, LATO_PIXEL, interpolation=cv2.INTER_CUBIC), cv2.COLOR_BGR2RGB)
+
+
+class RamoPixel:
+    def __init__(self, percorso_testa: str, dispositivo: str = "cpu"):
+        import torchvision
+        pesi = torchvision.models.video.R2Plus1D_18_Weights.KINETICS400_V1
+        self.rete = torchvision.models.video.r2plus1d_18(weights=pesi)
+        self.rete.fc = torch.nn.Identity()
+        self.rete = self.rete.to(dispositivo).eval()
+        self.dispositivo = dispositivo
+        with np.load(percorso_testa) as testa:
+            self.testa = {chiave: testa[chiave] for chiave in ("media", "scala", "pesi", "bias")}
+
+    @torch.no_grad()
+    def vettore(self, frame_ridotti: list[np.ndarray]) -> np.ndarray:
+        scelti = np.linspace(0, len(frame_ridotti) - 1, FRAME_PIXEL).round().astype(int)
+        ritagli = np.stack([frame_ridotti[indice] for indice in scelti])[:, 8:120, 29:141]
+        ingresso = (ritagli.astype(np.float32) / 255 - MEDIA_KINETICS) / DEVIAZIONE_KINETICS   # [16, 112, 112, 3]
+        return self.rete(torch.from_numpy(ingresso).permute(3, 0, 1, 2)[None].to(self.dispositivo))[0].cpu().numpy()
+
+    def probabilita_violenza(self, frame_ridotti: list[np.ndarray]) -> float:
+        testa = self.testa
+        logit = ((self.vettore(frame_ridotti) - testa["media"]) / testa["scala"]) @ testa["pesi"] + testa["bias"]
+        return float(1 / (1 + np.exp(-logit)))
+
+
+def fondi_con_pixel(probabilita: np.ndarray, probabilita_pixel: float) -> np.ndarray:
+    """4 classi con la violenza = media tra pixel e scheletri; dentro i due gruppi (classi violente / non violente)
+    restano le proporzioni degli scheletri."""
+    violente = np.isin(CLASSI, CLASSI_VIOLENTE)
+    totale_violenza = (probabilita[violente].sum() + probabilita_pixel) / 2
+    fuse = probabilita.astype(np.float64)
+    for gruppo, totale in ((violente, totale_violenza), (~violente, 1 - totale_violenza)):
+        somma = fuse[gruppo].sum()
+        fuse[gruppo] = fuse[gruppo] / somma * totale if somma > 0 else totale / gruppo.sum()
+    return fuse.astype(np.float32)
+
+
+def classe_finale_con_pixel(probabilita_fuse: np.ndarray, arma_confermata: bool) -> str:
+    """Prima violenza sì/no (gruppo violento > 0,5, come nella misura della fusione), poi la classe più probabile del
+    gruppo; infine la regola di D6 come in `classe_finale`."""
+    violente = np.isin(CLASSI, CLASSI_VIOLENTE)
+    gruppo = np.flatnonzero(violente if probabilita_fuse[violente].sum() > 0.5 else ~violente)
+    classe = CLASSI[int(gruppo[np.argmax(probabilita_fuse[gruppo])])]
+    if classe == "violenza" and arma_confermata:
+        return "violenza_con_arma"
+    return classe
+
+
 class ScrittoreVideo:
     def __init__(self, percorso: Path, larghezza: int, altezza: int, fps: int = FPS_ANALISI):
         self.processo = subprocess.Popen(
@@ -216,10 +279,12 @@ class ScrittoreVideo:
 def analizza_video(percorso_video: str, percorso_classificatore: str | list[str], cartella_uscita: str | Path,
                    percorso_modello_armi: str | None = None, percorso_modello_pose: str = MODELLO_POSE_PREDEFINITO,
                    dispositivo: str = "cpu", taratura: dict | None = None,
-                   percorso_modello_mani: str | None = None, tracker: str = TRACKER_PREDEFINITO) -> list[dict]:
+                   percorso_modello_mani: str | None = None, tracker: str = TRACKER_PREDEFINITO,
+                   percorso_testa_pixel: str | None = None) -> list[dict]:
     """taratura: la combinazione "migliore" di `tara-warning` (soglia, frame minimi, vicinanza); senza, i valori
     provvisori del piano. tracker: lo stesso usato per estrarre i dati di addestramento del classificatore (D3).
-    percorso_classificatore: un checkpoint, oppure una lista di checkpoint di cui fare la media (DA DECIDERE 22 d)."""
+    percorso_classificatore: un checkpoint, oppure una lista di checkpoint di cui fare la media (DA DECIDERE 22 d).
+    percorso_testa_pixel: con la testa RGB, fusione pixel + scheletri sulla violenza (BOZZA, DA DECIDERE 23 c)."""
     regola = {"soglia_confidenza": SOGLIA_CONFIDENZA_ARMA, "frame_minimi": FRAME_MINIMI_CON_ARMA,
               "vicinanza": VICINANZA_PREDEFINITA}
     regola.update({chiave: (taratura or {})[chiave] for chiave in regola if chiave in (taratura or {})})
@@ -231,12 +296,16 @@ def analizza_video(percorso_video: str, percorso_classificatore: str | list[str]
     percorsi = [percorso_classificatore] if isinstance(percorso_classificatore, str) else percorso_classificatore
     classificatori = [carica_classificatore(percorso, dispositivo) for percorso in percorsi]
     scrittore = ScrittoreVideo(cartella_uscita / "video_annotato.mp4", info.larghezza, info.altezza)
+    ramo_pixel = RamoPixel(percorso_testa_pixel, dispositivo) if percorso_testa_pixel else None
 
     ultimi_frame = deque(maxlen=FRAME_PER_FINESTRA)   # (persone, armi) degli ultimi 40 frame
+    ultimi_ridotti = deque(maxlen=FRAME_PER_FINESTRA)  # gli stessi frame a 171×128 RGB, solo per il ramo pixel
     eventi, decisione = [], {"probabilita": None, "classe": None, "warning": False}
     for indice_frame, frame in enumerate(leggi_frame(percorso_video)):
         persone, armi = estrattore.analizza_frame(frame, primo_frame_del_video=indice_frame == 0)
         ultimi_frame.append((persone, armi))
+        if ramo_pixel:
+            ultimi_ridotti.append(riduci_per_pixel(frame))
         inizio_finestra = indice_frame - FRAME_PER_FINESTRA + 1
         if inizio_finestra >= 0 and inizio_finestra % PASSO_FINESTRE == 0:
             righe_persone = [(numero, dati_persone) for numero, (dati_persone, _) in enumerate(ultimi_frame)]
@@ -246,11 +315,19 @@ def analizza_video(percorso_video: str, percorso_classificatore: str | list[str]
             nodi, maschera, classe_arma = costruisci_finestra(timeline, 0)
             probabilita = probabilita_media(classificatori, nodi, maschera, classe_arma, dispositivo)
             warning = warning_arma(timeline, 0, **regola)
-            decisione = {"probabilita": probabilita, "classe": classe_finale(probabilita, warning), "warning": warning}
+            if ramo_pixel:
+                probabilita_pixel = ramo_pixel.probabilita_violenza(list(ultimi_ridotti))
+                probabilita = fondi_con_pixel(probabilita, probabilita_pixel)
+                classe = classe_finale_con_pixel(probabilita, warning)
+            else:
+                classe = classe_finale(probabilita, warning)
+            decisione = {"probabilita": probabilita, "classe": classe, "warning": warning}
             eventi.append({"inizio_secondi": inizio_finestra / FPS_ANALISI,
                            "fine_secondi": (indice_frame + 1) / FPS_ANALISI, "classe": decisione["classe"],
                            "warning_arma": warning,
                            "probabilita": dict(zip(CLASSI, np.round(probabilita, 4).tolist()))})
+            if ramo_pixel:
+                eventi[-1]["probabilita_violenza_pixel"] = round(probabilita_pixel, 4)
         annotato = frame.copy()
         disegna_persone(annotato, persone)
         disegna_armi(annotato, armi, regola["soglia_confidenza"])
@@ -280,11 +357,13 @@ def comando_analizza_video(argomenti: list[str] | None = None) -> None:
     parser.add_argument("--taratura", default=None, help="taratura_warning.json di `tara-warning` (D35)")
     parser.add_argument("--modello-mani", default=None, help="classificatore dell'ingrandimento sulle mani (D44)")
     parser.add_argument("--tracker", default=TRACKER_PREDEFINITO, help="lo stesso dell'estrazione dei dati (D3)")
+    parser.add_argument("--testa-pixel", default=None,
+                        help="testa_rgb.npz (prova-rgb): fusione pixel + scheletri sulla violenza (BOZZA, DA DECIDERE 23 c)")
     argomenti = parser.parse_args(argomenti)
     taratura = json.loads(Path(argomenti.taratura).read_text())["migliore"] if argomenti.taratura else None
     eventi = analizza_video(argomenti.video, argomenti.classificatore, argomenti.uscita, argomenti.modello_armi,
                             argomenti.modello_pose, argomenti.dispositivo, taratura, argomenti.modello_mani,
-                            argomenti.tracker)
+                            argomenti.tracker, argomenti.testa_pixel)
     print(f"{len(eventi)} finestre analizzate → {argomenti.uscita}")
 
 # ==============================================================================================================
