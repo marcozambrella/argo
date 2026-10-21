@@ -31,6 +31,8 @@ ORE_MASSIME = 8.0                  # tutta la sessione; l'addestramento si ferma
 FINESTRE_TRAIN_PER_CLASSE = 7000   # 14.000 finestre × ~1 MB in /tmp (si riduce se il disco non basta)
 FINESTRE_VAL = 2000
 EPOCHE, PAZIENZA, LOTTO = 12, 3, 32
+# 21/10 07:52, versione 1: con fp16 (autocast) le conv3d sulle T4 danno "CUDA error: misaligned address" → fp32
+MEZZA_PRECISIONE = False
 SORGENTI = ("rwf2000", "cctv_fights", "scvd", "ucf_uca")
 ALTEZZA, LARGHEZZA = 128, 171
 MEDIA = torch.tensor([0.43216, 0.394666, 0.37645]).view(1, 3, 1, 1, 1)
@@ -55,7 +57,7 @@ def ritaglia(finestre: np.ndarray, allena: bool, generatore: np.random.Generator
         else:
             pezzi.append(finestra[:, 8:120, 29:141])
     lotto = torch.from_numpy(np.ascontiguousarray(np.stack(pezzi))).permute(0, 4, 1, 2, 3).float() / 255
-    return (lotto - MEDIA) / DEVIAZIONE
+    return ((lotto - MEDIA) / DEVIAZIONE).contiguous()   # senza, resta la disposizione permutata (v1: errore CUDA)
 
 
 class Finestre(torch.utils.data.Dataset):
@@ -86,7 +88,7 @@ def un_epoca(rete, caricatore, ottimizzatore, scalatore, dispositivo) -> float:
     rete.train()
     perdite = []
     for ingresso, etichetta in caricatore:
-        with torch.autocast(dispositivo.type, enabled=dispositivo.type == "cuda"):
+        with torch.autocast(dispositivo.type, enabled=MEZZA_PRECISIONE and dispositivo.type == "cuda"):
             uscita_rete = rete(ingresso.to(dispositivo, non_blocking=True))[:, 0]
             perdita = torch.nn.functional.binary_cross_entropy_with_logits(uscita_rete.float(), etichetta.to(dispositivo))
         ottimizzatore.zero_grad(set_to_none=True)
@@ -102,7 +104,7 @@ def probabilita(rete, lotti, dispositivo) -> np.ndarray:
     rete.eval()
     uscite = []
     for ingresso in lotti:
-        with torch.autocast(dispositivo.type, enabled=dispositivo.type == "cuda"):
+        with torch.autocast(dispositivo.type, enabled=MEZZA_PRECISIONE and dispositivo.type == "cuda"):
             uscite.append(torch.sigmoid(rete(ingresso.to(dispositivo))[:, 0].float()).cpu().numpy())
     return np.concatenate(uscite) if uscite else np.zeros(0, np.float32)
 # --- esecuzione ---
@@ -156,10 +158,6 @@ if __name__ == "__main__":
         del archivio
         return percorso, np.where(tenute)[0]
 
-    percorso_val, posizioni_val = decodifica(scelti_val, "val")
-    percorso_train, posizioni_train = decodifica(scelti_train, "train")
-    print(f"train {len(posizioni_train)} finestre, val {len(posizioni_val)}, {trascorse():.2f} h", flush=True)
-
     dispositivo = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     rete = crea_rete()
     if torch.cuda.device_count() > 1:
@@ -171,7 +169,21 @@ if __name__ == "__main__":
     ottimizzatore = torch.optim.AdamW([{"params": corpo, "lr": 1e-4}, {"params": testa, "lr": 1e-3}],
                                       weight_decay=1e-4)
     pianificatore = torch.optim.lr_scheduler.CosineAnnealingLR(ottimizzatore, EPOCHE)
-    scalatore = torch.amp.GradScaler("cuda", enabled=dispositivo.type == "cuda")
+    scalatore = torch.amp.GradScaler("cuda", enabled=MEZZA_PRECISIONE and dispositivo.type == "cuda")
+    finte = np.random.default_rng(0).integers(0, 256, (LOTTO, 16, ALTEZZA, LARGHEZZA, 3), dtype=np.uint8)
+    un_epoca(rete, [(ritaglia(finte, True, np.random.default_rng(0)), torch.ones(LOTTO))], ottimizzatore, scalatore,
+             dispositivo)   # stesso percorso dei dati veri
+    ottimizzatore.zero_grad(set_to_none=True)
+    base.load_state_dict(crea_rete().state_dict())   # si riparte dai pesi Kinetics: la prova serviva solo a fallire presto
+    ottimizzatore = torch.optim.AdamW([{"params": corpo, "lr": 1e-4}, {"params": testa, "lr": 1e-3}],
+                                      weight_decay=1e-4)
+    pianificatore = torch.optim.lr_scheduler.CosineAnnealingLR(ottimizzatore, EPOCHE)
+    print(f"prova di un passo sulla GPU: ok ({torch.cuda.device_count()} GPU), {trascorse():.2f} h", flush=True)
+
+    percorso_val, posizioni_val = decodifica(scelti_val, "val")
+    percorso_train, posizioni_train = decodifica(scelti_train, "train")
+    print(f"train {len(posizioni_train)} finestre, val {len(posizioni_val)}, {trascorse():.2f} h", flush=True)
+
     caricatore = torch.utils.data.DataLoader(
         Finestre(percorso_train, posizioni_train, violenta[scelti_train[posizioni_train]]), batch_size=LOTTO,
         shuffle=True, num_workers=os.cpu_count(), drop_last=True, pin_memory=True,
