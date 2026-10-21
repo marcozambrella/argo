@@ -1,1 +1,309 @@
-{"_nota": "VUOTO di proposito: le fonti ufficiali sui reati a Roma vanno scelte con Marco (DA DECIDERE nel diario).", "fonte": null, "serie": []}
+{
+ "_nota": "Numeri ufficiali con fonte; la ripartizione per municipio è una STIMA dichiarata (vedi metodo_stima).",
+ "fonti": {
+  "annuario_sicurezza": {
+   "nome": "Roma Capitale, Annuario statistico 2025, cap. 15 Sicurezza urbana (elaborazioni su dati Istat)",
+   "url": "https://www.comune.roma.it/web-resources/cms/documents/15_SicurezzaUrbana_Annuario_2025.pdf"
+  },
+  "prefettura": {
+   "nome": "Ministero dell'Interno / Prefettura di Roma, delitti commessi a Roma Capitale 2021-2024",
+   "url": "https://prefettura.interno.gov.it/sites/default/files/57/2025-09/delitti-commessi-roma-capitale-2021.2022.2023-e-2024-con-perc.pdf"
+  },
+  "annuario_popolazione": {
+   "nome": "Roma Capitale, Annuario statistico 2025, cap. 2 Popolazione, tab. 2.7 (iscritti in anagrafe al 31/12/2024)",
+   "url": "https://www.comune.roma.it/web-resources/cms/documents/02_Popolazione_Annuario_2025.pdf"
+  },
+  "zone_rosse": {
+   "nome": "Prefettura di Roma, ordinanza sulle zone a vigilanza rafforzata dell'8 gennaio 2025 (riportata da RomaToday)",
+   "url": "https://www.romatoday.it/cronaca/zone-rosse-roma-quali-strade.html"
+  },
+  "osm": {
+   "nome": "© OpenStreetMap contributors, ODbL 1.0",
+   "url": "https://www.openstreetmap.org/copyright"
+  }
+ },
+ "categorie": [
+  {
+   "chiave": "furti_persone",
+   "nome": "Furti alle persone",
+   "totale": 32145,
+   "anno": 2023,
+   "fonte": "annuario_sicurezza",
+   "unita_cubetto": 250,
+   "dettaglio": "furti con destrezza 30.524 + furti con strappo 1.621 (tab. 15.3)",
+   "nota": "Non solo in strada: anche su bus, metro e nei locali.",
+   "quota_sui_tre": 0.8971
+  },
+  {
+   "chiave": "aggressioni",
+   "nome": "Aggressioni",
+   "totale": 3308,
+   "anno": 2023,
+   "fonte": "annuario_sicurezza",
+   "unita_cubetto": 25,
+   "dettaglio": "percosse e lesioni (tab. 15.2)",
+   "nota": "",
+   "quota_sui_tre": 0.0923
+  },
+  {
+   "chiave": "rapine_negozi",
+   "nome": "Rapine nei negozi",
+   "totale": 381,
+   "anno": 2023,
+   "fonte": "prefettura",
+   "unita_cubetto": 5,
+   "dettaglio": "rapine in esercizi commerciali (Viminale, delitti commessi)",
+   "nota": "Fonte diversa dalle altre due categorie (delitti commessi, non denunciati).",
+   "quota_sui_tre": 0.0106
+  }
+ ],
+ "popolazione_municipi": {
+  "I": 161647,
+  "II": 163097,
+  "III": 202442,
+  "IV": 168039,
+  "V": 239925,
+  "VI": 242069,
+  "VII": 311895,
+  "VIII": 127086,
+  "IX": 183043,
+  "X": 226842,
+  "XI": 151057,
+  "XII": 138694,
+  "XIII": 130333,
+  "XIV": 189909,
+  "XV": 160620
+ },
+ "zone_rosse": {
+  "I": "Termini ed Esquilino",
+  "VII": "Tuscolano"
+ },
+ "metodo_stima": {
+  "descrizione": "Nessuna fonte pubblica dà i reati per municipio. Stima: totale cittadino × peso del municipio / somma dei pesi; peso = popolazione residente, +50% nei municipi con zone rosse (I e VII). Scelta del team, non un dato.",
+  "peso_extra_zone_rosse": 0.5,
+  "somma_pesi": 3033469.0
+ },
+ "stime_per_municipio": {
+  "I": {
+   "furti_persone": {
+    "base": 1712.9,
+    "zone_rosse": 856.5
+   },
+   "aggressioni": {
+    "base": 176.3,
+    "zone_rosse": 88.1
+   },
+   "rapine_negozi": {
+    "base": 20.3,
+    "zone_rosse": 10.2
+   }
+  },
+  "II": {
+   "furti_persone": {
+    "base": 1728.3,
+    "zone_rosse": 0.0
+   },
+   "aggressioni": {
+    "base": 177.9,
+    "zone_rosse": 0.0
+   },
+   "rapine_negozi": {
+    "base": 20.5,
+    "zone_rosse": 0.0
+   }
+  },
+  "III": {
+   "furti_persone": {
+    "base": 2145.2,
+    "zone_rosse": 0.0
+   },
+   "aggressioni": {
+    "base": 220.8,
+    "zone_rosse": 0.0
+   },
+   "rapine_negozi": {
+    "base": 25.4,
+    "zone_rosse": 0.0
+   }
+  },
+  "IV": {
+   "furti_persone": {
+    "base": 1780.7,
+    "zone_rosse": 0.0
+   },
+   "aggressioni": {
+    "base": 183.2,
+    "zone_rosse": 0.0
+   },
+   "rapine_negozi": {
+    "base": 21.1,
+    "zone_rosse": 0.0
+   }
+  },
+  "V": {
+   "furti_persone": {
+    "base": 2542.4,
+    "zone_rosse": 0.0
+   },
+   "aggressioni": {
+    "base": 261.6,
+    "zone_rosse": 0.0
+   },
+   "rapine_negozi": {
+    "base": 30.1,
+    "zone_rosse": 0.0
+   }
+  },
+  "VI": {
+   "furti_persone": {
+    "base": 2565.2,
+    "zone_rosse": 0.0
+   },
+   "aggressioni": {
+    "base": 264.0,
+    "zone_rosse": 0.0
+   },
+   "rapine_negozi": {
+    "base": 30.4,
+    "zone_rosse": 0.0
+   }
+  },
+  "VII": {
+   "furti_persone": {
+    "base": 3305.1,
+    "zone_rosse": 1652.5
+   },
+   "aggressioni": {
+    "base": 340.1,
+    "zone_rosse": 170.1
+   },
+   "rapine_negozi": {
+    "base": 39.2,
+    "zone_rosse": 19.6
+   }
+  },
+  "VIII": {
+   "furti_persone": {
+    "base": 1346.7,
+    "zone_rosse": 0.0
+   },
+   "aggressioni": {
+    "base": 138.6,
+    "zone_rosse": 0.0
+   },
+   "rapine_negozi": {
+    "base": 16.0,
+    "zone_rosse": 0.0
+   }
+  },
+  "IX": {
+   "furti_persone": {
+    "base": 1939.7,
+    "zone_rosse": 0.0
+   },
+   "aggressioni": {
+    "base": 199.6,
+    "zone_rosse": 0.0
+   },
+   "rapine_negozi": {
+    "base": 23.0,
+    "zone_rosse": 0.0
+   }
+  },
+  "X": {
+   "furti_persone": {
+    "base": 2403.8,
+    "zone_rosse": 0.0
+   },
+   "aggressioni": {
+    "base": 247.4,
+    "zone_rosse": 0.0
+   },
+   "rapine_negozi": {
+    "base": 28.5,
+    "zone_rosse": 0.0
+   }
+  },
+  "XI": {
+   "furti_persone": {
+    "base": 1600.7,
+    "zone_rosse": 0.0
+   },
+   "aggressioni": {
+    "base": 164.7,
+    "zone_rosse": 0.0
+   },
+   "rapine_negozi": {
+    "base": 19.0,
+    "zone_rosse": 0.0
+   }
+  },
+  "XII": {
+   "furti_persone": {
+    "base": 1469.7,
+    "zone_rosse": 0.0
+   },
+   "aggressioni": {
+    "base": 151.2,
+    "zone_rosse": 0.0
+   },
+   "rapine_negozi": {
+    "base": 17.4,
+    "zone_rosse": 0.0
+   }
+  },
+  "XIII": {
+   "furti_persone": {
+    "base": 1381.1,
+    "zone_rosse": 0.0
+   },
+   "aggressioni": {
+    "base": 142.1,
+    "zone_rosse": 0.0
+   },
+   "rapine_negozi": {
+    "base": 16.4,
+    "zone_rosse": 0.0
+   }
+  },
+  "XIV": {
+   "furti_persone": {
+    "base": 2012.4,
+    "zone_rosse": 0.0
+   },
+   "aggressioni": {
+    "base": 207.1,
+    "zone_rosse": 0.0
+   },
+   "rapine_negozi": {
+    "base": 23.9,
+    "zone_rosse": 0.0
+   }
+  },
+  "XV": {
+   "furti_persone": {
+    "base": 1702.1,
+    "zone_rosse": 0.0
+   },
+   "aggressioni": {
+    "base": 175.2,
+    "zone_rosse": 0.0
+   },
+   "rapine_negozi": {
+    "base": 20.2,
+    "zone_rosse": 0.0
+   }
+  }
+ },
+ "altri_dati": {
+  "totale_delitti_2023": {
+   "valore": 205918,
+   "fonte": "annuario_sicurezza"
+  },
+  "voci_viminale_con_armi": {
+   "valore": 0,
+   "nota": "Nessuna delle 34 voci del Viminale distingue i reati commessi con armi.",
+   "fonte": "prefettura"
+  }
+ }
+}
