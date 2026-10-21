@@ -1245,7 +1245,7 @@ def test_normali_folla_preparati_e_letti(tmp_path):
 
 
 # ==============================================================================================================
-# test_ramo_pixel (BOZZA per DA DECIDERE 23 c)
+# test_ramo_pixel (D48)
 # ==============================================================================================================
 
 PESI_KINETICS = Path(torch.hub.get_dir()) / "checkpoints" / "r2plus1d_18-91a641e6.pth"

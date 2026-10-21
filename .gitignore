@@ -22,3 +22,4 @@ DIARIO.md
 
 # configurazione locale di Claude Code (agente del sito)
 .claude/
+!pesi/*.npz
