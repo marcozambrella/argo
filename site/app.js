@@ -46,5 +46,5 @@ fetch("dati/risultati.json").then((risposta) => risposta.json()).then((risultati
   contenitore.insertAdjacentHTML("beforeend", `<table><tr><th style="text-align:left">Violenza sì/no</th><th>Per finestra (1,6 s)</th>
     <th>Pezzi da 10 s</th><th>Pezzi da 30 s</th><th>Falsi allarmi (30 s)</th></tr>
     ${rigaViolenza("Pixel + scheletri (consegnato)", risultati.violenza.sistema)}${rigaViolenza("Solo scheletri", risultati.violenza.solo_scheletri)}</table>
-    <p class="nota">Accuratezza su ${risultati.violenza.sistema.pezzi_30s.pezzi} pezzi da 30 s di clip mai viste; tra parentesi l'intervallo al 95%. Un pezzo dà allarme se ${risultati.violenza.sistema.pezzi_30s.finestre_di_fila} finestre di fila sono violente, con la probabilità mediata sulle ultime ${risultati.violenza.sistema.pezzi_30s.media_mobile} (regola scelta sul validation).</p>`);
+    <p class="nota">Accuratezza su ${risultati.violenza.sistema.pezzi_30s.pezzi} pezzi da 30 s di clip mai viste; tra parentesi l'intervallo al 95%. Un pezzo dà allarme se ${risultati.violenza.sistema.pezzi_30s.finestre_di_fila} finestre di fila sono violente${risultati.violenza.sistema.pezzi_30s.media_mobile > 1 ? `, con la probabilità mediata sulle ultime ${risultati.violenza.sistema.pezzi_30s.media_mobile}` : ""} (regola scelta sul validation).</p>`);
 }).catch(() => {});

@@ -272,12 +272,12 @@ def classe_finale_con_pixel(probabilita_fuse: np.ndarray, arma_confermata: bool)
 
 
 # ALLARME VIOLENZA (D52): la stessa regola con cui si misura il sistema sui pezzi di video (`valuta-allarme`,
-# `runs/prova_rgb_clip/fusione_allarme.json`): probabilità mediate sulle ultime MEDIA_MOBILE_ALLARME finestre, allarme
-# quando FINESTRE_DI_FILA_ALLARME finestre di fila sono violente. 5 e 5 = scelti sul validation per pixel + scheletri a
-# pezzi da 30 s (0,82 sul test, D48). Con i pixel "violenta" = gruppo violento > 0,5 (come nella misura della fusione);
+# `runs/finetune_rgb/fusione_finetune.json`): probabilità mediate sulle ultime MEDIA_MOBILE_ALLARME finestre, allarme
+# quando FINESTRE_DI_FILA_ALLARME finestre di fila sono violente. 7 e 1 = scelti sul validation per la rete video
+# fine-tunata (D53) + scheletri a pezzi da 30 s (0,90 sul test). Con la rete congelata di D48 erano 5 e 5 (0,82). Con i pixel "violenta" = gruppo violento > 0,5 (come nella misura della fusione);
 # senza, la classe più probabile (come `allarmi_per_video`).
-FINESTRE_DI_FILA_ALLARME = 5
-MEDIA_MOBILE_ALLARME = 5
+FINESTRE_DI_FILA_ALLARME = 7
+MEDIA_MOBILE_ALLARME = 1
 
 
 class AllarmeViolenza:

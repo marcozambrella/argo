@@ -1301,7 +1301,7 @@ def test_demo_con_ramo_pixel(tmp_path):
     eventi = analizza_video(str(VIDEO_PERSONE), str(tmp_path / "c.pt"), tmp_path / "demo",
                             percorso_modello_pose=str(PESI_POSE), percorso_testa_pixel=str(tmp_path / "testa.npz"))
     assert len(eventi) == 2 and all(evento["probabilita_violenza_pixel"] == 0.5 for evento in eventi)
-    assert not any(evento["allarme_violenza"] for evento in eventi)              # 2 finestre < 5 di fila
+    assert not any(evento["allarme_violenza"] for evento in eventi)              # 2 finestre < 7 di fila
     for evento in eventi:
         assert abs(sum(evento["probabilita"].values()) - 1) < 1e-3
 
