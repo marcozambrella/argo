@@ -17,9 +17,9 @@ export const PASSI = [
     didascalia: "160 frame veri messi in fila nel tempo. La finestra illuminata è quella che la rete guarda in una volta." },
   { chiave: "tempo", titolo: "Attenzione nel tempo", tecnica: "Ogni nodo guarda se stesso nei 40 frame",
     didascalia: "Le scie sono i movimenti veri di ogni punto nei 40 frame della finestra." },
-  { chiave: "classi", titolo: "La decisione", tecnica: "Graph-Transformer, confrontato con ST-GCN", comandi: "classi",
+  { chiave: "classi", titolo: "La decisione", tecnica: "ST-GCN (scelto: macro-F1 0,40 contro 0,29 del Graph-Transformer) + rete video R(2+1)D-18 sui pixel per la violenza", comandi: "classi",
     didascalia: "Quattro classi. Le probabilità compariranno quando il modello sarà addestrato." },
-  { chiave: "warning", titolo: "WARNING ARMA", tecnica: "Arma con confidenza ≥ 0,5 vicino a una persona in ≥ 5 frame su 40", comandi: "warning",
+  { chiave: "warning", titolo: "WARNING ARMA", tecnica: "Arma con confidenza ≥ 0,7 vicino a un polso in ≥ 5 frame su 40 (soglie tarate sul validation)", comandi: "warning",
     didascalia: "Regola indipendente dal classificatore. Simulazione: sposta il cursore per vedere quando scatta.",
     onesta: "Simulazione della regola, non un'uscita della rete." },
 ];
