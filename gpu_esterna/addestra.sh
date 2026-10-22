@@ -11,7 +11,7 @@ set -euo pipefail
 ORE_MASSIME="${ORE_MASSIME:-3}"
 CARTELLA="${CARTELLA:-$HOME/roma-safe-cctv-addestramento}"
 mkdir -p "$CARTELLA" && cd "$CARTELLA"
-[ -d repo ] || git clone -q --depth 1 https://github.com/marcozambrella/roma-safe-cctv repo
+[ -d repo ] || git clone -q --depth 1 https://github.com/marcozambrella/argo repo
 git -C repo log -1 --format="commit %h"
 pip install -q kaggle lap "ultralytics>=8.4"   # torch c'è già nelle immagini con GPU
 export PYTHONPATH="$CARTELLA/repo/src"

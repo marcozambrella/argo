@@ -1,7 +1,7 @@
 # ===== avvio comune (da kaggle/avvio_comune.py) =====
 # Blocco iniziale comune ai kernel (copiato in testa a ogni script: Kaggle carica un solo file per kernel).
 import os, shutil, subprocess, sys
-URL_REPO = "https://github.com/marcozambrella/roma-safe-cctv"
+URL_REPO = "https://github.com/marcozambrella/argo"
 subprocess.run(["git", "clone", "--depth", "1", URL_REPO, "/tmp/repo"], check=True)
 subprocess.run([sys.executable, "-m", "pip", "install", "-q", "ultralytics>=8.4", "lap"], check=True)
 sys.path.insert(0, "/tmp/repo/src")
