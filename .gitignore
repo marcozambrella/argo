@@ -23,3 +23,8 @@ DIARIO.md
 # configurazione locale di Claude Code (agente del sito)
 .claude/
 !pesi/*.npz
+# pesi del sistema consegnato: nella Release v1.0, non in git (D60)
+pesi/testa_violenza.npz
+pesi/taratura_warning.json
+# registrazioni e analisi del pannello
+sessioni/

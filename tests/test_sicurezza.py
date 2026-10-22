@@ -5,11 +5,14 @@ import json
 import numpy as np
 import pytest
 import subprocess
+import threading
+import urllib.error
+import urllib.request
 import torch
 import yaml
 
 from sicurezza.dati import elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
-from sicurezza.demo import AllarmeViolenza, RamoPixel, classe_finale_con_pixel, fondi_con_pixel, riduci_per_pixel, pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
+from sicurezza.demo import Pannello, Telecamera, Videoregistratore, crea_server, ingresso_ffmpeg, leggi_telecamera, opzioni_dai_pesi, sorgente_senza_password, AllarmeViolenza, RamoPixel, classe_finale_con_pixel, fondi_con_pixel, riduci_per_pixel, pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import analizza_predizioni, ricuci_tracce, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.strumenti import violenza_per_il_sito, risultati_per_il_sito, scarica_con_riprova, scegli_candidati_scippo_telefono, scegli_immagini_coco
 from sicurezza.visione import mani_di_una_persona, precisione_media, probabilita_armi_in_mano, ritaglio_quadrato, ritagli_per_addestramento, prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
@@ -1379,3 +1382,90 @@ def test_confronta_detector_passa_il_lotto(tmp_path, monkeypatch):
         visione.comando_confronta_detector(["--pesi", "v4=best.pt", "--test", "roboflow=data.yaml", "--negativi",
                                             str(tmp_path), "--uscita", str(tmp_path / "confronto.json"), *lotto])
     assert lotti_val == [4, 1] and lotti_falsi == [8, 1]
+
+
+# ==============================================================================================================
+# test_pannello (D56, D57)
+# ==============================================================================================================
+
+def test_ingresso_ffmpeg_per_ogni_sorgente():
+    assert ingresso_ffmpeg("rtsp://10.0.0.2/s1") == ["-rtsp_transport", "tcp", "-i", "rtsp://10.0.0.2/s1"]
+    assert ingresso_ffmpeg("/dev/video0") == ["-f", "v4l2", "-i", "/dev/video0"]
+    assert ingresso_ffmpeg("http://192.168.1.5:8080/video") == ["-i", "http://192.168.1.5:8080/video"]
+    assert ingresso_ffmpeg("prova.mp4") == ["-i", "prova.mp4"]
+    assert ingresso_ffmpeg("prova.mp4", come_telecamera=True) == ["-re", "-i", "prova.mp4"]
+
+
+def test_password_della_telecamera_mai_nel_pannello():
+    assert sorgente_senza_password("rtsp://admin:segreta@10.0.0.2:554/s1") == "rtsp://admin:***@10.0.0.2:554/s1"
+    assert sorgente_senza_password("rtsp://10.0.0.2/s1") == "rtsp://10.0.0.2/s1"
+    assert leggi_telecamera("ingresso=rtsp://a:b@c/x", 1) == ("ingresso", "rtsp://a:b@c/x")
+    assert leggi_telecamera("/dev/video0", 2) == ("cam2", "/dev/video0")
+
+
+def test_opzioni_dai_pesi_e_modalita_scheletri(tmp_path):
+    assert opzioni_dai_pesi(tmp_path) == {}
+    for nome in ("stgcn.pt", "armi_v3.pt", "rete_violenza.pt", "testa_violenza.npz"):
+        (tmp_path / nome).write_bytes(b"x")
+    (tmp_path / "taratura_warning.json").write_text(json.dumps({"migliore": {"soglia_confidenza": 0.7, "frame_minimi": 5,
+                                                                             "vicinanza": "polso:0.35"}}))
+    opzioni = opzioni_dai_pesi(tmp_path)
+    assert opzioni["percorso_classificatore"].endswith("stgcn.pt") and opzioni["percorso_rete_pixel"].endswith("rete_violenza.pt")
+    assert opzioni["taratura"]["vicinanza"] == "polso:0.35"
+    (tmp_path / "stgcn.pt").unlink()
+    assert "percorso_classificatore" not in opzioni_dai_pesi(tmp_path)   # senza classificatore niente ramo pixel
+    assert "percorso_rete_pixel" not in opzioni_dai_pesi(tmp_path)
+
+
+def test_videoregistratore_segmenti_chiusi_in_ordine(tmp_path):
+    registratore = Videoregistratore(str(VIDEO_PERSONE), tmp_path, secondi_segmento=1)
+    registratore.processo.wait(timeout=60)
+    segmenti = registratore.segmenti_chiusi()
+    assert [s.name for s in segmenti] == ["00000.mp4", "00001.mp4"]
+    assert sum(1 for s in segmenti for _ in leggi_frame(str(s))) == 50     # 2 s a 25 fps, nessun frame perso
+
+
+def test_server_del_pannello_stato_archivio_e_range(tmp_path):
+    sessione = tmp_path / "archivio" / "clip"
+    sessione.mkdir(parents=True)
+    (sessione / "video_annotato.mp4").write_bytes(bytes(range(256)) * 4)
+    (sessione / "eventi.json").write_text(json.dumps([{"inizio_secondi": 0.0, "fine_secondi": 1.6, "classe": "violenza",
+                                                       "warning_arma": False, "allarme_violenza": True, "probabilita": None}]))
+    pannello = Pannello([], tmp_path / "sessioni", [tmp_path / "archivio"], {})
+    server = crea_server(pannello, porta=0)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        stato = json.loads(urllib.request.urlopen(base + "/api/stato").read())
+        assert stato == {"modalita": "solo scheletri", "telecamere": []}
+        archivio = json.loads(urllib.request.urlopen(base + "/api/archivio").read())
+        assert archivio[0]["nome"] == "clip" and archivio[0]["finestre_con_allarme"] == 1
+        risposta = urllib.request.urlopen(urllib.request.Request(base + "/archivio/0/video_annotato.mp4",
+                                                                 headers={"Range": "bytes=10-19"}))
+        assert risposta.status == 206 and risposta.read() == bytes(range(10, 20))
+        assert risposta.headers["Content-Range"] == "bytes 10-19/1024"
+        for indirizzo in ("/archivio/1/eventi.json", "/archivio/0/..%2F..%2Fsegreto", "/flusso/nessuna.mjpg"):
+            with pytest.raises(urllib.error.HTTPError):
+                urllib.request.urlopen(base + indirizzo)
+        assert b"ARGO" in urllib.request.urlopen(base + "/").read()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.skipif(not PESI_POSE.exists(), reason="pesi yolo26n-pose non scaricati in runs/")
+def test_telecamera_da_file_in_modalita_scheletri(tmp_path):
+    eventi_ricevuti = []
+    telecamera = Telecamera("prova", str(VIDEO_PERSONE), tmp_path, {"percorso_modello_pose": str(PESI_POSE)},
+                            al_evento=lambda nome, evento: eventi_ricevuti.append((nome, evento)))
+    telecamera.thread.join(timeout=300)
+    assert telecamera.stato["fase"] == "finita", telecamera.stato["errore"]
+    assert not telecamera.dal_vivo and telecamera.stato["ritardo_secondi"] is None
+    eventi = json.loads((telecamera.cartella / "eventi.json").read_text())
+    assert len(eventi) == 2 and [e["classe"] for e in eventi] == [None, None]
+    assert [evento for _, evento in eventi_ricevuti] == eventi
+    assert (telecamera.cartella / "eventi.jsonl").read_text().count("\n") == 2
+    righe = (telecamera.cartella / "keypoint.jsonl").read_text().splitlines()
+    assert len(righe) == 50 and len(json.loads(righe[0])["persone"][0]["keypoint"]) == 17
+    assert leggi_info_video(str(telecamera.cartella / "video_annotato.mp4")).durata_secondi == pytest.approx(2.0, abs=0.1)
+    assert telecamera.jpeg.startswith(b"\xff\xd8")

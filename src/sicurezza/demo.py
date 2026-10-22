@@ -1,12 +1,18 @@
-"""Sicurezza NN — demo. File unico (richiesta di Marco: massimo 5 file Python)."""
+"""Argo — demo e pannello delle telecamere. File unico (richiesta di Marco: massimo 5 file Python)."""
 
 from collections import deque
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import argparse
 import csv
 import json
+import re
+import signal
 import subprocess
 import sys
+import threading
+import time
+import urllib.parse
 
 import cv2
 import numpy as np
@@ -145,7 +151,7 @@ def disegna_armi(frame: np.ndarray, armi: dict, soglia_confidenza: float) -> Non
 
 
 def disegna_pannello(frame: np.ndarray, probabilita: np.ndarray | None, classe: str | None, warning: bool,
-                     allarme: bool = False) -> None:
+                     allarme: bool = False, attesa: str = "in attesa di 40 frame...") -> None:
     """Pannello in alto a sinistra: classe decisa, barre delle probabilità, WARNING ARMA, ALLARME VIOLENZA."""
     stile = STILE_OVERLAY
     larghezza_pannello, altezza_riga, inizio_barre = 330, 24, 160
@@ -154,8 +160,11 @@ def disegna_pannello(frame: np.ndarray, probabilita: np.ndarray | None, classe: 
     cv2.rectangle(sovrapposizione, (0, 0), (larghezza_pannello, altezza_pannello), stile["sfondo_pannello"], -1)
     cv2.addWeighted(sovrapposizione, stile["opacita_pannello"], frame, 1 - stile["opacita_pannello"], 0, frame)
     if classe is None:
-        cv2.putText(frame, "in attesa di 40 frame...", (10, altezza_riga), stile["font"], stile["scala_font"],
+        cv2.putText(frame, attesa, (10, altezza_riga), stile["font"], stile["scala_font"],
                     stile["colore_testo"], 1, cv2.LINE_AA)
+        if warning:   # modalità scheletri con il detector: il warning non ha bisogno del classificatore
+            cv2.putText(frame, TESTO_WARNING_ARMA, (10, altezza_riga * (len(CLASSI) + 2)), stile["font"],
+                        stile["scala_font"] * 1.2, stile["colore_arma"], stile["spessore"], cv2.LINE_AA)
         return
     cv2.putText(frame, TESTI_CLASSI[classe], (10, altezza_riga), stile["font"], stile["scala_font"] * 1.3,
                 stile["colore_per_classe"][classe], stile["spessore"], cv2.LINE_AA)
@@ -177,7 +186,7 @@ def disegna_pannello(frame: np.ndarray, probabilita: np.ndarray | None, classe: 
 
 # ==============================================================================================================
 # inferenza
-# Demo: un video → video annotato + eventi.json + probabilita.csv (D12).
+# Demo: un video → video annotato + eventi.json + probabilita.csv + keypoint.jsonl (D12).
 #
 # Ogni 10 frame, appena ci sono 40 frame, la finestra appena conclusa passa al classificatore. Il pannello mostra
 # l'ultima decisione fino alla successiva. Sul portatile va più lento del tempo reale (~2,7 frame/s), ma il video
@@ -313,78 +322,140 @@ class ScrittoreVideo:
         self.processo.wait()
 
 
-@torch.no_grad()
-def analizza_video(percorso_video: str, percorso_classificatore: str | list[str], cartella_uscita: str | Path,
-                   percorso_modello_armi: str | None = None, percorso_modello_pose: str = MODELLO_POSE_PREDEFINITO,
-                   dispositivo: str = "cpu", taratura: dict | None = None,
-                   percorso_modello_mani: str | None = None, tracker: str = TRACKER_PREDEFINITO,
-                   percorso_testa_pixel: str | None = None, finestre_di_fila: int = FINESTRE_DI_FILA_ALLARME,
-                   media_mobile_allarme: int = MEDIA_MOBILE_ALLARME, percorso_rete_pixel: str | None = None) -> list[dict]:
-    """taratura: la combinazione "migliore" di `tara-warning` (soglia, frame minimi, vicinanza); senza, i valori
-    provvisori del piano. tracker: lo stesso usato per estrarre i dati di addestramento del classificatore (D3).
-    percorso_classificatore: un checkpoint, oppure una lista di checkpoint di cui fare la media (DA DECIDERE 22 d).
-    percorso_testa_pixel: con la testa RGB, fusione pixel + scheletri sulla violenza (D48).
-    finestre_di_fila, media_mobile_allarme: regola dell'ALLARME VIOLENZA (D52)."""
-    regola = {"soglia_confidenza": SOGLIA_CONFIDENZA_ARMA, "frame_minimi": FRAME_MINIMI_CON_ARMA,
-              "vicinanza": VICINANZA_PREDEFINITA}
-    regola.update({chiave: (taratura or {})[chiave] for chiave in regola if chiave in (taratura or {})})
-    cartella_uscita = Path(cartella_uscita)
-    cartella_uscita.mkdir(parents=True, exist_ok=True)
-    info = leggi_info_video(percorso_video)
-    estrattore = Estrattore(percorso_modello_pose, percorso_modello_armi, dispositivo, tracker=tracker,
-                            percorso_modello_mani=percorso_modello_mani)   # D44: anche le mani, se c'è il modello
-    percorsi = [percorso_classificatore] if isinstance(percorso_classificatore, str) else percorso_classificatore
-    classificatori = [carica_classificatore(percorso, dispositivo) for percorso in percorsi]
-    scrittore = ScrittoreVideo(cartella_uscita / "video_annotato.mp4", info.larghezza, info.altezza)
-    ramo_pixel = RamoPixel(percorso_testa_pixel, dispositivo, percorso_rete_pixel) if percorso_testa_pixel else None
-    allarme_violenza = AllarmeViolenza(finestre_di_fila, media_mobile_allarme, con_pixel=ramo_pixel is not None)
+class AnalisiFlusso:
+    """Il sistema su un frame alla volta (D56): lo usano la demo su file (`analizza_video`) e il pannello di Argo.
 
-    ultimi_frame = deque(maxlen=FRAME_PER_FINESTRA)   # (persone, armi) degli ultimi 40 frame
-    ultimi_ridotti = deque(maxlen=FRAME_PER_FINESTRA)  # gli stessi frame a 171×128 RGB, solo per il ramo pixel
-    eventi, decisione = [], {"probabilita": None, "classe": None, "warning": False, "allarme": False}
-    for indice_frame, frame in enumerate(leggi_frame(percorso_video)):
-        persone, armi = estrattore.analizza_frame(frame, primo_frame_del_video=indice_frame == 0)
-        ultimi_frame.append((persone, armi))
-        if ramo_pixel:
-            ultimi_ridotti.append(riduci_per_pixel(frame))
-        inizio_finestra = indice_frame - FRAME_PER_FINESTRA + 1
+    Senza classificatore ("modalità scheletri", per chi non ha i pesi) restano scheletri, tracking e, se c'è il
+    detector, armi e WARNING ARMA. taratura: la combinazione "migliore" di `tara-warning` (soglia, frame minimi,
+    vicinanza); senza, i valori provvisori del piano. tracker: lo stesso usato per estrarre i dati di addestramento
+    del classificatore (D3). percorso_classificatore: un checkpoint, oppure una lista di checkpoint di cui fare la
+    media (DA DECIDERE 22 d). percorso_testa_pixel: con la testa RGB, fusione pixel + scheletri sulla violenza (D48).
+    finestre_di_fila, media_mobile_allarme: regola dell'ALLARME VIOLENZA (D52). solo_scheletri: disegno su fondo nero
+    (video pubblici dei dataset, D58). pannello_nel_frame: False nel pannello web, che mostra le classi per conto suo."""
+
+    def __init__(self, percorso_classificatore: str | list[str] | None = None, percorso_modello_armi: str | None = None,
+                 percorso_modello_pose: str = MODELLO_POSE_PREDEFINITO, dispositivo: str = "cpu",
+                 taratura: dict | None = None, percorso_modello_mani: str | None = None,
+                 tracker: str = TRACKER_PREDEFINITO, percorso_testa_pixel: str | None = None,
+                 finestre_di_fila: int = FINESTRE_DI_FILA_ALLARME, media_mobile_allarme: int = MEDIA_MOBILE_ALLARME,
+                 percorso_rete_pixel: str | None = None, solo_scheletri: bool = False, pannello_nel_frame: bool = True):
+        self.regola = {"soglia_confidenza": SOGLIA_CONFIDENZA_ARMA, "frame_minimi": FRAME_MINIMI_CON_ARMA,
+                       "vicinanza": VICINANZA_PREDEFINITA}
+        self.regola.update({chiave: (taratura or {})[chiave] for chiave in self.regola if chiave in (taratura or {})})
+        self.dispositivo = dispositivo
+        self.estrattore = Estrattore(percorso_modello_pose, percorso_modello_armi, dispositivo, tracker=tracker,
+                                     percorso_modello_mani=percorso_modello_mani)   # D44: anche le mani, se c'è il modello
+        if percorso_classificatore is None:
+            percorsi = []
+        else:
+            percorsi = [percorso_classificatore] if isinstance(percorso_classificatore, str) else percorso_classificatore
+        self.classificatori = [carica_classificatore(percorso, dispositivo) for percorso in percorsi]
+        self.ramo_pixel = (RamoPixel(percorso_testa_pixel, dispositivo, percorso_rete_pixel)
+                           if percorso_testa_pixel and self.classificatori else None)
+        self.allarme_violenza = AllarmeViolenza(finestre_di_fila, media_mobile_allarme, con_pixel=self.ramo_pixel is not None)
+        self.solo_scheletri, self.pannello_nel_frame = solo_scheletri, pannello_nel_frame
+        self.ultimi_frame = deque(maxlen=FRAME_PER_FINESTRA)   # (persone, armi) degli ultimi 40 frame
+        self.ultimi_ridotti = deque(maxlen=FRAME_PER_FINESTRA)  # gli stessi frame a 171×128 RGB, solo per il ramo pixel
+        self.indice_frame = 0
+        self.decisione = {"probabilita": None, "classe": None, "warning": False, "allarme": False}
+
+    @torch.no_grad()
+    def analizza(self, frame: np.ndarray) -> tuple[np.ndarray, dict, dict, dict | None]:
+        """→ (frame annotato, persone, armi, evento della finestra appena conclusa oppure None)."""
+        persone, armi = self.estrattore.analizza_frame(frame, primo_frame_del_video=self.indice_frame == 0)
+        self.ultimi_frame.append((persone, armi))
+        if self.ramo_pixel:
+            self.ultimi_ridotti.append(riduci_per_pixel(frame))
+        inizio_finestra = self.indice_frame - FRAME_PER_FINESTRA + 1
+        evento = None
         if inizio_finestra >= 0 and inizio_finestra % PASSO_FINESTRE == 0:
-            righe_persone = [(numero, dati_persone) for numero, (dati_persone, _) in enumerate(ultimi_frame)]
-            righe_armi = [(numero, dati_armi) for numero, (_, dati_armi) in enumerate(ultimi_frame)]
-            timeline = timeline_da_dati(impacchetta_estrazione(righe_persone, righe_armi, FRAME_PER_FINESTRA,
-                                                               info.larghezza, info.altezza, 0.0))
-            nodi, maschera, classe_arma = costruisci_finestra(timeline, 0)
-            probabilita = probabilita_media(classificatori, nodi, maschera, classe_arma, dispositivo)
-            warning = warning_arma(timeline, 0, **regola)
-            if ramo_pixel:
-                probabilita_pixel = ramo_pixel.probabilita_violenza(list(ultimi_ridotti))
-                probabilita = fondi_con_pixel(probabilita, probabilita_pixel)
-                classe = classe_finale_con_pixel(probabilita, warning)
-            else:
-                classe = classe_finale(probabilita, warning)
-            allarme = allarme_violenza.aggiorna(probabilita)
-            decisione = {"probabilita": probabilita, "classe": classe, "warning": warning, "allarme": allarme}
-            eventi.append({"inizio_secondi": inizio_finestra / FPS_ANALISI,
-                           "fine_secondi": (indice_frame + 1) / FPS_ANALISI, "classe": decisione["classe"],
-                           "warning_arma": warning, "allarme_violenza": allarme,
-                           "probabilita": dict(zip(CLASSI, np.round(probabilita, 4).tolist()))})
-            if ramo_pixel:
-                eventi[-1]["probabilita_violenza_pixel"] = round(probabilita_pixel, 4)
-        annotato = frame.copy()
+            evento = self.decidi(inizio_finestra, frame.shape[1], frame.shape[0])
+        annotato = np.zeros_like(frame) if self.solo_scheletri else frame.copy()
         disegna_persone(annotato, persone)
-        disegna_armi(annotato, armi, regola["soglia_confidenza"])
-        disegna_pannello(annotato, decisione["probabilita"], decisione["classe"], decisione["warning"],
-                         decisione["allarme"])
-        scrittore.scrivi(annotato)
-    scrittore.chiudi()
+        disegna_armi(annotato, armi, self.regola["soglia_confidenza"])
+        if self.pannello_nel_frame:
+            decisione = self.decisione
+            disegna_pannello(annotato, decisione["probabilita"], decisione["classe"], decisione["warning"],
+                             decisione["allarme"],
+                             "in attesa di 40 frame..." if self.classificatori else "solo scheletri: pesi non trovati")
+        self.indice_frame += 1
+        return annotato, persone, armi, evento
 
+    def decidi(self, inizio_finestra: int, larghezza: int, altezza: int) -> dict:
+        righe_persone = [(numero, dati_persone) for numero, (dati_persone, _) in enumerate(self.ultimi_frame)]
+        righe_armi = [(numero, dati_armi) for numero, (_, dati_armi) in enumerate(self.ultimi_frame)]
+        timeline = timeline_da_dati(impacchetta_estrazione(righe_persone, righe_armi, FRAME_PER_FINESTRA,
+                                                           larghezza, altezza, 0.0))
+        evento = {"inizio_secondi": inizio_finestra / FPS_ANALISI, "fine_secondi": (self.indice_frame + 1) / FPS_ANALISI}
+        if not self.classificatori:
+            warning = warning_arma(timeline, 0, **self.regola)
+            self.decisione = {"probabilita": None, "classe": None, "warning": warning, "allarme": False}
+            return {**evento, "classe": None, "warning_arma": warning, "allarme_violenza": False, "probabilita": None}
+        nodi, maschera, classe_arma = costruisci_finestra(timeline, 0)
+        probabilita = probabilita_media(self.classificatori, nodi, maschera, classe_arma, self.dispositivo)
+        warning = warning_arma(timeline, 0, **self.regola)
+        if self.ramo_pixel:
+            probabilita_pixel = self.ramo_pixel.probabilita_violenza(list(self.ultimi_ridotti))
+            probabilita = fondi_con_pixel(probabilita, probabilita_pixel)
+            classe = classe_finale_con_pixel(probabilita, warning)
+        else:
+            classe = classe_finale(probabilita, warning)
+        allarme = self.allarme_violenza.aggiorna(probabilita)
+        self.decisione = {"probabilita": probabilita, "classe": classe, "warning": warning, "allarme": allarme}
+        evento.update({"classe": classe, "warning_arma": warning, "allarme_violenza": allarme,
+                       "probabilita": dict(zip(CLASSI, np.round(probabilita, 4).tolist()))})
+        if self.ramo_pixel:
+            evento["probabilita_violenza_pixel"] = round(probabilita_pixel, 4)
+        return evento
+
+
+def riga_keypoint(indice_frame: int, persone: dict, armi: dict) -> dict:
+    """Una riga di keypoint.jsonl: chi c'è nel frame, dove, e le armi viste (in pixel del frame)."""
+    return {"frame": indice_frame, "secondi": round(indice_frame / FPS_ANALISI, 2),
+            "persone": [{"id": int(id_traccia), "box": np.round(np.asarray(box, float), 1).tolist(),
+                         "keypoint": np.round(np.asarray(keypoint, float), 3).tolist()}
+                        for id_traccia, box, keypoint in zip(persone["id_traccia"], persone["box"], persone["keypoint"])],
+            "armi": [{"classe": NOMI_ARMI[int(classe)], "confidenza": round(float(confidenza), 3),
+                      "box": np.round(np.asarray(box, float), 1).tolist()}
+                     for box, classe, confidenza in zip(armi["box"], armi["classe"], armi["confidenza"])]}
+
+
+def salva_eventi(cartella_uscita: Path, eventi: list[dict]) -> None:
     (cartella_uscita / "eventi.json").write_text(json.dumps(eventi, indent=2, ensure_ascii=False))
     with open(cartella_uscita / "probabilita.csv", "w", newline="") as file_csv:
         scrittore_csv = csv.writer(file_csv)
         scrittore_csv.writerow(["inizio_secondi", "fine_secondi", *CLASSI, "classe", "warning_arma", "allarme_violenza"])
         for evento in eventi:
-            scrittore_csv.writerow([evento["inizio_secondi"], evento["fine_secondi"], *evento["probabilita"].values(),
+            probabilita = [evento["probabilita"][classe] if evento["probabilita"] else "" for classe in CLASSI]
+            scrittore_csv.writerow([evento["inizio_secondi"], evento["fine_secondi"], *probabilita,
                                     evento["classe"], evento["warning_arma"], evento["allarme_violenza"]])
+
+
+def analizza_video(percorso_video: str, percorso_classificatore: str | list[str] | None, cartella_uscita: str | Path,
+                   percorso_modello_armi: str | None = None, percorso_modello_pose: str = MODELLO_POSE_PREDEFINITO,
+                   dispositivo: str = "cpu", taratura: dict | None = None,
+                   percorso_modello_mani: str | None = None, tracker: str = TRACKER_PREDEFINITO,
+                   percorso_testa_pixel: str | None = None, finestre_di_fila: int = FINESTRE_DI_FILA_ALLARME,
+                   media_mobile_allarme: int = MEDIA_MOBILE_ALLARME, percorso_rete_pixel: str | None = None,
+                   solo_scheletri: bool = False) -> list[dict]:
+    """Un video → video_annotato.mp4, eventi.json, probabilita.csv e keypoint.jsonl (opzioni come `AnalisiFlusso`)."""
+    cartella_uscita = Path(cartella_uscita)
+    cartella_uscita.mkdir(parents=True, exist_ok=True)
+    info = leggi_info_video(percorso_video)
+    analisi = AnalisiFlusso(percorso_classificatore, percorso_modello_armi, percorso_modello_pose, dispositivo, taratura,
+                            percorso_modello_mani, tracker, percorso_testa_pixel, finestre_di_fila, media_mobile_allarme,
+                            percorso_rete_pixel, solo_scheletri)
+    scrittore = ScrittoreVideo(cartella_uscita / "video_annotato.mp4", info.larghezza, info.altezza)
+    eventi = []
+    with open(cartella_uscita / "keypoint.jsonl", "w") as file_keypoint:
+        for indice_frame, frame in enumerate(leggi_frame(percorso_video)):
+            annotato, persone, armi, evento = analisi.analizza(frame)
+            file_keypoint.write(json.dumps(riga_keypoint(indice_frame, persone, armi)) + "\n")
+            if evento:
+                eventi.append(evento)
+            scrittore.scrivi(annotato)
+    scrittore.chiudi()
+    salva_eventi(cartella_uscita, eventi)
     return eventi
 
 
@@ -408,12 +479,14 @@ def comando_analizza_video(argomenti: list[str] | None = None) -> None:
                         help="ALLARME VIOLENZA dopo tante finestre violente di fila (D52)")
     parser.add_argument("--media-mobile", type=int, default=MEDIA_MOBILE_ALLARME,
                         help="finestre su cui mediare le probabilità per l'allarme (D52)")
+    parser.add_argument("--solo-scheletri", action="store_true",
+                        help="scheletri e armi su fondo nero, senza i pixel del video (video pubblici dei dataset, D58)")
     argomenti = parser.parse_args(argomenti)
     taratura = json.loads(Path(argomenti.taratura).read_text())["migliore"] if argomenti.taratura else None
     eventi = analizza_video(argomenti.video, argomenti.classificatore, argomenti.uscita, argomenti.modello_armi,
                             argomenti.modello_pose, argomenti.dispositivo, taratura, argomenti.modello_mani,
                             argomenti.tracker, argomenti.testa_pixel, argomenti.finestre_di_fila,
-                            argomenti.media_mobile, argomenti.rete_pixel)
+                            argomenti.media_mobile, argomenti.rete_pixel, argomenti.solo_scheletri)
     print(f"{len(eventi)} finestre analizzate → {argomenti.uscita}")
 
 # ==============================================================================================================
@@ -653,16 +726,426 @@ def comando_valuta_allarme(argomenti: list[str] | None = None) -> None:
 
 
 # ==============================================================================================================
+# pannello
+# Argo dal vivo (D56, D57): un pannello web locale collegato alle telecamere. Per ogni telecamera un ffmpeg registra
+# il flusso a segmenti da 10 s a 25 fps ("videoregistratore", in sessioni/<telecamera>/<data>/) e un thread li
+# analizza in ordine con `AnalisiFlusso`, il sistema intero. Sulla CPU del portatile l'analisi va più lenta del
+# tempo reale e resta indietro (in differita, il ritardo è nel pannello); con una GPU tiene il passo. I frame non
+# stanno in memoria: aspettano su disco, e la registrazione resta come archivio.
+#
+# Uscite per sessione: video_annotato.mp4, eventi.jsonl (una riga per finestra, come eventi.json), keypoint.jsonl
+# (persone con box e 17 keypoint, armi), e alla fine eventi.json + probabilita.csv come `analizza-video`.
+# Pagina: src/sicurezza/pannello/ (telecamere, registro degli eventi, archivio delle sessioni).
+#
+# Uso:
+#     uv run argo scarica-pesi
+#     uv run argo pannello --telecamera ingresso=rtsp://utente:password@192.168.1.20:554/stream1 --telecamera webcam=/dev/video0
+#     uv run argo pannello --telecamera prova=video.mp4 --come-telecamera      (un file letto a velocità reale)
+#     poi apri http://127.0.0.1:8765
+# ==============================================================================================================
+CARTELLA_PAGINA = Path(__file__).parent / "pannello"
+FILE_PAGINA = {"/": ("index.html", "text/html; charset=utf-8"), "/pannello.css": ("pannello.css", "text/css"),
+               "/pannello.js": ("pannello.js", "text/javascript"), "/logo.svg": ("logo.svg", "image/svg+xml")}
+FILE_ARCHIVIO = {"video_annotato.mp4": "video/mp4", "eventi.json": "application/json", "probabilita.csv": "text/csv"}
+SECONDI_SEGMENTO = 10
+# I pesi del sistema consegnato (D60): allegati alla Release v1.0 del repo, si scaricano con `argo scarica-pesi`.
+FILE_PESI = {"classificatore": "stgcn.pt", "modello_armi": "armi_v3.pt", "rete_pixel": "rete_violenza.pt",
+             "testa_pixel": "testa_violenza.npz", "taratura": "taratura_warning.json"}
+URL_PESI = "https://github.com/marcozambrella/argo/releases/download/v1.0/"
+
+
+def ingresso_ffmpeg(sorgente: str, come_telecamera: bool = False) -> list[str]:
+    """Opzioni d'ingresso di ffmpeg per una telecamera: RTSP, http(s) (MJPEG/HLS, anche un telefono usato come
+    telecamera IP), webcam (/dev/videoN) o un file (con come_telecamera letto a velocità reale)."""
+    if sorgente.startswith("rtsp://"):
+        return ["-rtsp_transport", "tcp", "-i", sorgente]
+    if sorgente.startswith("/dev/video"):
+        return ["-f", "v4l2", "-i", sorgente]
+    if re.match(r"^[a-z][a-z0-9+.-]*://", sorgente):
+        return ["-i", sorgente]
+    return (["-re"] if come_telecamera else []) + ["-i", sorgente]
+
+
+def sorgente_senza_password(sorgente: str) -> str:
+    """rtsp://utente:password@host/… → rtsp://utente:***@host/… (nel pannello e nei log non deve comparire)."""
+    return re.sub(r"(://[^:/@]+):[^@/]*@", r"\1:***@", sorgente)
+
+
+def opzioni_dai_pesi(cartella: Path) -> dict:
+    """Le opzioni di `AnalisiFlusso` per i pesi presenti nella cartella. Senza classificatore: modalità scheletri."""
+    presenti = {chiave: cartella / nome for chiave, nome in FILE_PESI.items() if (cartella / nome).exists()}
+    opzioni = {}
+    if "classificatore" in presenti:
+        opzioni["percorso_classificatore"] = str(presenti["classificatore"])
+        if "rete_pixel" in presenti and "testa_pixel" in presenti:
+            opzioni["percorso_rete_pixel"] = str(presenti["rete_pixel"])
+            opzioni["percorso_testa_pixel"] = str(presenti["testa_pixel"])
+    if "modello_armi" in presenti:
+        opzioni["percorso_modello_armi"] = str(presenti["modello_armi"])
+    if "taratura" in presenti:
+        opzioni["taratura"] = json.loads(presenti["taratura"].read_text())["migliore"]
+    return opzioni
+
+
+def descrivi_modalita(opzioni: dict) -> str:
+    if "percorso_classificatore" not in opzioni:
+        return "solo scheletri"
+    return "sistema completo" if "percorso_rete_pixel" in opzioni else "scheletri + ST-GCN"
+
+
+class Videoregistratore:
+    """ffmpeg che registra una telecamera a segmenti chiusi da `secondi_segmento` (D57)."""
+    def __init__(self, sorgente: str, cartella: Path, come_telecamera: bool = False,
+                 secondi_segmento: int = SECONDI_SEGMENTO):
+        (cartella / "segmenti").mkdir(parents=True, exist_ok=True)
+        self.elenco = cartella / "segmenti.csv"
+        self.cartella_segmenti = cartella / "segmenti"
+        self.inizio = time.time()
+        with open(cartella / "ffmpeg.log", "w") as log:
+            self.processo = subprocess.Popen(
+                ["ffmpeg", "-v", "error", "-nostdin", "-y", *ingresso_ffmpeg(sorgente, come_telecamera), "-an",
+                 "-vf", f"fps={FPS_ANALISI},scale=trunc(iw/2)*2:trunc(ih/2)*2", "-c:v", "libx264", "-preset", "ultrafast",
+                 "-crf", "20", "-pix_fmt", "yuv420p", "-force_key_frames", "expr:gte(t,n_forced*1)",
+                 "-f", "segment", "-segment_time", str(secondi_segmento), "-reset_timestamps", "1",
+                 "-segment_list", str(self.elenco), "-segment_list_type", "csv",
+                 str(self.cartella_segmenti / "%05d.mp4")], stderr=log)
+
+    def segmenti_chiusi(self) -> list[Path]:
+        """I segmenti finiti, in ordine: ffmpeg aggiunge una riga all'elenco solo quando chiude un segmento."""
+        if not self.elenco.exists():
+            return []
+        righe = [riga for riga in self.elenco.read_text().splitlines() if riga.strip()]
+        return [self.cartella_segmenti / Path(riga.split(",")[0]).name for riga in righe]
+
+    def finito(self) -> bool:
+        return self.processo.poll() is not None
+
+    def ferma(self) -> None:
+        if not self.finito():
+            self.processo.send_signal(signal.SIGINT)   # come Ctrl+C: ffmpeg chiude bene l'ultimo segmento
+            try:
+                self.processo.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.processo.kill()
+
+
+class Telecamera:
+    def __init__(self, nome: str, sorgente: str, cartella_sessioni: Path, opzioni_analisi: dict,
+                 come_telecamera: bool = False, al_evento=None):
+        self.nome = nome
+        self.cartella = Path(cartella_sessioni) / nome / time.strftime("%Y%m%d-%H%M%S")
+        self.cartella.mkdir(parents=True, exist_ok=True)
+        self.opzioni_analisi = opzioni_analisi
+        self.al_evento = al_evento or (lambda nome, evento: None)
+        # un file senza --come-telecamera si analizza tutto e subito: non è "dal vivo" e il ritardo non ha senso
+        self.dal_vivo = come_telecamera or bool(re.match(r"^(/dev/video|[a-z][a-z0-9+.-]*://)", sorgente))
+        self.stato = {"nome": nome, "sorgente": sorgente_senza_password(sorgente), "dal_vivo": self.dal_vivo,
+                      "fase": "in avvio", "ritardo_secondi": None, "frame_al_secondo": None,
+                      "secondi_analizzati": 0.0, "ultimo_evento": None, "errore": None}
+        self.jpeg = None
+        self.nuovo_frame = threading.Condition()
+        self.fermati = threading.Event()
+        self.registratore = Videoregistratore(sorgente, self.cartella, come_telecamera)
+        self.thread = threading.Thread(target=self.lavora, daemon=True, name=f"argo-{nome}")
+        self.thread.start()
+
+    def lavora(self) -> None:
+        try:
+            self.analizza_segmenti()
+            self.stato["fase"] = "finita"
+        except Exception as errore:   # una telecamera che si rompe non deve fermare le altre
+            self.stato.update(fase="errore", errore=f"{type(errore).__name__}: {errore}")
+        with self.nuovo_frame:
+            self.nuovo_frame.notify_all()
+
+    def segmento_successivo(self, fatti: int) -> Path | None:
+        """Aspetta il prossimo segmento chiuso; None quando la registrazione è finita e non ne restano."""
+        while not self.fermati.is_set():
+            segmenti = self.registratore.segmenti_chiusi()
+            if len(segmenti) > fatti:
+                return segmenti[fatti]
+            if self.registratore.finito():
+                segmenti = self.registratore.segmenti_chiusi()    # l'ultimo si chiude quando ffmpeg esce
+                if len(segmenti) > fatti:
+                    return segmenti[fatti]
+                if fatti == 0:
+                    log = (self.cartella / "ffmpeg.log").read_text().strip()
+                    raise RuntimeError(f"nessun video dalla sorgente ({log.splitlines()[-1] if log else 'ffmpeg uscito'})")
+                return None
+            time.sleep(0.3)
+        return None
+
+    def analizza_segmenti(self) -> None:
+        analisi = AnalisiFlusso(**self.opzioni_analisi, pannello_nel_frame=False)
+        self.stato["fase"] = "in attesa del primo segmento"
+        scrittore, eventi, fatti, indice_frame, velocita = None, [], 0, 0, None
+        with open(self.cartella / "keypoint.jsonl", "w") as file_keypoint, \
+                open(self.cartella / "eventi.jsonl", "w") as file_eventi:
+            while (segmento := self.segmento_successivo(fatti)) is not None:
+                fatti += 1
+                self.stato["fase"] = "in analisi"
+                for frame in leggi_frame(str(segmento)):
+                    if self.fermati.is_set():
+                        break
+                    inizio = time.perf_counter()
+                    if scrittore is None:
+                        scrittore = ScrittoreVideo(self.cartella / "video_annotato.mp4", frame.shape[1], frame.shape[0])
+                    annotato, persone, armi, evento = analisi.analizza(frame)
+                    scrittore.scrivi(annotato)
+                    file_keypoint.write(json.dumps(riga_keypoint(indice_frame, persone, armi)) + "\n")
+                    if evento:
+                        eventi.append(evento)
+                        file_eventi.write(json.dumps(evento, ensure_ascii=False) + "\n")
+                        file_eventi.flush()
+                        self.stato["ultimo_evento"] = evento
+                        self.al_evento(self.nome, evento)
+                    indice_frame += 1
+                    durata = time.perf_counter() - inizio
+                    velocita = durata if velocita is None else 0.9 * velocita + 0.1 * durata
+                    self.stato.update(frame_al_secondo=round(1 / max(velocita, 1e-6), 1),
+                                      secondi_analizzati=round(indice_frame / FPS_ANALISI, 1))
+                    if self.dal_vivo:
+                        self.stato["ritardo_secondi"] = round(
+                            max(0.0, time.time() - (self.registratore.inizio + indice_frame / FPS_ANALISI)), 1)
+                    jpeg = cv2.imencode(".jpg", annotato, [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
+                    with self.nuovo_frame:
+                        self.jpeg = jpeg
+                        self.nuovo_frame.notify_all()
+        if scrittore:
+            scrittore.chiudi()
+        salva_eventi(self.cartella, eventi)
+
+    def ferma(self) -> None:
+        self.registratore.ferma()
+        self.fermati.set()
+        self.thread.join(timeout=30)
+
+
+def sessioni_in_archivio(cartelle: list[Path]) -> list[Path]:
+    """Le cartelle con un'analisi finita (video_annotato.mp4 + eventi.json): sessioni del pannello e `analizza-video`."""
+    trovate = {file.parent for cartella in cartelle if Path(cartella).exists()
+               for file in Path(cartella).rglob("eventi.json") if (file.parent / "video_annotato.mp4").exists()}
+    return sorted(trovate, key=lambda percorso: (percorso.stat().st_mtime, str(percorso)), reverse=True)
+
+
+def riassunto_sessione(numero: int, cartella: Path, radici: list[Path]) -> dict:
+    eventi = json.loads((cartella / "eventi.json").read_text())
+    radice = next((Path(r) for r in radici if Path(cartella).is_relative_to(Path(r))), cartella.parent)
+    return {"numero": numero, "nome": str(cartella.relative_to(radice)) if cartella != radice else cartella.name,
+            "durata_secondi": eventi[-1]["fine_secondi"] if eventi else 0.0,
+            "finestre_con_allarme": sum(bool(evento["allarme_violenza"]) for evento in eventi),
+            "finestre_con_warning": sum(bool(evento["warning_arma"]) for evento in eventi)}
+
+
+class Pannello:
+    def __init__(self, telecamere: list[tuple[str, str]], cartella_sessioni: Path, cartelle_archivio: list[Path],
+                 opzioni_analisi: dict, come_telecamera: bool = False):
+        self.cartella_sessioni = Path(cartella_sessioni)
+        self.cartelle_archivio = [self.cartella_sessioni, *map(Path, cartelle_archivio)]
+        self.modalita = descrivi_modalita(opzioni_analisi)
+        self.eventi, self.blocco = [], threading.Lock()
+        self.telecamere = {nome: Telecamera(nome, sorgente, self.cartella_sessioni, opzioni_analisi, come_telecamera,
+                                            self.aggiungi_evento)
+                           for nome, sorgente in telecamere}
+
+    def aggiungi_evento(self, nome: str, evento: dict) -> None:
+        with self.blocco:
+            self.eventi.append({"numero": len(self.eventi), "telecamera": nome,
+                                "ora": time.strftime("%H:%M:%S"), **evento})
+
+    def eventi_dopo(self, numero: int) -> list[dict]:
+        with self.blocco:
+            return self.eventi[max(numero, 0):]
+
+    def stato(self) -> dict:
+        return {"modalita": self.modalita, "telecamere": [dict(t.stato) for t in self.telecamere.values()]}
+
+    def archivio(self) -> list[Path]:
+        return sessioni_in_archivio(self.cartelle_archivio)
+
+    def ferma(self) -> None:
+        for telecamera in self.telecamere.values():
+            telecamera.ferma()
+
+
+class GestorePannello(BaseHTTPRequestHandler):
+    pannello: Pannello = None   # assegnato da `crea_server`
+
+    def log_message(self, formato, *argomenti) -> None:   # niente righe a ogni richiesta (MJPEG e interrogazioni)
+        pass
+
+    def do_GET(self) -> None:
+        indirizzo = urllib.parse.urlparse(self.path)
+        parametri = urllib.parse.parse_qs(indirizzo.query)
+        try:
+            if indirizzo.path in FILE_PAGINA:
+                nome, tipo = FILE_PAGINA[indirizzo.path]
+                self.invia_file(CARTELLA_PAGINA / nome, tipo)
+            elif indirizzo.path == "/api/stato":
+                self.invia_json(self.pannello.stato())
+            elif indirizzo.path == "/api/eventi":
+                self.invia_json(self.pannello.eventi_dopo(int(parametri.get("dopo", ["0"])[0])))
+            elif indirizzo.path == "/api/archivio":
+                radici = self.pannello.cartelle_archivio
+                self.invia_json([riassunto_sessione(numero, cartella, radici)
+                                 for numero, cartella in enumerate(self.pannello.archivio())])
+            elif (trovato := re.fullmatch(r"/flusso/(.+)\.mjpg", indirizzo.path)) \
+                    and urllib.parse.unquote(trovato[1]) in self.pannello.telecamere:
+                self.invia_mjpeg(self.pannello.telecamere[urllib.parse.unquote(trovato[1])])
+            elif (trovato := re.fullmatch(r"/archivio/(\d+)/([a-z0-9_.]+)", indirizzo.path)) and trovato[2] in FILE_ARCHIVIO:
+                sessioni = self.pannello.archivio()   # solo per numero: nessun percorso arriva dal browser
+                if int(trovato[1]) >= len(sessioni):
+                    self.send_error(404)
+                else:
+                    self.invia_file(sessioni[int(trovato[1])] / trovato[2], FILE_ARCHIVIO[trovato[2]])
+            else:
+                self.send_error(404)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def invia_json(self, dati) -> None:
+        corpo = json.dumps(dati, ensure_ascii=False).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(corpo)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(corpo)
+
+    def invia_file(self, percorso: Path, tipo: str) -> None:
+        """Con le richieste Range (206): il <video> dell'archivio può saltare avanti e indietro."""
+        if not percorso.is_file():
+            self.send_error(404)
+            return
+        dimensione = percorso.stat().st_size
+        inizio, fine = 0, dimensione - 1
+        intervallo = re.fullmatch(r"bytes=(\d*)-(\d*)", self.headers.get("Range", "").strip())
+        if intervallo and (intervallo[1] or intervallo[2]):
+            if intervallo[1]:
+                inizio, fine = int(intervallo[1]), min(int(intervallo[2]) if intervallo[2] else fine, fine)
+            else:
+                inizio = max(0, dimensione - int(intervallo[2]))
+            if inizio > fine:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{dimensione}")
+                self.end_headers()
+                return
+            self.send_response(206)
+            self.send_header("Content-Range", f"bytes {inizio}-{fine}/{dimensione}")
+        else:
+            self.send_response(200)
+        self.send_header("Content-Type", tipo)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(fine - inizio + 1))
+        self.end_headers()
+        with open(percorso, "rb") as file:
+            file.seek(inizio)
+            restanti = fine - inizio + 1
+            while restanti > 0 and (pezzo := file.read(min(restanti, 1 << 16))):
+                self.wfile.write(pezzo)
+                restanti -= len(pezzo)
+
+    def invia_mjpeg(self, telecamera: Telecamera) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=argo")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        ultimo = None
+        while True:
+            with telecamera.nuovo_frame:
+                telecamera.nuovo_frame.wait_for(lambda: telecamera.jpeg is not ultimo
+                                                or telecamera.stato["fase"] in ("finita", "errore"), timeout=5)
+                jpeg = telecamera.jpeg
+            if jpeg is not None and jpeg is not ultimo:
+                self.wfile.write(b"--argo\r\nContent-Type: image/jpeg\r\nContent-Length: "
+                                 + str(len(jpeg)).encode() + b"\r\n\r\n" + jpeg + b"\r\n")
+                ultimo = jpeg
+            elif telecamera.stato["fase"] in ("finita", "errore"):
+                return
+
+
+def crea_server(pannello: Pannello, host: str = "127.0.0.1", porta: int = 8765) -> ThreadingHTTPServer:
+    gestore = type("GestoreDiQuestoPannello", (GestorePannello,), {"pannello": pannello})
+    server = ThreadingHTTPServer((host, porta), gestore)
+    server.daemon_threads = True
+    return server
+
+
+def leggi_telecamera(testo: str, numero: int) -> tuple[str, str]:
+    """"ingresso=rtsp://…" → ("ingresso", "rtsp://…"); senza nome: "cam1", "cam2", …"""
+    nome, uguale, sorgente = testo.partition("=")
+    if uguale and re.fullmatch(r"[\w-]+", nome):
+        return nome, sorgente
+    return f"cam{numero}", testo
+
+
+def comando_pannello(argomenti: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Argo: pannello web con le telecamere (D56)")
+    parser.add_argument("--telecamera", action="append", default=[], metavar="NOME=SORGENTE",
+                        help="rtsp://…, http(s)://…, /dev/video0 o un file; si ripete per più telecamere")
+    parser.add_argument("--come-telecamera", action="store_true",
+                        help="i file si leggono a velocità reale, come una telecamera (per le prove)")
+    parser.add_argument("--pesi", default="pesi", help="cartella dei pesi (`argo scarica-pesi`)")
+    parser.add_argument("--sessioni", default="sessioni", help="dove registrare video e analisi delle telecamere")
+    parser.add_argument("--archivio", nargs="*", default=[],
+                        help="altre cartelle con analisi da rivedere (es. runs/demo_finale)")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--porta", type=int, default=8765)
+    parser.add_argument("--dispositivo", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--modello-pose", default=MODELLO_POSE_PREDEFINITO)
+    parser.add_argument("--tracker", default=TRACKER_PREDEFINITO)
+    argomenti = parser.parse_args(argomenti)
+    opzioni = {**opzioni_dai_pesi(Path(argomenti.pesi)), "percorso_modello_pose": argomenti.modello_pose,
+               "tracker": argomenti.tracker, "dispositivo": argomenti.dispositivo}
+    if "percorso_classificatore" not in opzioni:
+        print(f"Pesi non trovati in {argomenti.pesi}/: modalità solo scheletri. Per il sistema completo: uv run argo scarica-pesi")
+    if argomenti.host not in ("127.0.0.1", "localhost", "::1"):
+        print(f"ATTENZIONE: il pannello è raggiungibile da altri computer su {argomenti.host} (immagini delle telecamere, senza password)")
+    telecamere = [leggi_telecamera(testo, numero) for numero, testo in enumerate(argomenti.telecamera, start=1)]
+    pannello = Pannello(telecamere, Path(argomenti.sessioni), [Path(c) for c in argomenti.archivio], opzioni,
+                        argomenti.come_telecamera)
+    server = crea_server(pannello, argomenti.host, argomenti.porta)
+    print(f"Argo ({pannello.modalita}, {argomenti.dispositivo}): http://{argomenti.host}:{argomenti.porta}  — Ctrl+C per fermare")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nFermo le telecamere e salvo le sessioni…")
+    finally:
+        server.server_close()
+        pannello.ferma()
+
+
+def comando_scarica_pesi(argomenti: list[str] | None = None) -> None:
+    from .strumenti import scarica_con_riprova
+    parser = argparse.ArgumentParser(description="Scarica i pesi del sistema consegnato dalla Release del repo (D60)")
+    parser.add_argument("--cartella", default="pesi")
+    parser.add_argument("--url", default=URL_PESI)
+    argomenti = parser.parse_args(argomenti)
+    cartella = Path(argomenti.cartella)
+    cartella.mkdir(parents=True, exist_ok=True)
+    for nome in FILE_PESI.values():
+        if (cartella / nome).exists():
+            print(f"{nome}: c'è già")
+            continue
+        print(f"{nome}: scarico…", flush=True)
+        parziale = cartella / (nome + ".parziale")
+        scarica_con_riprova(argomenti.url + nome, parziale)
+        parziale.rename(cartella / nome)
+    print(f"Pesi in {cartella}/ (solo ricerca, uso non commerciale: vedi il README)")
+
+
+# ==============================================================================================================
 # riga di comando: python -m sicurezza.demo <comando> [opzioni]
 # ==============================================================================================================
-COMANDI = {"analizza-video": comando_analizza_video, "tara-warning": comando_tara_warning,
+COMANDI = {"pannello": comando_pannello, "scarica-pesi": comando_scarica_pesi,
+           "analizza-video": comando_analizza_video, "tara-warning": comando_tara_warning,
            "valuta-sistema": comando_valuta_sistema, "valuta-allarme": comando_valuta_allarme}
 
 
 def main(argomenti: list[str] | None = None) -> None:
     argomenti = sys.argv[1:] if argomenti is None else argomenti
     if not argomenti or argomenti[0] not in COMANDI:
-        print("uso: python -m sicurezza.demo {analizza-video} [opzioni]  (--help dopo il comando)")
+        print("uso: argo {pannello,scarica-pesi,analizza-video} [opzioni]  (--help dopo il comando)")
         raise SystemExit(2)
     COMANDI[argomenti[0]](argomenti[1:])
 

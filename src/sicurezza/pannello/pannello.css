@@ -1,0 +1,108 @@
+/* Argo — pannello delle telecamere. Palette del sito "Pietra e cenere" (D59): grigi caldi e un solo rosso, per gli allarmi. */
+:root {
+  --cenere: #1b1a18; --pietra-scura: #252320; --pietra: #34312c; --gesso: #cfc8b9; --testo: #e7e1d4; --tenue: #a39b8e;
+  --linea: #4b463f; --rosso: #e0442f; --luce: #f6dca2;
+  --c-normale: #6f685d; --c-violenza: #d98a4a; --c-violenza_con_arma: #e0442f; --c-scippo: #c2a36b;
+  --mono: "IBM Plex Mono", ui-monospace, monospace; --maiuscoletto: "Alegreya Sans SC", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--cenere); color: var(--testo); font: 400 14px/1.45 var(--mono); }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--luce); outline-offset: 2px; }
+h2 { font: 800 15px/1 var(--maiuscoletto); letter-spacing: .1em; color: var(--gesso); margin: 0 0 12px; }
+
+/* testata */
+.testata { display: flex; align-items: center; gap: 24px; padding: 10px 20px; border-bottom: 1px solid var(--linea);
+  background: var(--pietra-scura); flex-wrap: wrap; }
+.marchio { display: flex; align-items: center; gap: 12px; }
+.marchio .nome { font: 800 26px/1 var(--maiuscoletto); letter-spacing: .22em; }
+.marchio .sotto { font: 500 13px var(--maiuscoletto); letter-spacing: .12em; color: var(--tenue); }
+.schede { display: flex; gap: 4px; }
+.schede button { background: none; border: 1px solid transparent; padding: 6px 14px; cursor: pointer;
+  font: 500 14px var(--maiuscoletto); letter-spacing: .1em; color: var(--tenue); }
+.schede button[aria-selected="true"] { color: var(--testo); border-color: var(--linea); background: var(--pietra); }
+.stato-generale { margin-left: auto; display: flex; gap: 16px; align-items: center; }
+.etichetta { border: 1px solid var(--linea); padding: 3px 8px; font-size: 12px; color: var(--gesso); text-transform: uppercase; letter-spacing: .06em; }
+.etichetta.scheletri { border-color: var(--luce); color: var(--luce); }
+#orologio { font: 600 18px var(--mono); color: var(--gesso); }
+
+/* allarme generale */
+.striscia-allarme { background: var(--rosso); color: #fff; font: 800 18px var(--maiuscoletto); letter-spacing: .12em;
+  padding: 10px 20px; animation: lampo 1s steps(2, jump-none) infinite; }
+@keyframes lampo { 50% { background: #8f2416; } }
+
+/* viste */
+main { padding: 16px 20px 24px; }
+.vista { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; }
+.vista[hidden] { display: none; }
+.vista-archivio { grid-template-columns: 260px minmax(0, 1fr) 300px; }
+@media (max-width: 1000px) { .vista, .vista-archivio { grid-template-columns: minmax(0, 1fr); } }
+
+/* telecamere */
+.griglia { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); }
+.griglia .vuoto { grid-column: 1 / -1; }
+.riquadro { background: var(--pietra-scura); border: 1px solid var(--linea); display: flex; flex-direction: column; min-width: 0; }
+.riquadro.in-allarme { border-color: var(--rosso); box-shadow: 0 0 0 2px var(--rosso); animation: bordo 1s steps(2, jump-none) infinite; }
+@keyframes bordo { 50% { box-shadow: 0 0 0 2px transparent; } }
+.riquadro > header { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; gap: 8px; }
+.nome-cam { font: 800 15px var(--maiuscoletto); letter-spacing: .12em; }
+.badge { font-size: 12px; padding: 2px 8px; border: 1px solid var(--linea); color: var(--gesso); white-space: nowrap; }
+.badge.live { color: #fff; border-color: var(--rosso); }
+.badge.live::before { content: "● "; color: var(--rosso); }
+.badge.differita { color: var(--luce); border-color: var(--luce); }
+.badge.errore { color: #fff; background: var(--rosso); border-color: var(--rosso); }
+.immagine { background: #000; aspect-ratio: 16 / 9; max-height: calc(100vh - 330px); min-height: 220px; display: grid; place-items: center; overflow: hidden; }
+.immagine img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.riquadro > footer { padding: 10px 12px 12px; display: grid; gap: 8px; }
+.riga-classe { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.classe { font: 800 20px var(--maiuscoletto); letter-spacing: .06em; }
+.misure { font-size: 12px; color: var(--tenue); }
+.barre { display: grid; grid-template-columns: max-content 1fr 3.5em; gap: 3px 10px; font-size: 12px; align-items: center; }
+.barre .traccia { height: 8px; background: var(--pietra); }
+.barre .riempimento { height: 100%; width: 0; transition: width .3s; }
+.barre .valore { text-align: right; color: var(--tenue); }
+.spie { display: flex; gap: 8px; flex-wrap: wrap; }
+.spia { font: 800 12px var(--maiuscoletto); letter-spacing: .1em; padding: 3px 8px; border: 1px solid var(--linea); color: var(--linea); }
+.spia.accesa.spia-warning { color: var(--cenere); background: var(--luce); border-color: var(--luce); }
+.spia.accesa.spia-allarme { color: #fff; background: var(--rosso); border-color: var(--rosso); }
+.errore { color: var(--rosso); margin: 0; font-size: 12px; }
+
+/* registro */
+.registro { background: var(--pietra-scura); border: 1px solid var(--linea); padding: 14px; max-height: calc(100vh - 110px); overflow: auto; }
+.voci { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.voci li { border-left: 3px solid var(--linea); padding: 4px 8px; font-size: 12.5px; cursor: default; }
+.voci li .quando { color: var(--tenue); margin-right: 6px; }
+.voci li .dove { color: var(--gesso); margin-right: 6px; }
+.voci li.allarme { border-color: var(--rosso); }
+.voci li.allarme .cosa { color: #ff8a77; font-weight: 600; }
+.voci li.warning { border-color: var(--luce); }
+.voci li.warning .cosa { color: var(--luce); font-weight: 600; }
+.voci li.fine { opacity: .7; }
+#registro-archivio li { cursor: pointer; }
+#registro-archivio li:hover { background: var(--pietra); }
+#registro-archivio li.corrente { background: var(--pietra); outline: 1px solid var(--linea); }
+.vuoto { color: var(--tenue); font-size: 12.5px; }
+
+/* archivio */
+.sessioni ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.sessioni button { width: 100%; text-align: left; background: var(--pietra-scura); border: 1px solid var(--linea); padding: 8px 10px; cursor: pointer; }
+.sessioni button[aria-current="true"] { border-color: var(--gesso); background: var(--pietra); }
+.sessioni .nome-sessione { display: block; word-break: break-all; }
+.sessioni .dati-sessione { display: block; color: var(--tenue); font-size: 12px; margin-top: 2px; }
+.sessioni .dati-sessione b { color: #ff8a77; font-weight: 600; }
+.lettore { display: grid; gap: 10px; min-width: 0; }
+.lettore video { width: 100%; background: #000; aspect-ratio: 16 / 9; max-height: calc(100vh - 230px); }
+.striscia-classi { position: relative; height: 26px; background: var(--pietra); cursor: pointer; overflow: hidden; }
+.striscia-classi .tratto { position: absolute; top: 6px; bottom: 0; }
+.striscia-classi .segno { position: absolute; top: 0; height: 5px; }
+.striscia-classi .segno.allarme { background: var(--rosso); }
+.striscia-classi .segno.warning { background: var(--luce); top: 0; height: 3px; }
+.testina { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; left: 0; z-index: 2; pointer-events: none; }
+.legenda { list-style: none; display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; padding: 0; font-size: 12px; color: var(--tenue); }
+.legenda i { display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: -2px; }
+.c-normale { background: var(--c-normale); } .c-violenza { background: var(--c-violenza); }
+.c-violenza_con_arma { background: var(--c-violenza_con_arma); } .c-scippo { background: var(--c-scippo); }
+.c-allarme { background: var(--rosso); height: 5px !important; } .c-warning { background: var(--luce); height: 3px !important; }

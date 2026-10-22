@@ -1,7 +1,7 @@
 [project]
-name = "sicurezza-nn"
-version = "0.1.0"
-description = "Riconoscimento di violenza, violenza con arma e scippi da video CCTV (pose + tracking + Graph-Transformer)"
+name = "argo"
+version = "1.0.0"
+description = "Argo: violenza, violenza con arma e scippi dalle telecamere CCTV (scheletri + tracking + ST-GCN + rete video), con WARNING ARMA"
 requires-python = ">=3.10"
 dependencies = [
     "numpy",
@@ -10,6 +10,9 @@ dependencies = [
     "torchvision",
     "lap",  # richiesto dal tracker di Ultralytics
 ]
+
+[project.scripts]
+argo = "sicurezza.demo:main"
 
 [dependency-groups]
 dev = ["pytest"]
