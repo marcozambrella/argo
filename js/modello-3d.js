@@ -29,6 +29,8 @@ const STATI = {   // opacità dei livelli; camera = spostamento dal fuoco (centr
 
 export async function avviaModello() {
   const dati = await fetch("dati/esempio-finestra.json").then((r) => r.json());
+  // probabilità VERE del sistema consegnato per le finestre di questa clip (argo analizza-video, D49 + D53)
+  const decisioni = await fetch("dati/esempio-decisione.json").then((r) => r.json()).catch(() => null);
   const tela = document.getElementById("modello-3d");
   const renderer = new THREE.WebGLRenderer({ canvas: tela, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -162,6 +164,17 @@ export async function avviaModello() {
     });
     attributo.needsUpdate = true;
     cornice.position.z = 9 - (primo + FRAME_PER_FINESTRA / 2 - .5) * PASSO_PILA;
+    scriviClassi();
+  }
+  // pannello "classi": la decisione vera per la finestra scelta (se il file delle decisioni c'è)
+  const righeClassi = new Map();
+  function scriviClassi() {
+    const decisione = decisioni?.finestre?.[finestraScelta];
+    for (const [classe, uscita] of righeClassi) {
+      const valore = decisione?.probabilita?.[classe.replaceAll(" ", "_")];
+      uscita.textContent = valore === undefined ? "— in attesa dei risultati" : `${Math.round(valore * 100)}%`;
+      uscita.parentElement.classList.toggle("scelta", decisione?.classe === classe.replaceAll(" ", "_"));
+    }
   }
   aggiornaFinestra();
 
@@ -213,9 +226,12 @@ export async function avviaModello() {
       for (const classe of ["normale", "violenza", "violenza con arma", "scippo"]) {
         const riga = document.createElement("span");
         riga.className = "riga";
-        riga.innerHTML = `${classe} <output>— in attesa dei risultati</output>`;
+        const uscita = document.createElement("output");
+        riga.append(classe, " ", uscita);
+        righeClassi.set(classe, uscita);
         comandi.appendChild(riga);
       }
+      scriviClassi();
     } else if (tipo === "warning") {
       const etichetta = document.createElement("label");
       const cursore = Object.assign(document.createElement("input"), { type: "range", min: 0, max: FRAME_PER_FINESTRA, value: frameConArma });

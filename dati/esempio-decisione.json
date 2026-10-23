@@ -1,0 +1,174 @@
+{
+ "_nota": "Uscita VERA del sistema consegnato (ST-GCN add. 1 + rete video fine-tunata + detector v3) sulle 13 finestre della clip della scena 3D (Pexels #31524454, frame 250-409): `argo analizza-video`, runs/argo_casi_uso/strada_roma_vicolo/eventi.json.",
+ "finestre": [
+  {
+   "finestra": 0,
+   "inizio_secondi": 10.0,
+   "classe": "normale",
+   "probabilita": {
+    "normale": 0.7901999950408936,
+    "violenza": 0.2094999998807907,
+    "violenza_con_arma": 0.00019999999494757503,
+    "scippo": 9.999999747378752e-05
+   },
+   "allarme_violenza": false,
+   "warning_arma": false
+  },
+  {
+   "finestra": 1,
+   "inizio_secondi": 10.4,
+   "classe": "normale",
+   "probabilita": {
+    "normale": 0.8033999800682068,
+    "violenza": 0.19629999995231628,
+    "violenza_con_arma": 0.00019999999494757503,
+    "scippo": 9.999999747378752e-05
+   },
+   "allarme_violenza": false,
+   "warning_arma": false
+  },
+  {
+   "finestra": 2,
+   "inizio_secondi": 10.8,
+   "classe": "normale",
+   "probabilita": {
+    "normale": 0.7962999939918518,
+    "violenza": 0.20329999923706055,
+    "violenza_con_arma": 0.0003000000142492354,
+    "scippo": 9.999999747378752e-05
+   },
+   "allarme_violenza": false,
+   "warning_arma": false
+  },
+  {
+   "finestra": 3,
+   "inizio_secondi": 11.2,
+   "classe": "normale",
+   "probabilita": {
+    "normale": 0.8051999807357788,
+    "violenza": 0.19439999759197235,
+    "violenza_con_arma": 0.0003000000142492354,
+    "scippo": 9.999999747378752e-05
+   },
+   "allarme_violenza": false,
+   "warning_arma": false
+  },
+  {
+   "finestra": 4,
+   "inizio_secondi": 11.6,
+   "classe": "normale",
+   "probabilita": {
+    "normale": 0.7926999926567078,
+    "violenza": 0.2070000022649765,
+    "violenza_con_arma": 0.00019999999494757503,
+    "scippo": 9.999999747378752e-05
+   },
+   "allarme_violenza": false,
+   "warning_arma": false
+  },
+  {
+   "finestra": 5,
+   "inizio_secondi": 12.0,
+   "classe": "normale",
+   "probabilita": {
+    "normale": 0.7857000231742859,
+    "violenza": 0.21400000154972076,
+    "violenza_con_arma": 0.00019999999494757503,
+    "scippo": 9.999999747378752e-05
+   },
+   "allarme_violenza": false,
+   "warning_arma": false
+  },
+  {
+   "finestra": 6,
+   "inizio_secondi": 12.4,
+   "classe": "normale",
+   "probabilita": {
+    "normale": 0.8101000189781189,
+    "violenza": 0.18950000405311584,
+    "violenza_con_arma": 0.0003000000142492354,
+    "scippo": 9.999999747378752e-05
+   },
+   "allarme_violenza": false,
+   "warning_arma": false
+  },
+  {
+   "finestra": 7,
+   "inizio_secondi": 12.8,
+   "classe": "normale",
+   "probabilita": {
+    "normale": 0.8130999803543091,
+    "violenza": 0.18629999458789825,
+    "violenza_con_arma": 0.00039999998989515007,
+    "scippo": 9.999999747378752e-05
+   },
+   "allarme_violenza": false,
+   "warning_arma": false
+  },
+  {
+   "finestra": 8,
+   "inizio_secondi": 13.2,
+   "classe": "normale",
+   "probabilita": {
+    "normale": 0.8159999847412109,
+    "violenza": 0.1834000051021576,
+    "violenza_con_arma": 0.00039999998989515007,
+    "scippo": 0.00019999999494757503
+   },
+   "allarme_violenza": false,
+   "warning_arma": false
+  },
+  {
+   "finestra": 9,
+   "inizio_secondi": 13.6,
+   "classe": "normale",
+   "probabilita": {
+    "normale": 0.8080000281333923,
+    "violenza": 0.19140000641345978,
+    "violenza_con_arma": 0.00039999998989515007,
+    "scippo": 0.00019999999494757503
+   },
+   "allarme_violenza": false,
+   "warning_arma": false
+  },
+  {
+   "finestra": 10,
+   "inizio_secondi": 14.0,
+   "classe": "normale",
+   "probabilita": {
+    "normale": 0.7961000204086304,
+    "violenza": 0.20350000262260437,
+    "violenza_con_arma": 0.0003000000142492354,
+    "scippo": 9.999999747378752e-05
+   },
+   "allarme_violenza": false,
+   "warning_arma": false
+  },
+  {
+   "finestra": 11,
+   "inizio_secondi": 14.4,
+   "classe": "normale",
+   "probabilita": {
+    "normale": 0.8137000203132629,
+    "violenza": 0.1858000010251999,
+    "violenza_con_arma": 0.0003000000142492354,
+    "scippo": 9.999999747378752e-05
+   },
+   "allarme_violenza": false,
+   "warning_arma": false
+  },
+  {
+   "finestra": 12,
+   "inizio_secondi": 14.8,
+   "classe": "normale",
+   "probabilita": {
+    "normale": 0.8287000060081482,
+    "violenza": 0.1703999936580658,
+    "violenza_con_arma": 0.000699999975040555,
+    "scippo": 9.999999747378752e-05
+   },
+   "allarme_violenza": false,
+   "warning_arma": false
+  }
+ ]
+}

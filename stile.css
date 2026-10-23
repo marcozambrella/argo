@@ -27,7 +27,8 @@ code { font-family: var(--mono); font-size: .85em; }
   grid-template-rows: auto 1fr; align-items: center; gap: 24px; padding: 0 5vw 6vh;
   background: radial-gradient(ellipse 34% 40% at 27% 72%, color-mix(in srgb, var(--luce) 10%, transparent), transparent 75%), var(--cenere); }
 .barra { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 0; position: relative; z-index: 3; flex-wrap: wrap; }
-.sigla { font-weight: 800; font-size: 18px; }
+.sigla { font-weight: 800; font-size: 18px; display: inline-flex; align-items: center; gap: 8px; letter-spacing: .12em; }
+.logo-sigla { display: block; }
 .voci { display: flex; gap: 18px; flex-wrap: wrap; font: 500 15px var(--maiuscoletto); letter-spacing: .08em; }
 .voci a { color: var(--testo); text-decoration: none; opacity: .8; }
 .voci a:hover { opacity: 1; color: var(--luce); }
@@ -132,6 +133,7 @@ h3 { font-size: 14px; margin: 18px 0 8px; color: var(--tenue); font-weight: 700;
 #modello-3d { width: 100%; height: 76vh; display: block; background: radial-gradient(ellipse at center, var(--pietra-scura), var(--cenere) 75%); border: 1px solid var(--linea); }
 .comandi-scena { position: absolute; left: 12px; top: calc(12vh + 12px); display: flex; flex-wrap: wrap; gap: 6px; max-width: calc(100% - 24px); pointer-events: auto; }
 .comandi-scena[hidden] { display: none; }
+.comandi-scena .riga.scelta { border-color: var(--luce); color: var(--luce); }
 .comandi-scena label, .comandi-scena .riga { display: inline-flex; gap: 8px; align-items: center; font: 700 13px var(--maiuscoletto); letter-spacing: .05em; padding: 6px 10px; border: 1px solid var(--linea); background: color-mix(in srgb, var(--cenere) 88%, transparent); }
 .comandi-scena input[type="range"] { accent-color: var(--rosso); width: min(320px, 50vw); }
 .comandi-scena output { font-family: var(--mono); font-size: 13px; }
