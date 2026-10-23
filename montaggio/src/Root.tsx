@@ -1,5 +1,9 @@
 import { Composition, Folder } from "remotion";
 import { ArgoApertura } from "./argo/ArgoApertura";
+import { CARTELLI, CASI } from "./argo/scaletta";
+
+// durata: unità di 2 battiti a 86,1 bpm (35 frame), intro 1 + città 2 ciascuna + Argo 2 + casi 4 ciascuno, + 1,8 s di finale
+const FRAME_ARGO = 35 * (1 + 2 * CARTELLI.length + 2 + 4 * CASI.length) + 45;
 import { HeroCCTV } from "./HeroCCTV";
 import { ScenaAttesa } from "./scene/ScenaAttesa";
 import { ScenaClip } from "./scene/ScenaClip";
@@ -13,7 +17,7 @@ export const RemotionRoot: React.FC = () => {
         <Composition
           id="ArgoApertura"
           component={ArgoApertura}
-          durationInFrames={1200}
+          durationInFrames={FRAME_ARGO}
           fps={25}
           width={1920}
           height={1080}

@@ -35,8 +35,6 @@ export type CasoDUso = {
 export const CASI: readonly CasoDUso[] = [
   { nome: "metro_folla", inizio: 3, capitolo: "METRO", titolo: "FOLLA", adatta: "cover",
     credito: "VIDEO: Footage 4, CC BY · youtube.com/watch?v=tCYc33IfUWs" },
-  { nome: "dataset_scheletri_violenza_fight_0978", inizio: 4, capitolo: "RISSA", titolo: "SOLO SCHELETRI", adatta: "contain",
-    credito: "RWF-2000 (uso accademico): mostrati solo gli scheletri, senza il video" },
   { nome: "arma_rapina_milton", inizio: 1.5, capitolo: "RAPINA", titolo: "A MANO ARMATA", adatta: "contain",
     credito: "VIDEO: Queensland Police, CC BY · youtube.com/watch?v=A0eEbRnCfSA" },
   { nome: "scippo_strada_delhi", inizio: 12.5, capitolo: "STRADA", titolo: "SCIPPO E LITE", adatta: "contain",
@@ -44,3 +42,9 @@ export const CASI: readonly CasoDUso[] = [
   { nome: "strada_roma_vicolo", inizio: 4, capitolo: "ROMA", titolo: "VICOLO", adatta: "cover",
     credito: "VIDEO: Pexels #31524454" },
 ];
+
+// Da rimettere fra i casi quando il disco esterno con data/demo è collegato (runs/argo_casi_uso/lancia.sh):
+export const CASO_RISSA_SCHELETRI: CasoDUso = {
+  nome: "dataset_scheletri_violenza_fight_0978", inizio: 4, capitolo: "RISSA", titolo: "SOLO SCHELETRI", adatta: "contain",
+  credito: "RWF-2000 (uso accademico): mostrati solo gli scheletri, senza il video",
+};
