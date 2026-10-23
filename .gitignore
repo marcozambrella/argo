@@ -32,3 +32,6 @@ sessioni/
 # materiale di lavoro del video e delle immagini (solo locale, scelta di Marco): in git solo banner, 2 video e fonti in media/
 media/immagini/
 media/presentation/
+
+# il sito vive solo sul PC e sul branch gh-pages (scelta di Marco, 23/10): si pubblica con site/pubblica.sh
+/site/
