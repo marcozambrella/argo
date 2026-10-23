@@ -7,7 +7,7 @@ import { loadFont as caricaMegrim } from "@remotion/google-fonts/Megrim";
 import { loadFont as caricaArchivoBlack } from "@remotion/google-fonts/ArchivoBlack";
 import { loadFont as caricaPlexMono } from "@remotion/google-fonts/IBMPlexMono";
 import { AbsoluteFill, Easing, interpolate, Sequence, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
-import { CARTELLI, CASI, type Cartello, type CasoDUso } from "./scaletta";
+import { CARTELLI, CASI, CASI_VETRINA, SECONDI_VETRINA, type Cartello, type CasoDUso } from "./scaletta";
 import { decisioneAl, useEventi } from "./eventi";
 
 const { fontFamily: anton } = caricaAnton("normal", { weights: ["400"], subsets: ["latin"] });
@@ -209,10 +209,14 @@ const ScenaCaso: React.FC<{ readonly caso: CasoDUso; readonly numero: number }> 
   const { fps } = useVideoConfig();
   const secondi = caso.inizio + frame / fps;
   const entra = interpolate(frame, [0, 6], [-120, 0], { ...fisso, easing: Easing.out(Easing.cubic) });
+  // i video dei dataset sono scheletri su nero puro: stesso fondo, così non si vede il bordo del video
+  const fondo = caso.nome.startsWith("dataset_scheletri") ? "#000" : NERO;
   return (
-    <AbsoluteFill style={{ background: NERO }}>
+    <AbsoluteFill style={{ background: fondo }}>
       <Video src={staticFile(`argo/${caso.nome}.mp4`)} trimBefore={Math.round(caso.inizio * fps)} muted objectFit={caso.adatta}
-        style={{ position: "absolute", width: "100%", height: "100%", filter: "contrast(1.06) saturate(0.85)" }} />
+        style={{ position: "absolute", width: "100%", height: "100%", filter: "contrast(1.06) saturate(0.85)",
+          ...(caso.zoom ? { transformOrigin: "0 0", transform:   // il punto (cx, cy) finisce in (0,45; 0,55)
+            `translate(${(0.45 - caso.zoom.scala * caso.zoom.cx) * 100}%, ${(0.55 - caso.zoom.scala * caso.zoom.cy) * 100}%) scale(${caso.zoom.scala})` } : {}) }} />
       <div style={{ position: "absolute", left: 60, top: 60, translate: `${entra}px 0` }}>
         <div style={{ background: GIALLO, color: NERO, padding: "12px 28px 6px" }}>
           <div style={{ fontFamily: mono, fontWeight: 600, fontSize: 26, letterSpacing: 6 }}>
@@ -269,6 +273,24 @@ export const ArgoApertura: React.FC<PropsArgoApertura> = ({ brano, inizioBrano, 
         </Sequence>
       ))}
       <Sequence from={inizioFinale}><Finale /></Sequence>
+    </AbsoluteFill>
+  );
+};
+
+// ------------------------------------------------------------------------------------------------- vetrina (hero)
+/** Frame di ogni caso della vetrina. */
+export const frameVetrina = (fps: number): number[] => CASI_VETRINA.map((caso) => Math.round((caso.durata ?? SECONDI_VETRINA) * fps));
+
+export const ArgoVetrina: React.FC = () => {
+  const { fps } = useVideoConfig();
+  const durate = frameVetrina(fps);
+  return (
+    <AbsoluteFill style={{ background: NERO }}>
+      {CASI_VETRINA.map((caso, indice) => (
+        <Sequence key={caso.nome} from={durate.slice(0, indice).reduce((a, b) => a + b, 0)} durationInFrames={durate[indice]}>
+          <ScenaCaso caso={caso} numero={indice + 1} />
+        </Sequence>
+      ))}
     </AbsoluteFill>
   );
 };

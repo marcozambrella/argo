@@ -1,5 +1,5 @@
 import { Composition, Folder } from "remotion";
-import { ArgoApertura } from "./argo/ArgoApertura";
+import { ArgoApertura, ArgoVetrina, frameVetrina } from "./argo/ArgoApertura";
 import { ProvaFont } from "./argo/ProvaFont";
 import { CARTELLI, CASI } from "./argo/scaletta";
 
@@ -24,6 +24,9 @@ export const RemotionRoot: React.FC = () => {
           height={1080}
           defaultProps={{ brano: "clash_defiant.mp3", inizioBrano: 127.34, bpm: 86.1 }}
         />
+        {/* Hero del sito: tutti i casi d'uso, muta, in loop, i normali per ultimi */}
+        <Composition id="ArgoVetrina" component={ArgoVetrina} durationInFrames={frameVetrina(25).reduce((a, b) => a + b, 0)}
+          fps={25} width={1920} height={1080} />
         <Composition id="ProvaFont" component={ProvaFont} durationInFrames={1} fps={25} width={1920} height={1080} />
       </Folder>
       <Composition
