@@ -2,27 +2,27 @@
 
 // Testi da scrivere: ogni riquadro dice cosa va scritto e quanto è lungo. Nessuna parola è di Claude.
 export const SEGNAPOSTO = {
-  titoloHero: "[TESTO DI MARCO — titolo, ~6 parole]",
-  sottotitoloHero: "[TESTO DI MARCO — sottotitolo, ~20 parole]",
-  cosaHoVisto: "[TESTO DI MARCO — cosa hai visto nel tuo quartiere, con chi hai parlato, ~120 parole]",
-  introMappa: "[TESTO DI MARCO — introduzione ai dati su Roma, ~40 parole]",
-  problemaArmi: "[TESTO DI MARCO — il problema delle armi che le statistiche non vedono, ~80 parole]",
-  introPipeline: "[TESTO DI MARCO — introduzione a come funziona, ~40 parole]",
-  chiLoUserebbe: "[TESTO DI MARCO — chi lo userebbe e come arriverebbe l'allarme, ~80 parole]",
-  limiti: "[TESTO DI MARCO — cosa non fa ancora e cosa faresti dopo, ~80 parole]",
-  strumenti: "[TESTO DI MARCO — come avete usato gli strumenti e l'AI, ~40 parole]",
-  team: "[TESTO DI MARCO — team e scuola]",
+  titoloHero: "[MARCO'S TEXT — title, ~6 words]",
+  sottotitoloHero: "[MARCO'S TEXT — subtitle, ~20 words]",
+  cosaHoVisto: "[MARCO'S TEXT — what you saw in your neighbourhood, who you talked to, ~120 words]",
+  introMappa: "[MARCO'S TEXT — introduction to the Rome data, ~40 words]",
+  problemaArmi: "[MARCO'S TEXT — the weapons problem the statistics do not see, ~80 words]",
+  introPipeline: "[MARCO'S TEXT — introduction to how it works, ~40 words]",
+  chiLoUserebbe: "[MARCO'S TEXT — who would use it and how the alarm would reach them, ~80 words]",
+  limiti: "[MARCO'S TEXT — what it does not do yet and what you would do next, ~80 words]",
+  strumenti: "[MARCO'S TEXT — how you used the tools and AI, ~40 words]",
+  team: "[MARCO'S TEXT — team and school]",
 };
 
 export function riempiSegnaposto(radice = document) {
   for (const elemento of radice.querySelectorAll("[data-segnaposto]")) {
-    elemento.textContent = SEGNAPOSTO[elemento.dataset.segnaposto] ?? "[TESTO DI MARCO]";
+    elemento.textContent = SEGNAPOSTO[elemento.dataset.segnaposto] ?? "[MARCO'S TEXT]";
   }
 }
 
 export const coloreCss = (nome) => getComputedStyle(document.documentElement).getPropertyValue(nome).trim();
 export const movimentoRidotto = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
-export const formattaNumero = (numero) => Math.round(numero).toLocaleString("it-IT");
+export const formattaNumero = (numero) => Math.round(numero).toLocaleString("en-GB");
 
 // Generatore pseudo-casuale con seme (mulberry32): stesse posizioni a ogni caricamento
 export function casualeConSeme(seme) {
