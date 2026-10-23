@@ -5,8 +5,6 @@
 **ARGO watches CCTV cameras and recognises violence, armed violence and snatching, with a WEAPON WARNING when it sees a weapon in someone's hand.**
 The name comes from Argus, the hundred-eyed giant of Greek myth who never slept with all his eyes closed.
 
-> **[MARCO'S TEXT: why this project, 3–4 lines]**
-
 ARGO connects to cameras (RTSP, webcam, phone, video file) and shows on a web panel, on your own computer:
 - the **skeletons** of the people, with their tracking IDs;
 - the **weapons** it sees;
@@ -204,7 +202,5 @@ The code is in [`src/sicurezza/`](src/sicurezza): `dati.py`, `visione.py`, `mode
 - **Typeface of the ARGO name**: [Megrim](https://fonts.google.com/specimen/Megrim) (SIL Open Font License).
 
 ## Credits
-
-> **[MARCO'S TEXT: team, hackathon, thanks]**
 
 Built with the help of Claude (Anthropic) as a programming assistant. The choices are Marco's and are logged step by step.
