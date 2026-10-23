@@ -14,6 +14,8 @@ ARGO connects to cameras (RTSP, webcam, phone, video file) and shows on a web pa
 
 Everything it sees is also saved to files that other programs can read: keypoints, events, annotated video.
 
+**Videos**: [the opening](media/presentation/video/argo_opening.mp4) (48 s, ARGO on public clips) · [the camera panel](media/presentation/video/panel_demo.mp4) (54 s: a metro camera analysed with a delay, then the archive with a VIOLENCE ALARM on an armed robbery, a fight shown as skeletons only and a street snatching) · [the site](https://marcozambrella.github.io/argo/).
+
 | | |
 |---|---|
 | **Violence yes/no**, 30 s segments | **0.90** accuracy (95% CI 0.84–0.94), 11% false alarms |
