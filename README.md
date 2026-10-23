@@ -203,7 +203,7 @@ The code is in [`src/sicurezza/`](src/sicurezza): `dati.py`, `visione.py`, `mode
 - **Videos in the presentation and on the site**:
   - CC BY clips from YouTube and Pexels videos, with attributions in [`annotations/video_pubblici/attribuzioni.csv`](annotations/video_pubblici/attribuzioni.csv);
   - dataset videos only appear as skeletons on a black background.
-- **Music in the video**: "Clash Defiant" Kevin MacLeod (incompetech.com), licensed under Creative Commons: By Attribution 4.0 License.
+- **Music in the video**: "Clash Defiant" and "Echoes of Time v2" Kevin MacLeod (incompetech.com), licensed under Creative Commons: By Attribution 4.0 License.
 - **Image**: Peter Paul Rubens, *Juno and Argus* (c. 1610), public domain ([Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Peter_Paul_Rubens_-_Juno_and_Argus_-_WGA20280.jpg)).
 - **Typeface of the ARGO name**: [Megrim](https://fonts.google.com/specimen/Megrim) (SIL Open Font License).
 
