@@ -2,7 +2,7 @@
 "use strict";
 
 const CLASSI = ["normale", "violenza", "violenza_con_arma", "scippo"];
-const NOMI = { normale: "Normale", violenza: "Violenza", violenza_con_arma: "Violenza con arma", scippo: "Scippo" };
+const NOMI = { normale: "Normal", violenza: "Violence", violenza_con_arma: "Armed violence", scippo: "Snatching" };
 const $ = (selettore) => document.querySelector(selettore);
 
 const riquadri = new Map();          // nome telecamera → elementi del riquadro
@@ -27,14 +27,14 @@ for (const scheda of document.querySelectorAll(".schede button")) {
   });
 }
 
-setInterval(() => { $("#orologio").textContent = new Date().toLocaleTimeString("it-IT"); }, 1000);
+setInterval(() => { $("#orologio").textContent = new Date().toLocaleTimeString("en-GB"); }, 1000);
 
 // ---------------------------------------------------------------------------------------------------- telecamere
 function creaRiquadro(telecamera) {
   const nodo = $("#modello-riquadro").content.firstElementChild.cloneNode(true);
   nodo.querySelector(".nome-cam").textContent = telecamera.nome.toUpperCase();
   nodo.querySelector("img").src = `/flusso/${encodeURIComponent(telecamera.nome)}.mjpg`;
-  nodo.querySelector("img").alt = `Telecamera ${telecamera.nome}, ${telecamera.sorgente}`;
+  nodo.querySelector("img").alt = `Camera ${telecamera.nome}, ${telecamera.sorgente}`;
   const barre = nodo.querySelector(".barre");
   const elementiBarre = {};
   for (const classe of CLASSI) {
@@ -59,12 +59,12 @@ function creaRiquadro(telecamera) {
 }
 
 function testoBadge(telecamera) {
-  if (telecamera.fase === "errore") return ["ERRORE", "errore"];
-  if (telecamera.fase === "finita") return ["FINITA", ""];
-  if (telecamera.fase !== "in analisi") return ["IN AVVIO", ""];
-  if (!telecamera.dal_vivo) return ["REGISTRAZIONE", ""];
+  if (telecamera.fase === "errore") return ["ERROR", "errore"];
+  if (telecamera.fase === "finita") return ["ENDED", ""];
+  if (telecamera.fase !== "in analisi") return ["STARTING", ""];
+  if (!telecamera.dal_vivo) return ["RECORDING", ""];
   if (telecamera.ritardo_secondi !== null && telecamera.ritardo_secondi < 3) return ["LIVE", "live"];
-  return [`DIFFERITA −${minutiSecondi(telecamera.ritardo_secondi ?? 0)}`, "differita"];
+  return [`DELAYED −${minutiSecondi(telecamera.ritardo_secondi ?? 0)}`, "differita"];
 }
 
 function aggiornaRiquadro(riquadro, telecamera) {
@@ -75,10 +75,10 @@ function aggiornaRiquadro(riquadro, telecamera) {
   badge.className = `badge ${tipo}`;
   const misure = [];
   if (telecamera.frame_al_secondo) misure.push(`${telecamera.frame_al_secondo} fps`);
-  if (telecamera.secondi_analizzati) misure.push(`${minutiSecondi(telecamera.secondi_analizzati)} analizzati`);
+  if (telecamera.secondi_analizzati) misure.push(`${minutiSecondi(telecamera.secondi_analizzati)} analysed`);
   nodo.querySelector(".misure").textContent = misure.join(" · ");
   const evento = telecamera.ultimo_evento;
-  nodo.querySelector(".classe").textContent = evento?.classe ? NOMI[evento.classe] : (evento ? "Solo scheletri" : "—");
+  nodo.querySelector(".classe").textContent = evento?.classe ? NOMI[evento.classe] : (evento ? "Skeletons only" : "—");
   nodo.querySelector(".classe").style.color = evento?.classe && evento.classe !== "normale" ? `var(--c-${evento.classe})` : "";
   for (const classe of CLASSI) {
     const valore = evento?.probabilita ? evento.probabilita[classe] : 0;
@@ -99,23 +99,23 @@ async function aggiornaStato() {
     const stato = await (await fetch("/api/stato")).json();
     const modalita = $("#modalita");
     modalita.textContent = stato.modalita;
-    modalita.classList.toggle("scheletri", stato.modalita === "solo scheletri");
-    modalita.title = stato.modalita === "solo scheletri" ? "Pesi non trovati: uv run argo scarica-pesi" : "";
+    modalita.classList.toggle("scheletri", stato.modalita === "skeletons only");
+    modalita.title = stato.modalita === "skeletons only" ? "Weights not found: uv run argo scarica-pesi" : "";
     for (const telecamera of stato.telecamere) {
       aggiornaRiquadro(riquadri.get(telecamera.nome) || creaRiquadro(telecamera), telecamera);
     }
     if (!stato.telecamere.length && !$("#griglia .vuoto")) {
       const vuoto = document.createElement("p");
       vuoto.className = "vuoto";
-      vuoto.textContent = "Nessuna telecamera collegata: avvia con --telecamera nome=rtsp://… (o /dev/video0, o un file). Le analisi passate sono nell'Archivio.";
+      vuoto.textContent = "No camera connected: start with --telecamera name=rtsp://… (or /dev/video0, or a file). Past analyses are in the Archive.";
       $("#griglia").append(vuoto);
     }
     const inAllarme = stato.telecamere.filter((t) => t.ultimo_evento?.allarme_violenza).map((t) => t.nome.toUpperCase());
     const striscia = $("#striscia-allarme");
     striscia.hidden = !inAllarme.length;
-    striscia.textContent = inAllarme.length ? `ALLARME VIOLENZA — ${inAllarme.join(", ")}` : "";
+    striscia.textContent = inAllarme.length ? `VIOLENCE ALARM — ${inAllarme.join(", ")}` : "";
   } catch (errore) {
-    $("#modalita").textContent = "pannello non raggiungibile";
+    $("#modalita").textContent = "panel unreachable";
   }
 }
 
@@ -123,12 +123,12 @@ async function aggiornaStato() {
 // Solo i cambiamenti: allarme acceso/spento, warning arma, classe diversa dalla precedente.
 function cambiamenti(evento, precedente) {
   const voci = [];
-  if (evento.allarme_violenza && !precedente?.allarme_violenza) voci.push(["ALLARME VIOLENZA", "allarme"]);
-  if (!evento.allarme_violenza && precedente?.allarme_violenza) voci.push(["fine allarme", "fine"]);
-  if (evento.warning_arma && !precedente?.warning_arma) voci.push(["WARNING ARMA", "warning"]);
+  if (evento.allarme_violenza && !precedente?.allarme_violenza) voci.push(["VIOLENCE ALARM", "allarme"]);
+  if (!evento.allarme_violenza && precedente?.allarme_violenza) voci.push(["alarm over", "fine"]);
+  if (evento.warning_arma && !precedente?.warning_arma) voci.push(["WEAPON WARNING", "warning"]);
   if (evento.classe && evento.classe !== (precedente?.classe ?? "normale")) {
     const probabilita = evento.probabilita ? ` (${percento(evento.probabilita[evento.classe])})` : "";
-    voci.push([`classe: ${NOMI[evento.classe]}${probabilita}`, ""]);
+    voci.push([`class: ${NOMI[evento.classe]}${probabilita}`, ""]);
   }
   return voci;
 }
@@ -171,7 +171,7 @@ async function caricaArchivio() {
   if (!sessioni.length) {
     const vuoto = document.createElement("li");
     vuoto.className = "vuoto";
-    vuoto.textContent = "Nessuna analisi finita: le sessioni delle telecamere compaiono qui quando si fermano.";
+    vuoto.textContent = "No finished analysis yet: camera sessions appear here when they stop.";
     elenco.append(vuoto);
   }
   for (const sessione of sessioni) {
@@ -185,10 +185,10 @@ async function caricaArchivio() {
     dati.textContent = `${minutiSecondi(sessione.durata_secondi)}`;
     if (sessione.finestre_con_allarme) {
       const allarme = document.createElement("b");
-      allarme.textContent = " · allarme";
+      allarme.textContent = " · alarm";
       dati.append(allarme);
     }
-    if (sessione.finestre_con_warning) dati.append(" · arma");
+    if (sessione.finestre_con_warning) dati.append(" · weapon");
     bottone.append(nome, dati);
     bottone.addEventListener("click", () => {
       for (const altro of elenco.querySelectorAll("button")) altro.removeAttribute("aria-current");
@@ -238,7 +238,7 @@ async function apriSessione(sessione) {
     }
     precedente = evento;
   }
-  if (!registro.children.length) registro.append(vocePerRegistro("", "", "nessun allarme né arma: tutto normale", ""));
+  if (!registro.children.length) registro.append(vocePerRegistro("", "", "no alarm, no weapon: all normal", ""));
 }
 
 $("#striscia-classi").addEventListener("click", (clic) => {

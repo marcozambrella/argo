@@ -1437,7 +1437,7 @@ def test_server_del_pannello_stato_archivio_e_range(tmp_path):
     base = f"http://127.0.0.1:{server.server_address[1]}"
     try:
         stato = json.loads(urllib.request.urlopen(base + "/api/stato").read())
-        assert stato == {"modalita": "solo scheletri", "telecamere": []}
+        assert stato == {"modalita": "skeletons only", "telecamere": []}
         archivio = json.loads(urllib.request.urlopen(base + "/api/archivio").read())
         assert archivio[0]["nome"] == "clip" and archivio[0]["finestre_con_allarme"] == 1
         risposta = urllib.request.urlopen(urllib.request.Request(base + "/archivio/0/video_annotato.mp4",

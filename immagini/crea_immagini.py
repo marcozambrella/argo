@@ -2,7 +2,7 @@
 Rubens (1610 circa, pubblico dominio, Wikimedia Commons: File:Peter Paul Rubens - Juno and Argus - WGA20280.jpg).
 Solo la coda del pavone con gli occhi di Argo, in bicromia con la palette del sito (Pietra e cenere), più la scritta.
 
-Uso:  uv run python immagini/crea_immagini.py --font <cartella con AlegreyaSansSC-ExtraBold.ttf e IBMPlexMono-Regular.ttf>
+Uso:  uv run python immagini/crea_immagini.py --font <cartella con Megrim-Regular.ttf e IBMPlexMono-Regular.ttf>
 (font OFL da github.com/google/fonts). Il dipinto va in immagini/sorgenti/rubens_giunone_e_argo.jpg.
 """
 import argparse
@@ -50,16 +50,18 @@ def componi(larghezza: int, altezza: int, cartella_font: Path, uscita: Path) -> 
     tela = Image.composite(tela, Image.new("RGB", tela.size, CENERE), maschera)
     disegno = ImageDraw.Draw(tela)
     margine = int(altezza * 0.13)
-    titolo = ImageFont.truetype(str(cartella_font / "AlegreyaSansSC-ExtraBold.ttf"), int(altezza * 0.30))
+    # D63: ARGO in Megrim "grassetto 1" (contorno dello stesso colore, 0,021 della dimensione)
+    titolo = ImageFont.truetype(str(cartella_font / "Megrim-Regular.ttf"), int(altezza * 0.27))
     sottotitolo = ImageFont.truetype(str(cartella_font / "IBMPlexMono-Regular.ttf"), int(altezza * 0.045))
     occhio = logo(int(altezza * 0.22))
     tela.paste(occhio, (margine, int(altezza * 0.20)), occhio)
-    disegno.text((margine - int(altezza * 0.015), int(altezza * 0.40)), "ARGO", font=titolo, fill=TESTO)
-    righe = ["violenza · violenza con arma · scippi", "dalle telecamere CCTV, con WARNING ARMA"]
+    disegno.text((margine - int(altezza * 0.01), int(altezza * 0.44)), "ARGO", font=titolo, fill=TESTO,
+                 stroke_width=max(1, round(titolo.size * 0.021)), stroke_fill=TESTO)
+    righe = ["violence · armed violence · snatching", "from CCTV cameras, with a weapon warning"]   # D64: in inglese
     for numero, riga in enumerate(righe):
         disegno.text((margine, int(altezza * (0.76 + 0.07 * numero))), riga, font=sottotitolo, fill=TENUE)
     disegno.text((larghezza - margine // 2, altezza - int(altezza * 0.04)),
-                 "P. P. Rubens, Giunone e Argo (1610 c.), pubblico dominio", font=ImageFont.truetype(
+                 "P. P. Rubens, Juno and Argus (c. 1610), public domain", font=ImageFont.truetype(
                      str(cartella_font / "IBMPlexMono-Regular.ttf"), int(altezza * 0.022)), fill=TENUE, anchor="rd")
     tela.save(uscita, quality=90)
 

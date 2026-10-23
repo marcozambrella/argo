@@ -1,13 +1,13 @@
 <!doctype html>
-<html lang="it">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Argo · sala di controllo</title>
+  <title>ARGO · control room</title>
   <link rel="icon" href="/logo.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Alegreya+Sans+SC:wght@500;800&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Megrim&family=Alegreya+Sans+SC:wght@500;800&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/pannello.css">
 </head>
 <body>
@@ -15,11 +15,11 @@
     <div class="marchio">
       <img src="/logo.svg" alt="" width="42" height="42">
       <span class="nome">ARGO</span>
-      <span class="sotto">sala di controllo</span>
+      <span class="sotto">control room</span>
     </div>
-    <nav class="schede" role="tablist" aria-label="Viste">
-      <button role="tab" id="scheda-telecamere" aria-selected="true" aria-controls="vista-telecamere">Telecamere</button>
-      <button role="tab" id="scheda-archivio" aria-selected="false" aria-controls="vista-archivio">Archivio</button>
+    <nav class="schede" role="tablist" aria-label="Views">
+      <button role="tab" id="scheda-telecamere" aria-selected="true" aria-controls="vista-telecamere">Cameras</button>
+      <button role="tab" id="scheda-archivio" aria-selected="false" aria-controls="vista-archivio">Archive</button>
     </nav>
     <div class="stato-generale">
       <span id="modalita" class="etichetta">…</span>
@@ -33,34 +33,34 @@
     <section id="vista-telecamere" class="vista" role="tabpanel" aria-labelledby="scheda-telecamere">
       <div id="griglia" class="griglia"></div>
       <aside class="registro">
-        <h2>Registro eventi</h2>
+        <h2>Event log</h2>
         <ol id="registro" class="voci"></ol>
-        <p class="vuoto" id="registro-vuoto">Nessun evento: il registro mostra allarmi, armi e cambi di classe.</p>
+        <p class="vuoto" id="registro-vuoto">No events yet: the log shows alarms, weapons and class changes.</p>
       </aside>
     </section>
 
     <section id="vista-archivio" class="vista vista-archivio" role="tabpanel" aria-labelledby="scheda-archivio" hidden>
       <aside class="sessioni">
-        <h2>Sessioni</h2>
+        <h2>Sessions</h2>
         <ul id="sessioni"></ul>
       </aside>
       <div class="lettore">
         <video id="video-archivio" controls muted playsinline></video>
-        <div class="striscia-classi" id="striscia-classi" title="Classe decisa nel tempo">
+        <div class="striscia-classi" id="striscia-classi" title="Decided class over time">
           <div class="testina" id="testina"></div>
         </div>
         <ul class="legenda">
-          <li><i class="c-normale"></i>Normale</li>
-          <li><i class="c-violenza"></i>Violenza</li>
-          <li><i class="c-violenza_con_arma"></i>Violenza con arma</li>
-          <li><i class="c-scippo"></i>Scippo</li>
-          <li><i class="c-allarme"></i>Allarme</li>
-          <li><i class="c-warning"></i>Warning arma</li>
+          <li><i class="c-normale"></i>Normal</li>
+          <li><i class="c-violenza"></i>Violence</li>
+          <li><i class="c-violenza_con_arma"></i>Armed violence</li>
+          <li><i class="c-scippo"></i>Snatching</li>
+          <li><i class="c-allarme"></i>Alarm</li>
+          <li><i class="c-warning"></i>Weapon warning</li>
         </ul>
-        <p class="vuoto" id="archivio-vuoto">Scegli una sessione.</p>
+        <p class="vuoto" id="archivio-vuoto">Pick a session.</p>
       </div>
       <aside class="registro">
-        <h2>Eventi della sessione</h2>
+        <h2>Session events</h2>
         <ol id="registro-archivio" class="voci"></ol>
       </aside>
     </section>
@@ -76,7 +76,7 @@
       <footer>
         <div class="riga-classe"><span class="classe">—</span><span class="misure"></span></div>
         <div class="barre"></div>
-        <div class="spie"><span class="spia spia-warning">WARNING ARMA</span><span class="spia spia-allarme">ALLARME VIOLENZA</span></div>
+        <div class="spie"><span class="spia spia-warning">WEAPON WARNING</span><span class="spia spia-allarme">VIOLENCE ALARM</span></div>
         <p class="errore" hidden></p>
       </footer>
     </article>

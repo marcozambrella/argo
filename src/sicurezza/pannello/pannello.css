@@ -18,7 +18,7 @@ h2 { font: 800 15px/1 var(--maiuscoletto); letter-spacing: .1em; color: var(--ge
 .testata { display: flex; align-items: center; gap: 24px; padding: 10px 20px; border-bottom: 1px solid var(--linea);
   background: var(--pietra-scura); flex-wrap: wrap; }
 .marchio { display: flex; align-items: center; gap: 12px; }
-.marchio .nome { font: 800 26px/1 var(--maiuscoletto); letter-spacing: .22em; }
+.marchio .nome { font: 400 30px/1 "Megrim", var(--maiuscoletto); -webkit-text-stroke: .021em currentColor; letter-spacing: .18em; }   /* D63 */
 .marchio .sotto { font: 500 13px var(--maiuscoletto); letter-spacing: .12em; color: var(--tenue); }
 .schede { display: flex; gap: 4px; }
 .schede button { background: none; border: 1px solid transparent; padding: 6px 14px; cursor: pointer;

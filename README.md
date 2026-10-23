@@ -1,208 +1,210 @@
-<p align="center"><img src="immagini/argo_banner.jpg" alt="Argo: un occhio stilizzato e la scritta ARGO accanto alla coda di pavone con gli occhi di Argo, dal dipinto di Rubens" width="100%"></p>
+<p align="center"><img src="immagini/argo_banner.jpg" alt="ARGO: a stylised eye and the word ARGO next to a peacock tail full of eyes, from a painting by Rubens" width="100%"></p>
 
-# Argo
+# ARGO
 
-**Argo guarda le telecamere CCTV e riconosce violenza, violenza con arma e scippi, con un WARNING ARMA quando vede un'arma in mano.**
-Il nome viene dal gigante dai cento occhi del mito greco, che non dormiva mai con tutti gli occhi chiusi.
+**ARGO watches CCTV cameras and recognises violence, armed violence and snatching, with a WEAPON WARNING when it sees a weapon in someone's hand.**
+The name comes from Argus, the hundred-eyed giant of Greek myth who never slept with all his eyes closed.
 
-> **[TESTO DI MARCO: il perché del progetto, 3–4 righe]**
+> **[MARCO'S TEXT: why this project, 3–4 lines]**
 
-Argo si collega alle telecamere (RTSP, webcam, telefono, file) e mostra su un pannello web, sul tuo computer:
-- gli **scheletri** delle persone, con gli ID del tracking;
-- le **armi** viste;
-- la **classe della scena** con le probabilità;
-- il **WARNING ARMA** e l'**ALLARME VIOLENZA**;
-- un registro degli eventi e l'archivio delle registrazioni.
+ARGO connects to cameras (RTSP, webcam, phone, video file) and shows on a web panel, on your own computer:
+- the **skeletons** of the people, with their tracking IDs;
+- the **weapons** it sees;
+- the **class of the scene**, with probabilities;
+- the **WEAPON WARNING** and the **VIOLENCE ALARM**;
+- an event log and an archive of the recordings.
 
-Tutto quello che vede si salva anche in file leggibili da altri programmi (keypoint, eventi, video annotato).
+Everything it sees is also saved to files that other programs can read: keypoints, events, annotated video.
 
 | | |
 |---|---|
-| **Violenza sì/no**, pezzi da 30 s | **0,90** di accuratezza (IC 95% 0,84–0,94), 11% di falsi allarmi |
-| Violenza sì/no, pezzi da 10 s / per finestra di 1,6 s | 0,82 (IC 0,77–0,89) / 0,78 |
-| 4 classi (normale, violenza, violenza con arma, scippo) | macro-F1 0,40: la violenza con arma e lo scippo sono ancora deboli ([limiti](#limiti)) |
+| **Violence yes/no**, 30 s segments | **0.90** accuracy (95% CI 0.84–0.94), 11% false alarms |
+| Violence yes/no, 10 s segments / per 1.6 s window | 0.82 (CI 0.77–0.89) / 0.78 |
+| 4 classes (normal, violence, armed violence, snatching) | macro-F1 0.40: armed violence and snatching are still weak ([limits](#limits)) |
 
-## Come funziona
+## How it works
 
 ```
-telecamera ─ffmpeg 25 fps─► YOLO26s-pose + tracking ─► scheletri (17 punti per persona) ─┐
-                         └► detector armi YOLO26s ─► pistola / coltello / fucile ───────┤
-                                                                                         ▼
-              finestre di 40 frame (1,6 s), una ogni 10 frame ─► ST-GCN sulle relazioni tra persone e armi ─┐
-              gli stessi 40 frame ─► rete video R(2+1)D-18 fine-tunata sulla violenza ─────────────────────┤
-                                                                                                             ▼
-                      normale / violenza / violenza con arma / scippo ─► ALLARME VIOLENZA dopo 7 finestre violente di fila
-                      arma vicino al polso in ≥ 5 frame su 40 (confidenza ≥ 0,7) ─► WARNING ARMA
+camera ─ffmpeg 25 fps─► YOLO26s-pose + tracking ─► skeletons (17 points per person) ──┐
+                     └► YOLO26s weapon detector ─► pistol / knife / rifle ────────────┤
+                                                                                       ▼
+          40-frame windows (1.6 s), one every 10 frames ─► ST-GCN on people and weapons ─┐
+          the same 40 frames ─► R(2+1)D-18 video network fine-tuned on violence ─────────┤
+                                                                                          ▼
+              normal / violence / armed violence / snatching ─► VIOLENCE ALARM after 7 violent windows in a row
+              weapon near a wrist in ≥ 5 of 40 frames (confidence ≥ 0.7) ─► WEAPON WARNING
 ```
 
-1. **Scheletri.** YOLO26s-pose trova le persone e i loro 17 punti (testa, spalle, gomiti, polsi…). Il tracker (TrackTrack) dà a ogni persona un ID che resta nel tempo.
-2. **Armi.** Un detector YOLO26s addestrato su immagini CCTV di armi (Roboflow, US Mock Attack, Sohas) cerca pistole, coltelli e fucili. Un'arma conta solo se è vicina al polso di qualcuno: così le scarpe nere non diventano pistole.
-3. **Il movimento nel tempo.** Ogni 0,4 s gli ultimi 1,6 s di scheletri e armi diventano un grafo spazio-temporale. Una **ST-GCN** lo classifica nelle 4 classi.
-4. **I pixel.** Una rete video **R(2+1)D-18**, fine-tunata sulla violenza, guarda gli stessi 1,6 s. La sua probabilità di violenza si media con quella degli scheletri. Insieme passano da 0,78 a 0,90 sui pezzi da 30 s.
-5. **Allarmi.** L'ALLARME VIOLENZA scatta dopo 7 finestre violente di fila (2,8 s). È la regola scelta sul validation set e con cui sono misurati i numeri sopra.
+1. **Skeletons.** YOLO26s-pose finds people and their 17 keypoints: head, shoulders, elbows, wrists and so on. The tracker (TrackTrack) gives each person an ID that lasts over time.
+2. **Weapons.** A YOLO26s detector trained on CCTV weapon images (Roboflow, US Mock Attack, Sohas) looks for pistols, knives and rifles. A weapon only counts when it is near someone's wrist, so black shoes do not turn into pistols.
+3. **Movement over time.** Every 0.4 s the last 1.6 s of skeletons and weapons become a spatio-temporal graph. An **ST-GCN** sorts it into the 4 classes.
+4. **Pixels.** An **R(2+1)D-18** video network, fine-tuned on violence, looks at the same 1.6 s. Its violence probability is averaged with the skeletons' one. Together they go from 0.78 to 0.90 on 30 s segments.
+5. **Alarms.** The VIOLENCE ALARM fires after 7 violent windows in a row (2.8 s). That rule was chosen on the validation set, and it is the one the numbers above are measured with.
 
-Più dettagli nelle slide della consegna (*La journey del progetto* e *Il sistema in profondità*).
+More details in the hackathon slides (*The project journey* and *The system in depth*).
 
-## Installazione
+## Installation
 
-Serve **Python 3.12** con [uv](https://docs.astral.sh/uv/) e **ffmpeg**. Provato su Linux (Arch); le webcam come `/dev/video0` sono solo Linux.
+You need **Python 3.12** with [uv](https://docs.astral.sh/uv/) and **ffmpeg**. Tested on Linux (Arch). Webcams as `/dev/video0` are Linux only.
 
 ```bash
 git clone https://github.com/marcozambrella/argo.git
 cd argo
-uv sync                 # ambiente e dipendenze (torch CPU; con una GPU NVIDIA installa torch con CUDA)
-uv run argo scarica-pesi  # ~96 MB in pesi/, dalla Release v1.0 (solo ricerca, vedi sotto)
+uv sync                   # environment and dependencies (CPU torch; with an NVIDIA GPU install torch with CUDA)
+uv run argo scarica-pesi  # ~96 MB into pesi/, from Release v1.0 (research only, see below)
 ```
 
-Senza pesi Argo parte lo stesso in **modalità solo scheletri**: persone, keypoint e tracking, senza classi né allarmi.
-Il modello delle pose si scarica da solo la prima volta.
+Without the weights ARGO still starts, in **skeletons-only mode**: people, keypoints and tracking, with no classes or alarms. The pose model downloads itself the first time.
 
-## Avvio: il pannello con le telecamere
+## Start: the camera panel
 
 ```bash
-uv run argo pannello --telecamera ingresso=rtsp://utente:password@192.168.1.20:554/stream1
+uv run argo pannello --telecamera entrance=rtsp://user:password@192.168.1.20:554/stream1
 ```
 
-Apri **http://127.0.0.1:8765**. Le telecamere sono più di una ripetendo `--telecamera nome=sorgente`.
+Open **http://127.0.0.1:8765**. For more cameras, repeat `--telecamera name=source`.
 
-| Sorgente | Esempio |
+| Source | Example |
 |---|---|
-| Telecamera IP (RTSP) | `--telecamera ingresso=rtsp://utente:password@192.168.1.20:554/stream1`. L'indirizzo esatto dipende dalla marca: cercalo nel manuale come "RTSP URL" |
+| IP camera (RTSP) | `--telecamera entrance=rtsp://user:password@192.168.1.20:554/stream1`. The exact address depends on the brand: look for "RTSP URL" in the manual |
 | Webcam | `--telecamera webcam=/dev/video0` (Linux) |
-| Telefono come telecamera | un'app "IP Webcam" sul telefono, poi `--telecamera telefono=http://192.168.1.30:8080/video` |
-| Flusso http(s), HLS, MJPEG | `--telecamera strada=https://…/stream.m3u8` |
-| Video registrato | `--telecamera prova=video.mp4 --come-telecamera` (letto a velocità reale, come una telecamera) |
+| Phone as a camera | an "IP Webcam" app on the phone, then `--telecamera phone=http://192.168.1.30:8080/video` |
+| http(s), HLS, MJPEG stream | `--telecamera street=https://…/stream.m3u8` |
+| Recorded video | `--telecamera test=video.mp4 --come-telecamera` (read at real speed, like a camera) |
 
-Il pannello ha due viste:
-- **Telecamere**: immagine annotata, classe e probabilità, spie di WARNING ARMA e ALLARME VIOLENZA, e un registro con i cambiamenti (allarmi, armi, cambi di classe).
-- **Archivio**: ogni sessione si rivede con la striscia colorata delle classi nel tempo; cliccando un evento si salta a quel momento.
+The panel has two views:
+- **Cameras**: annotated image, class and probabilities, WEAPON WARNING and VIOLENCE ALARM lights, and a log of the changes (alarms, weapons, class changes).
+- **Archive**: every session can be replayed with a coloured strip of the classes over time; clicking an event jumps to that moment.
 
-Le password delle telecamere non compaiono mai nel pannello. Il pannello ascolta solo su questo computer: `--host 0.0.0.0` lo apre alla rete locale, ma senza password, quindi va usato solo su una rete di cui ti fidi.
+Camera passwords never appear in the panel. The panel only listens on this computer: `--host 0.0.0.0` opens it to the local network, but without a password, so only use it on a network you trust.
 
-**Velocità.**
-- **Con una GPU NVIDIA** Argo va in **tempo reale**: su una T4 l'estrazione di scheletri e armi viaggia a 83,6 frame/s.
-- **Su un portatile senza GPU** analizza circa 2 frame/s. Le telecamere vanno avanti a 25: Argo registra tutto a segmenti di 10 s e analizza dietro, **in differita**. Il ritardo è scritto sul riquadro della telecamera, e nessun frame si perde.
+**Speed.**
+- **With an NVIDIA GPU** ARGO runs in **real time**: on a T4 the skeleton and weapon extraction runs at 83.6 frames/s.
+- **On a laptop without a GPU** it analyses about 2 frames/s. Cameras run at 25, so ARGO records everything in 10 s segments and analyses behind them, **delayed**. The delay is shown on the camera tile, and no frame is lost.
 
-Per analizzare un solo video, senza pannello:
+To analyse a single video, without the panel:
 
 ```bash
 uv run argo analizza-video --video video.mp4 --classificatore pesi/stgcn.pt \
   --testa-pixel pesi/testa_violenza.npz --rete-pixel pesi/rete_violenza.pt \
-  --modello-armi pesi/armi_v3.pt --taratura pesi/taratura_warning.json --uscita uscita/
+  --modello-armi pesi/armi_v3.pt --taratura pesi/taratura_warning.json --uscita output/
 ```
 
-## Cosa esce dal computer
+## What comes out on your computer
 
-Ogni telecamera salva una sessione in `sessioni/<telecamera>/<data-ora>/`. `analizza-video` mette gli stessi file nella cartella `--uscita`.
+Each camera saves a session in `sessioni/<camera>/<date-time>/`. `analizza-video` writes the same files to its `--uscita` folder. (Code, folders and field names are in Italian.)
 
-| File | Contenuto |
+| File | Content |
 |---|---|
-| `video_annotato.mp4` | il video con scheletri, ID e armi disegnati |
-| `eventi.jsonl` / `eventi.json` | una riga ogni 0,4 s: `inizio_secondi`, `fine_secondi`, `classe`, `probabilita` delle 4 classi, `warning_arma`, `allarme_violenza` |
-| `keypoint.jsonl` | una riga per frame: per ogni persona `id`, `box` [x1, y1, x2, y2] e 17 `keypoint` [x, y, confidenza] in pixel (ordine COCO); per ogni arma `classe`, `confidenza`, `box` |
-| `probabilita.csv` | gli eventi in tabella |
-| `segmenti/` | la registrazione originale della telecamera, a pezzi da 10 s |
+| `video_annotato.mp4` | the video with skeletons, IDs and weapons drawn on it |
+| `eventi.jsonl` / `eventi.json` | one line every 0.4 s: `inizio_secondi` (start), `fine_secondi` (end), `classe` (class), `probabilita` of the 4 classes, `warning_arma` (weapon warning), `allarme_violenza` (violence alarm) |
+| `keypoint.jsonl` | one line per frame: for each person `id`, `box` [x1, y1, x2, y2] and 17 `keypoint` [x, y, confidence] in pixels (COCO order); for each weapon `classe`, `confidenza`, `box` |
+| `probabilita.csv` | the events as a table |
+| `segmenti/` | the original camera recording, in 10 s pieces |
 
-Esempio di riga di `eventi.jsonl`:
+Example line of `eventi.jsonl`:
 ```json
 {"inizio_secondi": 6.4, "fine_secondi": 8.0, "classe": "violenza", "warning_arma": false, "allarme_violenza": true,
  "probabilita": {"normale": 0.18, "violenza": 0.81, "violenza_con_arma": 0.0, "scippo": 0.003}}
 ```
 
-Gli stessi dati sono anche su un'**API JSON locale**, per collegare Argo ad altri sistemi:
-- `GET /api/stato`: telecamere, ritardo e ultima decisione;
-- `GET /api/eventi?dopo=N`: gli eventi nuovi;
-- `GET /flusso/<telecamera>.mjpg`: l'immagine annotata dal vivo.
+The same data is also on a **local JSON API**, to connect ARGO to other systems:
+- `GET /api/stato`: cameras, delay and latest decision;
+- `GET /api/eventi?dopo=N`: new events;
+- `GET /flusso/<camera>.mjpg`: the live annotated image.
 
-## Risultati
+## Results
 
-Misure sul **test set**: 15% dei video, divisi per video (mai lo stesso video in addestramento e in test).
+Measured on the **test set**: 15% of the videos, split by video (never the same video in training and test).
 
-**Violenza sì/no, il sistema consegnato (scheletri + rete video)**
+**Violence yes/no, the delivered system (skeletons + video network)**
 
-| Misura | Accuratezza | Recall | Falsi allarmi |
+| Measure | Accuracy | Recall | False alarms |
 |---|---|---|---|
-| per finestra (1,6 s) | 0,78 | 0,82 | 0,25 |
-| pezzi da 10 s (272) | 0,82 (IC 95% 0,77–0,89) | 0,80 | 0,16 |
-| **pezzi da 30 s (167)** | **0,90 (IC 95% 0,84–0,94)** | **0,90** | **0,11** |
+| per window (1.6 s) | 0.78 | 0.82 | 0.25 |
+| 10 s segments (272) | 0.82 (95% CI 0.77–0.89) | 0.80 | 0.16 |
+| **30 s segments (167)** | **0.90 (95% CI 0.84–0.94)** | **0.90** | **0.11** |
 
-Per sorgente, sui pezzi da 30 s:
+By source, on 30 s segments:
 
-| Sorgente | Accuratezza |
+| Source | Accuracy |
 |---|---|
-| RWF-2000 | 0,91 |
-| CCTV-Fights | 0,88 |
-| UCF-Crime | 0,82 |
-| SCVD | 1,00 |
+| RWF-2000 | 0.91 |
+| CCTV-Fights | 0.88 |
+| UCF-Crime | 0.82 |
+| SCVD | 1.00 |
 
-Solo scheletri: 0,78. Solo rete video: 0,84. Insieme: 0,90.
+Skeletons only: 0.78. Video network only: 0.84. Together: 0.90.
 
-**4 classi** (ST-GCN, 32.995 finestre di test)
+**4 classes** (ST-GCN, 32,995 test windows)
 
-| | Normale | Violenza | Violenza con arma | Scippo |
+| | Normal | Violence | Armed violence | Snatching |
 |---|---|---|---|---|
-| F1 | 0,77 | 0,58 | 0,10 | 0,13 |
-| recall | 0,81 | 0,51 | 0,18 | 0,15 |
+| F1 | 0.77 | 0.58 | 0.10 | 0.13 |
+| recall | 0.81 | 0.51 | 0.18 | 0.15 |
 
-Macro-F1 0,40. A confronto, il Graph-Transformer arriva a 0,29.
+Macro-F1 0.40. For comparison, the Graph-Transformer reaches 0.29.
 
-**Detector delle armi (v3)**, mAP50:
-- 0,77 sulle armi impugnate di Sohas;
-- 0,20 sulla CCTV vera di US Mock Attack (pistole 0,32, fucili 0,28, coltelli ~0);
-- 2 falsi allarmi su 326 foto di coltelli da cucina, telefoni e forbici.
+**Weapon detector (v3)**, mAP50:
+- 0.77 on the hand-held weapons of Sohas;
+- 0.20 on the real CCTV of US Mock Attack (pistols 0.32, rifles 0.28, knives ~0);
+- 2 false alarms on 326 photos of kitchen knives, phones and scissors.
 
-Un detector più grande (YOLO26m a 1280 px) vede più pistole nella CCTV vera (0,41), ma non migliora i coltelli ed è 3–4 volte più lento: è rimasto un esperimento.
+A bigger detector (YOLO26m at 1280 px) sees more pistols in real CCTV (0.41), but does not improve knives and is 3–4 times slower: it stayed an experiment.
 
-**Folle.** Nelle scene affollate mai viste (stazioni, campus, strade) l'ST-GCN dà la classe giusta nell'82–98% delle finestre.
+**Crowds.** In crowded scenes never seen in training (stations, campuses, streets) the ST-GCN gives the right class in 82–98% of the windows.
 
-## Limiti
+## Limits
 
-Li diciamo chiaramente:
-- **Violenza con arma e scippo sono deboli** (F1 0,10 e 0,13). Ci sono pochi esempi pubblici: circa 600 finestre di scippo contro decine di migliaia di normali.
-- **Il WARNING ARMA scatta di rado**: precisione 0,35, recall 0,03. È tarato per non dare falsi allarmi, ma così perde molte armi vere.
-- **I coltelli nella CCTV vera non si vedono quasi mai.** Sono piccoli, a bassa risoluzione e spesso coperti dalla mano.
-- **UCF-Crime è la sorgente più difficile**: video lunghi, di bassa qualità e con molte persone.
-- **Nelle folle molto dense** il tracking a volte perde le persone.
-- **Senza GPU** il pannello lavora in differita, non in tempo reale.
-- **Su video veri mai visti**, presi da YouTube con licenza CC BY:
-  - metro, scale mobili e vagoni restano sempre normali, senza falsi allarmi;
-  - una rapina armata viene riconosciuta come violenza, con ALLARME, ma senza WARNING ARMA;
-  - non vengono riconosciuti una rissa girata col telefono in verticale e due scippi veri (borsa strappata, scippo sotto la minaccia di una pistola).
+We say them plainly:
+- **Armed violence and snatching are weak** (F1 0.10 and 0.13). There are few public examples: about 600 snatching windows against tens of thousands of normal ones.
+- **The WEAPON WARNING rarely fires**: precision 0.35, recall 0.03. It is tuned not to raise false alarms, and so it misses many real weapons.
+- **Knives are almost never seen in real CCTV.** They are small, low resolution and often hidden by the hand.
+- **UCF-Crime is the hardest source**: long, low-quality videos with many people.
+- **In very dense crowds** tracking sometimes loses people.
+- **Without a GPU** the panel works delayed, not in real time.
+- **On real videos never seen before**, taken from YouTube under CC BY:
+  - metro, escalators and carriages always stay normal, with no false alarms;
+  - an armed robbery is recognised as violence, with an ALARM, but without a WEAPON WARNING;
+  - a street snatching where the victim fights back is recognised as violence, with an ALARM;
+  - a fight filmed vertically with a phone and two real snatchings (a bag pulled away, a snatching at gunpoint) are not recognised.
 
-  Le analisi sono in `runs/argo_casi_uso/`, le fonti in [`annotations/video_pubblici/attribuzioni.csv`](annotations/video_pubblici/attribuzioni.csv).
-- Argo è un **aiuto per chi guarda le telecamere**, non un sistema che decide da solo. Ogni allarme va controllato da una persona.
+  The analyses are in `runs/argo_casi_uso/`, the sources in [`annotations/video_pubblici/attribuzioni.csv`](annotations/video_pubblici/attribuzioni.csv).
+- ARGO is an **aid for whoever watches the cameras**, not a system that decides on its own. Every alarm must be checked by a person.
 
-## Addestrare da zero
+## Training from scratch
 
-Il calcolo pesante è stato fatto su **Kaggle** (2× T4). I notebook sono in [`kaggle/`](kaggle) e si lanciano con `kaggle/lancia.sh`. L'ordine è:
-1. detector delle armi: `detector_armi`;
-2. estrazione di scheletri e armi da tutti i video: `estrazione`, `aggiungi_armi`;
-3. finestre: `finestre`;
-4. addestramento delle 4 classi: `addestramento`;
-5. fine-tuning della rete video: `finetune_rgb`.
+The heavy computing was done on **Kaggle** (2× T4). The notebooks are in [`kaggle/`](kaggle) and are launched with `kaggle/lancia.sh`. The order is:
+1. weapon detector: `detector_armi`;
+2. skeleton and weapon extraction from all videos: `estrazione`, `aggiungi_armi`;
+3. windows: `finestre`;
+4. 4-class training: `addestramento`;
+5. video network fine-tuning: `finetune_rgb`.
 
-Il codice è in [`src/sicurezza/`](src/sicurezza): `dati.py`, `visione.py`, `modelli.py`, `demo.py` (con il pannello) e `strumenti.py`. I test si lanciano con `uv run pytest`.
+The code is in [`src/sicurezza/`](src/sicurezza): `dati.py`, `visione.py`, `modelli.py`, `demo.py` (with the panel) and `strumenti.py`. Run the tests with `uv run pytest`.
 
-## Dati, pesi e licenze
+## Data, weights and licences
 
-- **Codice**: [AGPL-3.0](LICENSE), come Ultralytics YOLO su cui si basa.
-- **Pesi** (Release v1.0): **solo ricerca e uso non commerciale**. Sono addestrati anche su dataset distribuiti solo per uso accademico.
-- **Dataset di addestramento** (non inclusi nel repo):
-  - [RWF-2000](https://github.com/mchengny/RWF2000-Video-Database-for-Violence-Detection): uso accademico, gli autori chiedono di non ridistribuirlo;
-  - CCTV-Fights (copia Kaggle [`mohamedtariki/vsd-cctv-fights`](https://www.kaggle.com/datasets/mohamedtariki/vsd-cctv-fights));
+- **Code**: [AGPL-3.0](LICENSE), like Ultralytics YOLO, on which it is built.
+- **Weights** (Release v1.0): **research and non-commercial use only**. They are also trained on datasets distributed for academic use only.
+- **Training datasets** (not included in the repo):
+  - [RWF-2000](https://github.com/mchengny/RWF2000-Video-Database-for-Violence-Detection): academic use, the authors ask not to redistribute it;
+  - CCTV-Fights (Kaggle copy [`mohamedtariki/vsd-cctv-fights`](https://www.kaggle.com/datasets/mohamedtariki/vsd-cctv-fights));
   - [SCVD](https://www.kaggle.com/datasets/toluwaniaremu/smartcity-cctv-violence-detection-dataset-scvd);
-  - [UCF-Crime](https://www.crcv.ucf.edu/projects/real-world/) con le annotazioni [UCA](https://github.com/Xuange923/Surveillance-Video-Understanding) (Apache 2.0, in `annotations/uca/`);
+  - [UCF-Crime](https://www.crcv.ucf.edu/projects/real-world/) with the [UCA](https://github.com/Xuange923/Surveillance-Video-Understanding) annotations (Apache 2.0, in `annotations/uca/`);
   - [Chain-snatching](https://www.kaggle.com/datasets/aniketsahu09/chain-snatching-cctv-dataset);
-  - video di scippi con licenza CC BY: attribuzioni in [`annotations/phone_snatching/attribuzioni.csv`](annotations/phone_snatching/attribuzioni.csv);
-  - per le scene di folla: MOT17/MOT20, HT21, ShanghaiTech, UBI-Fights;
-  - per le armi: Roboflow ([Master Weapon CCTV](https://universe.roboflow.com/beoeoa/master_weapon_cctv), [CCTV Weapon Detect](https://universe.roboflow.com/prospace-gi6e4/cctv-weapon-detect-4vuah)), US Mock Attack, Sohas.
-- **Video della presentazione e del sito**:
-  - clip CC BY da YouTube e video Pexels, con le attribuzioni in [`annotations/video_pubblici/attribuzioni.csv`](annotations/video_pubblici/attribuzioni.csv);
-  - i video dei dataset compaiono solo come scheletri su fondo nero.
-- **Immagine**: Peter Paul Rubens, *Giunone e Argo* (1610 circa), pubblico dominio ([Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Peter_Paul_Rubens_-_Juno_and_Argus_-_WGA20280.jpg)).
+  - CC BY snatching videos: attributions in [`annotations/phone_snatching/attribuzioni.csv`](annotations/phone_snatching/attribuzioni.csv);
+  - for crowd scenes: MOT17/MOT20, HT21, ShanghaiTech, UBI-Fights;
+  - for weapons: Roboflow ([Master Weapon CCTV](https://universe.roboflow.com/beoeoa/master_weapon_cctv), [CCTV Weapon Detect](https://universe.roboflow.com/prospace-gi6e4/cctv-weapon-detect-4vuah)), US Mock Attack, Sohas.
+- **Videos in the presentation and on the site**:
+  - CC BY clips from YouTube and Pexels videos, with attributions in [`annotations/video_pubblici/attribuzioni.csv`](annotations/video_pubblici/attribuzioni.csv);
+  - dataset videos only appear as skeletons on a black background.
+- **Music in the video**: "Clash Defiant" Kevin MacLeod (incompetech.com), licensed under Creative Commons: By Attribution 4.0 License.
+- **Image**: Peter Paul Rubens, *Juno and Argus* (c. 1610), public domain ([Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Peter_Paul_Rubens_-_Juno_and_Argus_-_WGA20280.jpg)).
+- **Typeface of the ARGO name**: [Megrim](https://fonts.google.com/specimen/Megrim) (SIL Open Font License).
 
-## Crediti
+## Credits
 
-> **[TESTO DI MARCO: squadra, hackathon, ringraziamenti]**
+> **[MARCO'S TEXT: team, hackathon, thanks]**
 
-Sviluppato con l'aiuto di Claude (Anthropic) come assistente di programmazione. Le scelte sono di Marco e sono annotate passo per passo.
+Built with the help of Claude (Anthropic) as a programming assistant. The choices are Marco's and are logged step by step.

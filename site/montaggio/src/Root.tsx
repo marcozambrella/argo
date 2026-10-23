@@ -1,5 +1,6 @@
 import { Composition, Folder } from "remotion";
 import { ArgoApertura } from "./argo/ArgoApertura";
+import { ProvaFont } from "./argo/ProvaFont";
 import { CARTELLI, CASI } from "./argo/scaletta";
 
 // durata: unità di 2 battiti a 86,1 bpm (35 frame), intro 1 + città 2 ciascuna + Argo 2 + casi 4 ciascuno, + 1,8 s di finale
@@ -23,6 +24,7 @@ export const RemotionRoot: React.FC = () => {
           height={1080}
           defaultProps={{ brano: "clash_defiant.mp3", inizioBrano: 127.34, bpm: 86.1 }}
         />
+        <Composition id="ProvaFont" component={ProvaFont} durationInFrames={1} fps={25} width={1920} height={1080} />
       </Folder>
       <Composition
         id="HeroCCTV"

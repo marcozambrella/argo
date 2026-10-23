@@ -118,11 +118,11 @@ STILE_OVERLAY = {  # SEGNAPOSTO DESIGN — colori in BGR
     "spessore": 2,
     "soglia_visibilita_keypoint": 0.3,
 }
-TESTI_CLASSI = {"normale": "Normale", "violenza": "Violenza", "violenza_con_arma": "Violenza con arma",
-                "scippo": "Scippo"}  # SEGNAPOSTO DESIGN
-TESTO_WARNING_ARMA = "WARNING ARMA"     # SEGNAPOSTO DESIGN
-TESTO_ALLARME_VIOLENZA = "ALLARME VIOLENZA"   # SEGNAPOSTO DESIGN
-NOMI_ARMI = ("pistola", "coltello", "fucile")
+TESTI_CLASSI = {"normale": "Normal", "violenza": "Violence", "violenza_con_arma": "Armed violence",
+                "scippo": "Snatching"}  # D64: testi visibili in inglese
+TESTO_WARNING_ARMA = "WEAPON WARNING"
+TESTO_ALLARME_VIOLENZA = "VIOLENCE ALARM"
+NOMI_ARMI = ("pistol", "knife", "rifle")
 
 
 def disegna_persone(frame: np.ndarray, persone: dict) -> None:
@@ -151,7 +151,7 @@ def disegna_armi(frame: np.ndarray, armi: dict, soglia_confidenza: float) -> Non
 
 
 def disegna_pannello(frame: np.ndarray, probabilita: np.ndarray | None, classe: str | None, warning: bool,
-                     allarme: bool = False, attesa: str = "in attesa di 40 frame...") -> None:
+                     allarme: bool = False, attesa: str = "waiting for 40 frames...") -> None:
     """Pannello in alto a sinistra: classe decisa, barre delle probabilità, WARNING ARMA, ALLARME VIOLENZA."""
     stile = STILE_OVERLAY
     larghezza_pannello, altezza_riga, inizio_barre = 330, 24, 160
@@ -377,7 +377,7 @@ class AnalisiFlusso:
             decisione = self.decisione
             disegna_pannello(annotato, decisione["probabilita"], decisione["classe"], decisione["warning"],
                              decisione["allarme"],
-                             "in attesa di 40 frame..." if self.classificatori else "solo scheletri: pesi non trovati")
+                             "waiting for 40 frames..." if self.classificatori else "skeletons only: weights not found")
         self.indice_frame += 1
         return annotato, persone, armi, evento
 
@@ -480,9 +480,9 @@ def comando_analizza_video(argomenti: list[str] | None = None) -> None:
     parser.add_argument("--media-mobile", type=int, default=MEDIA_MOBILE_ALLARME,
                         help="finestre su cui mediare le probabilità per l'allarme (D52)")
     parser.add_argument("--solo-scheletri", action="store_true",
-                        help="scheletri e armi su fondo nero, senza i pixel del video (video pubblici dei dataset, D58)")
+                        help="skeletons and weapons on black, without the video pixels")
     parser.add_argument("--senza-pannello", action="store_true",
-                        help="niente riquadro delle classi nel video (lo disegna chi monta, da eventi.json)")
+                        help="no class box in the video (draw it yourself from eventi.json)")
     argomenti = parser.parse_args(argomenti)
     taratura = json.loads(Path(argomenti.taratura).read_text())["migliore"] if argomenti.taratura else None
     eventi = analizza_video(argomenti.video, argomenti.classificatore, argomenti.uscita, argomenti.modello_armi,
@@ -792,8 +792,8 @@ def opzioni_dai_pesi(cartella: Path) -> dict:
 
 def descrivi_modalita(opzioni: dict) -> str:
     if "percorso_classificatore" not in opzioni:
-        return "solo scheletri"
-    return "sistema completo" if "percorso_rete_pixel" in opzioni else "scheletri + ST-GCN"
+        return "skeletons only"
+    return "full system" if "percorso_rete_pixel" in opzioni else "skeletons + ST-GCN"
 
 
 class Videoregistratore:
@@ -873,7 +873,7 @@ class Telecamera:
                     return segmenti[fatti]
                 if fatti == 0:
                     log = (self.cartella / "ffmpeg.log").read_text().strip()
-                    raise RuntimeError(f"nessun video dalla sorgente ({log.splitlines()[-1] if log else 'ffmpeg uscito'})")
+                    raise RuntimeError(f"no video from the source ({log.splitlines()[-1] if log else 'ffmpeg exited'})")
                 return None
             time.sleep(0.3)
         return None
@@ -1083,15 +1083,15 @@ def leggi_telecamera(testo: str, numero: int) -> tuple[str, str]:
 
 
 def comando_pannello(argomenti: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Argo: pannello web con le telecamere (D56)")
-    parser.add_argument("--telecamera", action="append", default=[], metavar="NOME=SORGENTE",
-                        help="rtsp://…, http(s)://…, /dev/video0 o un file; si ripete per più telecamere")
+    parser = argparse.ArgumentParser(description="ARGO: web panel for the cameras")
+    parser.add_argument("--telecamera", action="append", default=[], metavar="NAME=SOURCE",
+                        help="rtsp://…, http(s)://…, /dev/video0 or a file; repeat for more cameras")
     parser.add_argument("--come-telecamera", action="store_true",
-                        help="i file si leggono a velocità reale, come una telecamera (per le prove)")
-    parser.add_argument("--pesi", default="pesi", help="cartella dei pesi (`argo scarica-pesi`)")
-    parser.add_argument("--sessioni", default="sessioni", help="dove registrare video e analisi delle telecamere")
+                        help="read files at real speed, like a camera (for testing)")
+    parser.add_argument("--pesi", default="pesi", help="weights folder (`argo scarica-pesi`)")
+    parser.add_argument("--sessioni", default="sessioni", help="where to store camera recordings and analyses")
     parser.add_argument("--archivio", nargs="*", default=[],
-                        help="altre cartelle con analisi da rivedere (es. runs/demo_finale)")
+                        help="more folders with analyses to review (e.g. runs/demo_finale)")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--porta", type=int, default=8765)
     parser.add_argument("--dispositivo", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -1101,18 +1101,18 @@ def comando_pannello(argomenti: list[str] | None = None) -> None:
     opzioni = {**opzioni_dai_pesi(Path(argomenti.pesi)), "percorso_modello_pose": argomenti.modello_pose,
                "tracker": argomenti.tracker, "dispositivo": argomenti.dispositivo}
     if "percorso_classificatore" not in opzioni:
-        print(f"Pesi non trovati in {argomenti.pesi}/: modalità solo scheletri. Per il sistema completo: uv run argo scarica-pesi")
+        print(f"No weights in {argomenti.pesi}/: skeletons-only mode. For the full system: uv run argo scarica-pesi")
     if argomenti.host not in ("127.0.0.1", "localhost", "::1"):
-        print(f"ATTENZIONE: il pannello è raggiungibile da altri computer su {argomenti.host} (immagini delle telecamere, senza password)")
+        print(f"WARNING: the panel is reachable from other computers on {argomenti.host} (camera images, no password)")
     telecamere = [leggi_telecamera(testo, numero) for numero, testo in enumerate(argomenti.telecamera, start=1)]
     pannello = Pannello(telecamere, Path(argomenti.sessioni), [Path(c) for c in argomenti.archivio], opzioni,
                         argomenti.come_telecamera)
     server = crea_server(pannello, argomenti.host, argomenti.porta)
-    print(f"Argo ({pannello.modalita}, {argomenti.dispositivo}): http://{argomenti.host}:{argomenti.porta}  — Ctrl+C per fermare")
+    print(f"ARGO ({pannello.modalita}, {argomenti.dispositivo}): http://{argomenti.host}:{argomenti.porta}  — Ctrl+C to stop")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nFermo le telecamere e salvo le sessioni…")
+        print("\nStopping the cameras and saving the sessions…")
     finally:
         server.server_close()
         pannello.ferma()
@@ -1120,7 +1120,7 @@ def comando_pannello(argomenti: list[str] | None = None) -> None:
 
 def comando_scarica_pesi(argomenti: list[str] | None = None) -> None:
     from .strumenti import scarica_con_riprova
-    parser = argparse.ArgumentParser(description="Scarica i pesi del sistema consegnato dalla Release del repo (D60)")
+    parser = argparse.ArgumentParser(description="Download the trained weights from the repo Release")
     parser.add_argument("--cartella", default="pesi")
     parser.add_argument("--url", default=URL_PESI)
     argomenti = parser.parse_args(argomenti)
@@ -1128,13 +1128,13 @@ def comando_scarica_pesi(argomenti: list[str] | None = None) -> None:
     cartella.mkdir(parents=True, exist_ok=True)
     for nome in FILE_PESI.values():
         if (cartella / nome).exists():
-            print(f"{nome}: c'è già")
+            print(f"{nome}: already here")
             continue
-        print(f"{nome}: scarico…", flush=True)
+        print(f"{nome}: downloading…", flush=True)
         parziale = cartella / (nome + ".parziale")
         scarica_con_riprova(argomenti.url + nome, parziale)
         parziale.rename(cartella / nome)
-    print(f"Pesi in {cartella}/ (solo ricerca, uso non commerciale: vedi il README)")
+    print(f"Weights in {cartella}/ (research only, non-commercial use: see the README)")
 
 
 # ==============================================================================================================
@@ -1148,7 +1148,7 @@ COMANDI = {"pannello": comando_pannello, "scarica-pesi": comando_scarica_pesi,
 def main(argomenti: list[str] | None = None) -> None:
     argomenti = sys.argv[1:] if argomenti is None else argomenti
     if not argomenti or argomenti[0] not in COMANDI:
-        print("uso: argo {pannello,scarica-pesi,analizza-video} [opzioni]  (--help dopo il comando)")
+        print("usage: argo {pannello,scarica-pesi,analizza-video} [options]  (--help after the command)")
         raise SystemExit(2)
     COMANDI[argomenti[0]](argomenti[1:])
 
