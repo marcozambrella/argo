@@ -1,5 +1,6 @@
-// "Come funziona" in 3D: dal fotogramma vero al manichino, al grafo, alla pila di 40 frame, al Graph-Transformer
-// e al WARNING ARMA. I punti sono REALI (dati/esempio-finestra.json: YOLO26s-pose + TrackTrack su clip Pexels);
+// "Come funziona" in 3D: dal fotogramma vero al manichino, al grafo delle ossa (ST-GCN, il modello consegnato), alla
+// pila di 40 frame, alla convoluzione nel tempo e al WARNING ARMA. Gli archi tutti-con-tutti del Graph-Transformer
+// scartato restano come confronto, spenti all'inizio. I punti sono REALI (dati/esempio-finestra.json: YOLO26s-pose + TrackTrack su clip Pexels);
 // profondità del manichino, pesi dell'attenzione e arma sono ILLUSTRATIVI e lo dicono le didascalie.
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -196,13 +197,17 @@ export async function avviaModello() {
   // --- comandi della scena (archi, finestra, classi, warning) ---------------------------------------------------
   const comandi = document.getElementById("comandi-scena");
   const didascalia = document.getElementById("didascalia-scena");
-  const visibilitaArchi = Object.fromEntries(Object.keys(TIPI_ARCO).map((tipo) => [tipo, true]));
+  // due gruppi di archi: le ossa (il grafo della ST-GCN) e i collegamenti tutti-con-tutti del Graph-Transformer scartato
+  const GRUPPI_ARCO = { ossa: { nome: "Bones: the ST-GCN graph", tipi: ["ossa"] },
+    scartato: { nome: "All-to-all links: Graph-Transformer (discarded)", tipi: ["stessa", "diverse", "arma_polso", "arma_corpo"] } };
+  const gruppoDi = Object.fromEntries(Object.entries(GRUPPI_ARCO).flatMap(([gruppo, { tipi }]) => tipi.map((tipo) => [tipo, gruppo])));
+  const visibilitaArchi = { ossa: true, scartato: false };
   let frameConArma = 0;
   function mostraComandi(tipo) {
     comandi.replaceChildren();
     comandi.hidden = !tipo;
     if (tipo === "archi") {
-      for (const [chiave, arco] of Object.entries(TIPI_ARCO)) {
+      for (const [chiave, arco] of Object.entries(GRUPPI_ARCO)) {
         const etichetta = document.createElement("label");
         const casella = Object.assign(document.createElement("input"), { type: "checkbox", checked: visibilitaArchi[chiave] });
         casella.addEventListener("change", () => { visibilitaArchi[chiave] = casella.checked; });
@@ -290,7 +295,7 @@ export async function avviaModello() {
       gruppo.visible = gruppo.userData.opacita > 0.01;
       for (const materiale of materialiDi(gruppo)) materiale.opacity = gruppo.userData.opacita * (materiale.userData.opacitaBase ?? 1);
     }
-    for (const [tipo, linee] of Object.entries(lineeArco)) linee.visible = visibilitaArchi[tipo];
+    for (const [tipo, linee] of Object.entries(lineeArco)) linee.visible = visibilitaArchi[gruppoDi[tipo]];
     if (chiaveCorrente === "warning") {
       const allarme = frameConArma >= 5;
       materialeArma.color.set(allarme ? coloreCss("--rosso") : coloreCss("--tenue"));

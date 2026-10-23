@@ -79,7 +79,7 @@
   "VII": "Tuscolano"
  },
  "metodo_stima": {
-  "descrizione": "No public source gives crimes by district. Estimate: city total × district weight / sum of the weights; weight = resident population, +50% in the districts with red zones (I and VII). A choice of the team, not data.",
+  "descrizione": "No public source gives crimes by district. Estimate: city total × district weight / sum of the weights; weight = resident population, +50% in the districts with red zones (I and VII). A choice of the author, not data.",
   "peso_extra_zone_rosse": 0.5,
   "somma_pesi": 3033469.0
  },

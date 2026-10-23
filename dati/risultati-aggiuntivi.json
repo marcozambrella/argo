@@ -1,0 +1,47 @@
+{
+ "_nota": "Numeri che non escono da `strumenti esporta-risultati-sito`: presi dal DIARIO (D37, D48-D54) e da runs/argo_casi_uso/*/eventi.json (23/10/2026). Nessun numero inventato.",
+ "test": {
+  "quota_video": 0.15,
+  "fonti": ["RWF-2000", "CCTV-Fights", "UCF-Crime (UCA)", "SCVD", "Chain-snatching CCTV"]
+ },
+ "violenza_per_fonte_30s": [
+  { "fonte": "RWF-2000", "accuratezza": 0.91 },
+  { "fonte": "CCTV-Fights", "accuratezza": 0.88 },
+  { "fonte": "UCF-Crime", "accuratezza": 0.82 },
+  { "fonte": "SCVD", "accuratezza": 1.0 }
+ ],
+ "violenza_rami_30s": { "solo_scheletri": 0.78, "solo_rete_video": 0.84, "insieme": 0.90 },
+ "rilevatore_armi": {
+  "modello": "YOLO26s, fine-tuned, version 3",
+  "prove": [
+   { "prova": "Hand-held weapons (Sohas test)", "map50": 0.77 },
+   { "prova": "Real CCTV (US Mock Attack), all weapons", "map50": 0.20 },
+   { "prova": "Real CCTV: pistols", "map50": 0.32 },
+   { "prova": "Real CCTV: rifles", "map50": 0.28 },
+   { "prova": "Real CCTV: knives", "map50": 0.0 }
+  ],
+  "falsi_allarmi": { "allarmi": 2, "foto": 326, "cosa": "photos of kitchen knives, phones and scissors (COCO)" }
+ },
+ "folle_mai_viste": { "minimo": 0.82, "massimo": 0.98 },
+ "velocita": {
+  "estrazione_gpu_fps": 83.6,
+  "estrazione_gpu_dove": "pose + tracking, Kaggle 2× T4",
+  "pannello_cpu_fps": 1.5,
+  "pannello_cpu_dove": "full system on a laptop CPU (8 cores), delayed mode"
+ },
+ "prove_reali": [
+  { "scena": "Metro station, crowd", "vero": "normal", "finestre": 34, "risposta": "normal in 34 of 34 windows", "allarme": false, "esito": "giusto" },
+  { "scena": "Metro escalators", "vero": "normal", "finestre": 34, "risposta": "normal in 34 of 34", "allarme": false, "esito": "giusto" },
+  { "scena": "Metro carriage", "vero": "normal", "finestre": 34, "risposta": "normal in 32 of 34 (2 snatching)", "allarme": false, "esito": "giusto" },
+  { "scena": "Rome, alley (Pexels)", "vero": "normal", "finestre": 64, "risposta": "normal in 64 of 64", "allarme": false, "esito": "giusto" },
+  { "scena": "Rome, Largo Argentina (Pexels)", "vero": "normal", "finestre": 47, "risposta": "normal in 41 of 47 (6 snatching)", "allarme": false, "esito": "giusto" },
+  { "scena": "Armed robbery in a shop (Milton)", "vero": "armed violence", "finestre": 72, "risposta": "violence, no weapon warning", "allarme": true, "esito": "in parte" },
+  { "scena": "Street snatching, the victim fights back (Delhi)", "vero": "snatching + violence", "finestre": 46, "risposta": "violence in 25 windows", "allarme": true, "esito": "in parte" },
+  { "scena": "Armed robbery (Sunnybank)", "vero": "armed violence", "finestre": 72, "risposta": "violence in 6 windows, armed in 3", "allarme": false, "esito": "mancato" },
+  { "scena": "Armed robbery (Kallangur)", "vero": "armed violence", "finestre": 47, "risposta": "normal in 45 of 47", "allarme": false, "esito": "mancato" },
+  { "scena": "Man with a gun in an alley (Pexels)", "vero": "armed", "finestre": 64, "risposta": "armed violence in 6 windows, no warning", "allarme": false, "esito": "mancato" },
+  { "scena": "Fight on the metro, vertical phone video", "vero": "violence", "finestre": 59, "risposta": "normal in 56 of 59", "allarme": false, "esito": "mancato" },
+  { "scena": "Bag snatching", "vero": "snatching", "finestre": 44, "risposta": "normal in 41 of 44", "allarme": false, "esito": "mancato" },
+  { "scena": "Snatching at gunpoint", "vero": "snatching (armed)", "finestre": 64, "risposta": "normal in 64 of 64", "allarme": false, "esito": "mancato" }
+ ]
+}

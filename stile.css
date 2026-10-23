@@ -191,3 +191,50 @@ td, th { border-bottom: 1px solid var(--linea); padding: 8px; text-align: right;
 /* D63: il nome ARGO in Megrim, "grassetto" con un contorno dello stesso colore */
 .nome-argo, .sigla { font-family: "Megrim", "Alegreya Sans SC", sans-serif; -webkit-text-stroke: 0.021em currentColor; letter-spacing: .06em; }
 .hero h1.nome-argo { font-family: "Megrim", var(--maiuscoletto); font-weight: 400; letter-spacing: .04em; }
+
+/* Risultati (23/10): cifre, tabelle con barre a un colore, matrice di confusione */
+.risultati h3 { font: 800 26px/1.2 var(--maiuscoletto); margin: 46px 0 6px; color: var(--testo); }
+.risultati h4 { font: 800 17px/1.2 var(--maiuscoletto); margin: 22px 0 8px; color: var(--gesso); letter-spacing: .04em; }
+.risultati .spiega { max-width: 760px; color: var(--gesso); margin: 4px 0 14px; }
+.cifre { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 14px 0 18px; }
+.cifre p { margin: 0; background: var(--pietra-scura); border-top: 3px solid var(--linea); padding: 14px 16px; }
+.cifre.grandi p:first-child { border-top-color: var(--luce); }
+.cifre b { display: block; font: 800 40px/1 var(--maiuscoletto); color: var(--testo); font-variant-numeric: tabular-nums; }
+.cifre.grandi b { font-size: 52px; }
+.cifre span { display: block; margin-top: 6px; font-size: 15px; color: var(--tenue); line-height: 1.35; }
+.scorre { overflow-x: auto; }
+.tabella-dati { font-size: 15px; font-variant-numeric: tabular-nums; }
+.tabella-dati th, .tabella-dati td { padding: 8px 10px; border-bottom: 1px solid var(--linea); text-align: right; vertical-align: middle; }
+.tabella-dati thead th { color: var(--tenue); font-weight: 400; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; vertical-align: bottom; }
+.tabella-dati th[scope="row"] { text-align: left; font-weight: 400; color: var(--testo); }
+.tabella-dati small { color: var(--tenue); }
+.tabella-dati.compatta { max-width: 520px; }
+.cella-barra { min-width: 170px; white-space: nowrap; }
+.barretta { display: inline-block; width: 110px; height: 8px; background: var(--pietra); vertical-align: middle; margin-right: 8px; }
+.barretta > span { display: block; height: 100%; background: var(--luce); border-radius: 0 4px 4px 0; }
+.cella-barra .valore { display: inline-block; min-width: 3.2em; text-align: right; }
+.due-colonne { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px; align-items: start; }
+.matrice td.cella-calore { text-align: center; min-width: 92px; color: var(--testo);
+  background: color-mix(in srgb, var(--luce) calc(var(--quota) * 85%), var(--pietra-scura)); border: 2px solid var(--cenere); }
+.matrice td.scura { color: var(--cenere); font-weight: 700; }
+.matrice td.diagonale { outline: 1px solid var(--gesso); outline-offset: -3px; }
+.prove td:nth-child(5) { white-space: nowrap; }
+.prove .esito-mancato td:nth-child(5) { color: var(--rosso); }
+.prove .esito-giusto td:nth-child(5) { color: var(--luce); }
+.prove td:nth-child(4) { font-weight: 700; letter-spacing: .04em; }
+.glossario { margin-top: 40px; max-width: 760px; border-top: 1px solid var(--linea); padding-top: 12px; }
+.glossario dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 12px 0 0; }
+.glossario dt { color: var(--testo); font-weight: 700; } .glossario dd { margin: 0; color: var(--gesso); }
+@media (max-width: 600px) { .cifre.grandi b { font-size: 40px; } .glossario dl { grid-template-columns: 1fr; } .barretta { width: 70px; } }
+.prove td:nth-child(2), .prove td:nth-child(3) { text-align: left; }
+.prove thead th:nth-child(2), .prove thead th:nth-child(3) { text-align: left; }
+.tabella-dati thead th:first-child { text-align: left; }
+.scorre .tabella-dati:not(.compatta) { min-width: 640px; }
+@media (max-width: 600px) { .cifre { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cifre b, .cifre.grandi b { font-size: 32px; } .cifre span { font-size: 13px; } }
+
+/* Testi del sito (23/10, al posto dei riquadri segnaposto) */
+.titolo-hero { font: 800 clamp(24px, 2.6vw, 36px)/1.15 var(--maiuscoletto); color: var(--luce); margin: 0 0 10px; max-width: 560px; }
+.sottotitolo-hero { font-size: 20px; color: var(--gesso); margin: 0; max-width: 520px; }
+.testo-sezione { max-width: 760px; font-size: 20px; line-height: 1.6; color: var(--testo); margin: 10px 0 22px; }
+.testo-passo { margin: 6px 0 10px; color: var(--testo); font-size: 17px; line-height: 1.5; }
+.team { color: var(--gesso); margin: 22px 0 6px; }
