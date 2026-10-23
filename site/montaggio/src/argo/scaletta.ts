@@ -39,12 +39,9 @@ export const CASI: readonly CasoDUso[] = [
     credito: "VIDEO: Queensland Police, CC BY · youtube.com/watch?v=A0eEbRnCfSA" },
   { nome: "scippo_strada_delhi", inizio: 12.5, capitolo: "STREET", titolo: "SNATCH AND FIGHT", adatta: "contain",
     credito: "VIDEO: ETV Andhra Pradesh, CC BY · youtube.com/watch?v=O2Ex648qVdk" },
+  // Video del dataset (RWF-2000, solo uso accademico): si mostrano solo gli scheletri su fondo nero (D58)
+  { nome: "dataset_scheletri_violenza_fight_0978", inizio: 2, capitolo: "FIGHT", titolo: "SKELETONS ONLY", adatta: "contain",
+    credito: "RWF-2000 (academic use only): skeletons shown without the video" },
   { nome: "strada_roma_vicolo", inizio: 4, capitolo: "ROME", titolo: "ALLEY", adatta: "cover",
     credito: "VIDEO: Pexels #31524454" },
 ];
-
-// Da rimettere fra i casi quando il disco esterno con data/demo è collegato (runs/argo_casi_uso/lancia.sh):
-export const CASO_RISSA_SCHELETRI: CasoDUso = {
-  nome: "dataset_scheletri_violenza_fight_0978", inizio: 4, capitolo: "FIGHT", titolo: "SKELETONS ONLY", adatta: "contain",
-  credito: "RWF-2000 (academic use only): skeletons shown without the video",
-};
