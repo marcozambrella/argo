@@ -28,18 +28,18 @@ Everything it sees is also saved to files that other programs can read: keypoint
 camera ─ffmpeg 25 fps─► YOLO26s-pose + tracking ─► skeletons (17 points per person) ──┐
                      └► YOLO26s weapon detector ─► pistol / knife / rifle ────────────┤
                                                                                        ▼
-          40-frame windows (1.6 s), one every 10 frames ─► ST-GCN on people and weapons ─┐
-          the same 40 frames ─► R(2+1)D-18 video network fine-tuned on violence ─────────┤
-                                                                                          ▼
+          40-frame windows (1.6 s), one every 10 frames ─► ST-GCN on each skeleton + weapons ┐
+          the same 40 frames ─► R(2+1)D-18 video network fine-tuned on violence ─────────────┤
+                                                                                             ▼
               normal / violence / armed violence / snatching ─► VIOLENCE ALARM after 7 violent windows in a row
               weapon near a wrist in ≥ 5 of 40 frames (confidence ≥ 0.7) ─► WEAPON WARNING
 ```
 
 1. **Skeletons.** YOLO26s-pose finds people and their 17 keypoints: head, shoulders, elbows, wrists and so on. The tracker (TrackTrack) gives each person an ID that lasts over time.
 2. **Weapons.** A YOLO26s detector trained on CCTV weapon images (Roboflow, US Mock Attack, Sohas) looks for pistols, knives and rifles. A weapon only counts when it is near someone's wrist, so black shoes do not turn into pistols.
-3. **Movement over time.** Every 0.4 s the last 1.6 s of skeletons and weapons become a spatio-temporal graph. An **ST-GCN** sorts it into the 4 classes.
-4. **Pixels.** An **R(2+1)D-18** video network, fine-tuned on violence, looks at the same 1.6 s. Its violence probability is averaged with the skeletons' one. Together they go from 0.78 to 0.90 on 30 s segments.
-5. **Alarms.** The VIOLENCE ALARM fires after 7 violent windows in a row (2.8 s). That rule was chosen on the validation set, and it is the one the numbers above are measured with.
+3. **Movement over time.** Every 0.4 s the last 1.6 s of skeletons go to an **ST-GCN**: 10 blocks, each one a convolution on the graph of the bones (every joint gathers information from the joints it is linked to) and then a convolution over time (every joint looks at itself in 9 nearby frames). Each person goes through the same network and the most suspicious one counts; the weapons seen by the detector join through a small separate branch just before the decision. Out come the probabilities of the 4 classes. A Graph-Transformer that links every joint and weapon to all the others was tested too, and discarded (macro-F1 0.29 against 0.40).
+4. **Pixels.** An **R(2+1)D-18** video network, fine-tuned on violence, looks at the same 1.6 s. It only answers violence yes/no: its probability is averaged with the skeletons' one, and the skeletons then pick the class (violence or armed violence; normal or snatching). Together they go from 0.78 to 0.90 on 30 s segments.
+5. **Alarms.** The VIOLENCE ALARM fires after 7 violent windows in a row (they cover 4 s of video). That rule was chosen on the validation set, and it is the one the numbers above are measured with.
 
 More details in the hackathon slides (*The project journey* and *The system in depth*).
 
