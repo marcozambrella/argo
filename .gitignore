@@ -29,7 +29,6 @@ pesi/testa_violenza.npz
 pesi/taratura_warning.json
 # registrazioni e analisi del pannello
 sessioni/
-# dipinto originale (7 MB, pubblico dominio): si riscarica da Wikimedia Commons, vedi media/immagini/crea_immagini.py
-media/immagini/sorgenti/
-# musica candidata del video (CC BY, si riscarica)
-media/presentation/musica/
+# materiale di lavoro del video e delle immagini (solo locale, scelta di Marco): in git solo banner, 2 video e fonti in media/
+media/immagini/
+media/presentation/

@@ -1,4 +1,4 @@
-<p align="center"><img src="media/immagini/argo_banner.jpg" alt="ARGO: a stylised eye and the word ARGO next to a peacock tail full of eyes, from a painting by Rubens" width="100%"></p>
+<p align="center"><img src="media/argo_banner.jpg" alt="ARGO: a stylised eye and the word ARGO next to a peacock tail full of eyes, from a painting by Rubens" width="100%"></p>
 
 # ARGO
 
@@ -14,7 +14,7 @@ ARGO connects to cameras (RTSP, webcam, phone, video file) and shows on a web pa
 
 Everything it sees is also saved to files that other programs can read: keypoints, events, annotated video.
 
-**Videos**: [the opening](media/presentation/video/argo_opening.mp4) (48 s, ARGO on public clips) · [the camera panel](media/presentation/video/panel_demo.mp4) (54 s: a metro camera analysed with a delay, then the archive with a VIOLENCE ALARM on an armed robbery, a fight shown as skeletons only and a street snatching) · [the site](https://marcozambrella.github.io/argo/).
+**Videos**: [the opening](media/argo_opening.mp4) (48 s, ARGO on public clips) · [the camera panel](media/panel_demo.mp4) (54 s: a metro camera analysed with a delay, then the archive with a VIOLENCE ALARM on an armed robbery, a fight shown as skeletons only and a street snatching) · [the site](https://marcozambrella.github.io/argo/).
 
 | | |
 |---|---|
