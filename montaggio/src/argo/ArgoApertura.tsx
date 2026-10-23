@@ -3,6 +3,7 @@
 // 152 bpm; con brani più lenti si prendono meno battiti per unità).
 import { Audio, Video } from "@remotion/media";
 import { loadFont as caricaAnton } from "@remotion/google-fonts/Anton";
+import { loadFont as caricaMegrim } from "@remotion/google-fonts/Megrim";
 import { loadFont as caricaArchivoBlack } from "@remotion/google-fonts/ArchivoBlack";
 import { loadFont as caricaPlexMono } from "@remotion/google-fonts/IBMPlexMono";
 import { AbsoluteFill, Easing, interpolate, Sequence, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
@@ -10,6 +11,9 @@ import { CARTELLI, CASI, type Cartello, type CasoDUso } from "./scaletta";
 import { decisioneAl, useEventi } from "./eventi";
 
 const { fontFamily: anton } = caricaAnton("normal", { weights: ["400"], subsets: ["latin"] });
+// D63: ARGO e le città in Megrim "grassetto 1" (Megrim ha un solo peso: contorno dello stesso colore, 0,021 em)
+const { fontFamily: megrim } = caricaMegrim();
+const grassetto = (colore: string) => ({ fontFamily: megrim, WebkitTextStroke: `0.021em ${colore}` });
 const { fontFamily: archivo } = caricaArchivoBlack("normal", { weights: ["400"], subsets: ["latin"] });
 const { fontFamily: mono } = caricaPlexMono("normal", { weights: ["400", "600"], subsets: ["latin"] });
 
@@ -18,8 +22,8 @@ const NERO = "#0b0b0b";
 const BIANCO = "#f4f1ea";
 const ROSSO = "#ff2d1a";
 const fisso = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
-const NOMI_CLASSI: Record<string, string> = {
-  normale: "NORMALE", violenza: "VIOLENZA", violenza_con_arma: "VIOLENZA CON ARMA", scippo: "SCIPPO",
+const NOMI_CLASSI: Record<string, string> = {   // D64: tutto in inglese
+  normale: "NORMAL", violenza: "VIOLENCE", violenza_con_arma: "ARMED VIOLENCE", scippo: "SNATCHING",
 };
 
 export type PropsArgoApertura = {
@@ -55,11 +59,11 @@ const OcchioArgo: React.FC<{ readonly lato: number; readonly colore: string; rea
 );
 
 const numeroCheSale = (numero: string, avanzamento: number): string => {
-  const cifre = numero.replace(/\./g, "");
+  const cifre = numero.replace(/[.,]/g, "");
   const trovato = cifre.match(/^(\d+)(%?)$/);
   if (!trovato) return numero;                       // "1ª", "3ª": si mostra com'è
   const valore = Math.round(Number(trovato[1]) * avanzamento);
-  return `${String(valore).replace(/\B(?=(\d{3})+(?!\d))/g, ".")}${trovato[2]}`;   // 2.160 anche a 4 cifre
+  return `${String(valore).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}${trovato[2]}`;   // in inglese: 71,867
 };
 
 // ------------------------------------------------------------------------------------------------- scene
@@ -76,7 +80,7 @@ const Intro: React.FC = () => {
       </div>
       <div style={{ position: "absolute", right: 80, top: 70, fontSize: 34, letterSpacing: 4 }}>{codice}</div>
       <div style={{ position: "absolute", left: 80, bottom: 80, fontSize: 30, letterSpacing: 6, opacity: 0.7 }}>
-        OGNI GIORNO, IN OGNI CITTÀ
+        EVERY DAY, IN EVERY CITY
       </div>
     </AbsoluteFill>
   );
@@ -106,7 +110,7 @@ const ScenaCitta: React.FC<{ readonly cartello: Cartello; readonly indice: numbe
         display: "flex", flexDirection: "column" }}>
         {CARTELLI.map((altro, numero) => (
           <div key={altro.citta} style={{ flex: 1, display: "flex", alignItems: "center", padding: "0 28px",
-            fontFamily: anton, fontSize: 46, letterSpacing: 2,
+            fontFamily: megrim, WebkitTextStroke: "0.021em currentColor", fontSize: 40, letterSpacing: 2,
             background: numero === indice ? inchiostro : "transparent", color: numero === indice ? fondo : inchiostro,
             borderBottom: numero < CARTELLI.length - 1 ? `6px solid ${inchiostro}` : "none",
             opacity: numero <= indice ? 1 : 0.35 }}>
@@ -114,8 +118,8 @@ const ScenaCitta: React.FC<{ readonly cartello: Cartello; readonly indice: numbe
           </div>
         ))}
       </div>
-      <div style={{ position: "absolute", left: 70, top: 110, fontFamily: anton, fontSize: 300, lineHeight: 0.92,
-        letterSpacing: -2, transform: `scale(${colpo})`, transformOrigin: "left top", whiteSpace: "nowrap" }}>
+      <div style={{ position: "absolute", left: 70, top: 120, ...grassetto(testo), fontSize: 250, lineHeight: 0.95,
+        letterSpacing: 6, transform: `scale(${colpo})`, transformOrigin: "left top", whiteSpace: "nowrap" }}>
         {cartello.citta}
       </div>
       <div style={{ position: "absolute", left: 76, top: 430, fontFamily: anton, fontSize: 250, lineHeight: 1,
@@ -129,7 +133,7 @@ const ScenaCitta: React.FC<{ readonly cartello: Cartello; readonly indice: numbe
       </div>
       <div style={{ position: "absolute", left: 80, bottom: 46, fontFamily: mono, fontSize: 24, letterSpacing: 1,
         opacity: entra(unita * 0.9) * 0.85 }}>
-        FONTE: {cartello.fonte}
+        SOURCE: {cartello.fonte}
       </div>
       <Sequence durationInFrames={4}><Lampo /></Sequence>
     </AbsoluteFill>
@@ -143,13 +147,13 @@ const RivelaArgo: React.FC<{ readonly unita: number }> = ({ unita }) => {
   return (
     <AbsoluteFill style={{ background: NERO, alignItems: "center", justifyContent: "center" }}>
       <OcchioArgo lato={330} colore={BIANCO} apertura={apertura} />
-      <div style={{ fontFamily: anton, fontSize: 330, lineHeight: 0.9, color: GIALLO, letterSpacing: 40, marginTop: -10,
+      <div style={{ ...grassetto(GIALLO), fontSize: 330, lineHeight: 0.9, color: GIALLO, letterSpacing: 40, marginTop: -10,
         opacity: scritta, transform: `scale(${interpolate(scritta, [0, 1], [1.12, 1])})` }}>
         ARGO
       </div>
       <div style={{ fontFamily: mono, fontWeight: 600, fontSize: 34, letterSpacing: 8, color: BIANCO, marginTop: 30,
         opacity: interpolate(frame, [unita * 1.0, unita * 1.2], [0, 1], fisso) }}>
-        VIOLENZA · ARMI · SCIPPI — DALLE TELECAMERE CCTV
+        VIOLENCE · WEAPONS · SNATCHING — FROM CCTV CAMERAS
       </div>
       <Sequence durationInFrames={4}><Lampo /></Sequence>
     </AbsoluteFill>
@@ -165,18 +169,18 @@ const PannelloDecisione: React.FC<{ readonly nome: string; readonly secondi: num
     <div style={{ position: "absolute", right: 60, top: 60, width: 560, background: "rgba(11,11,11,0.9)",
       border: `8px solid ${GIALLO}`, padding: "26px 30px", color: BIANCO, fontFamily: mono }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 24, letterSpacing: 5, fontWeight: 600, color: GIALLO }}>
-        <OcchioArgo lato={44} colore={GIALLO} /> ARGO · ANALISI
+        <OcchioArgo lato={44} colore={GIALLO} /> ARGO · ANALYSIS
       </div>
       <div style={{ fontFamily: anton, fontSize: 76, lineHeight: 1.05, marginTop: 14,
         color: decisione?.classe && decisione.classe !== "normale" ? (decisione.classe === "violenza_con_arma" ? ROSSO : GIALLO) : BIANCO }}>
-        {decisione?.classe ? NOMI_CLASSI[decisione.classe] : "IN ATTESA…"}
+        {decisione?.classe ? NOMI_CLASSI[decisione.classe] : "WAITING…"}
       </div>
       {["normale", "violenza", "violenza_con_arma", "scippo"].map((classe) => {
         const valore = decisione?.probabilita?.[classe] ?? 0;
         return (
           <div key={classe} style={{ display: "grid", gridTemplateColumns: "200px 1fr 80px", alignItems: "center", gap: 12,
             fontSize: 22, marginTop: 10 }}>
-            <span>{NOMI_CLASSI[classe].replace("VIOLENZA CON ARMA", "CON ARMA")}</span>
+            <span>{NOMI_CLASSI[classe].replace("ARMED VIOLENCE", "ARMED")}</span>
             <span style={{ height: 16, background: "#2a2a2a" }}>
               <span style={{ display: "block", height: "100%", width: `${valore * 100}%`, background: GIALLO }} />
             </span>
@@ -185,15 +189,15 @@ const PannelloDecisione: React.FC<{ readonly nome: string; readonly secondi: num
         );
       })}
       <div style={{ display: "flex", gap: 12, marginTop: 22 }}>
-        <div style={{ flex: 1, padding: "10px 0", textAlign: "center", fontFamily: anton, fontSize: 34, letterSpacing: 2,
+        <div style={{ flex: 1, padding: "10px 0", textAlign: "center", fontFamily: anton, fontSize: 28, letterSpacing: 1, whiteSpace: "nowrap",
           background: decisione?.warning_arma && lampeggio ? GIALLO : "transparent", color: decisione?.warning_arma ? NERO : "#555",
           border: `4px solid ${decisione?.warning_arma ? GIALLO : "#444"}` }}>
-          WARNING ARMA
+          WEAPON WARNING
         </div>
-        <div style={{ flex: 1, padding: "10px 0", textAlign: "center", fontFamily: anton, fontSize: 34, letterSpacing: 2,
+        <div style={{ flex: 1, padding: "10px 0", textAlign: "center", fontFamily: anton, fontSize: 28, letterSpacing: 1, whiteSpace: "nowrap",
           background: decisione?.allarme_violenza && lampeggio ? ROSSO : "transparent", color: decisione?.allarme_violenza ? BIANCO : "#555",
           border: `4px solid ${decisione?.allarme_violenza ? ROSSO : "#444"}` }}>
-          ALLARME
+          ALARM
         </div>
       </div>
     </div>
@@ -212,7 +216,7 @@ const ScenaCaso: React.FC<{ readonly caso: CasoDUso; readonly numero: number }> 
       <div style={{ position: "absolute", left: 60, top: 60, translate: `${entra}px 0` }}>
         <div style={{ background: GIALLO, color: NERO, padding: "12px 28px 6px" }}>
           <div style={{ fontFamily: mono, fontWeight: 600, fontSize: 26, letterSpacing: 6 }}>
-            CASO D&apos;USO {String(numero).padStart(2, "0")}
+            USE CASE {String(numero).padStart(2, "0")}
           </div>
           <div style={{ fontFamily: anton, fontSize: 150, lineHeight: 1 }}>{caso.capitolo}</div>
         </div>
@@ -236,7 +240,7 @@ const Finale: React.FC = () => {
   return (
     <AbsoluteFill style={{ background: NERO, alignItems: "center", justifyContent: "center", gap: 20 }}>
       <OcchioArgo lato={160} colore={BIANCO} apertura={interpolate(frame, [0, 6], [1, 0.08], fisso)} />
-      <div style={{ fontFamily: anton, fontSize: 120, letterSpacing: 24, color: GIALLO }}>ARGO</div>
+      <div style={{ ...grassetto(GIALLO), fontSize: 120, letterSpacing: 24, color: GIALLO }}>ARGO</div>
     </AbsoluteFill>
   );
 };

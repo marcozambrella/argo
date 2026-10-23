@@ -11,16 +11,16 @@ export type Cartello = {
 };
 
 export const CARTELLI: readonly Cartello[] = [
-  { citta: "LONDRA", numero: "71.867", testo: "telefoni rubati o strappati di mano nel 2025",
-    fonte: "Metropolitan Police, via London City Hall (ottobre 2026)" },
-  { citta: "PARIGI", numero: "11.095", testo: "vittime di violenze fisiche fuori casa nel 2025",
-    fonte: "SSMSI, Ministero dell'Interno francese: base dipartimentale 2025, Parigi" },
-  { citta: "NEW YORK", numero: "688", testo: "sparatorie nel 2025",
-    fonte: "NYPD, gennaio 2026" },
-  { citta: "MILANO", numero: "2.213", testo: "scippi denunciati nel 2025",
-    fonte: "Viminale, nell'Indice della criminalità 2026 del Sole 24 Ore" },
-  { citta: "ROMA", numero: "4.659", testo: "denunce per lesioni volontarie nel 2025",
-    fonte: "Viminale, nell'Indice della criminalità 2026 del Sole 24 Ore" },
+  { citta: "LONDON", numero: "71,867", testo: "phones stolen or snatched in 2025",
+    fonte: "Metropolitan Police, via London City Hall (October 2026)" },
+  { citta: "PARIS", numero: "11,095", testo: "victims of physical violence outside the home in 2025",
+    fonte: "SSMSI, French Ministry of the Interior: 2025 department data, Paris" },
+  { citta: "NEW YORK", numero: "688", testo: "shooting incidents in 2025",
+    fonte: "NYPD, January 2026" },
+  { citta: "MILAN", numero: "2,213", testo: "snatch thefts reported in 2025",
+    fonte: "Italian Ministry of the Interior, via Il Sole 24 Ore Crime Index 2026" },
+  { citta: "ROME", numero: "4,659", testo: "reports of intentional assault injuries in 2025",
+    fonte: "Italian Ministry of the Interior, via Il Sole 24 Ore Crime Index 2026" },
 ];
 
 export type CasoDUso = {
@@ -33,18 +33,18 @@ export type CasoDUso = {
 };
 
 export const CASI: readonly CasoDUso[] = [
-  { nome: "metro_folla", inizio: 3, capitolo: "METRO", titolo: "FOLLA", adatta: "cover",
+  { nome: "metro_folla", inizio: 3, capitolo: "METRO", titolo: "CROWD", adatta: "cover",
     credito: "VIDEO: Footage 4, CC BY · youtube.com/watch?v=tCYc33IfUWs" },
-  { nome: "arma_rapina_milton", inizio: 1.5, capitolo: "RAPINA", titolo: "A MANO ARMATA", adatta: "contain",
+  { nome: "arma_rapina_milton", inizio: 1.5, capitolo: "ROBBERY", titolo: "ARMED", adatta: "contain",
     credito: "VIDEO: Queensland Police, CC BY · youtube.com/watch?v=A0eEbRnCfSA" },
-  { nome: "scippo_strada_delhi", inizio: 12.5, capitolo: "STRADA", titolo: "SCIPPO E LITE", adatta: "contain",
+  { nome: "scippo_strada_delhi", inizio: 12.5, capitolo: "STREET", titolo: "SNATCH AND FIGHT", adatta: "contain",
     credito: "VIDEO: ETV Andhra Pradesh, CC BY · youtube.com/watch?v=O2Ex648qVdk" },
-  { nome: "strada_roma_vicolo", inizio: 4, capitolo: "ROMA", titolo: "VICOLO", adatta: "cover",
+  { nome: "strada_roma_vicolo", inizio: 4, capitolo: "ROME", titolo: "ALLEY", adatta: "cover",
     credito: "VIDEO: Pexels #31524454" },
 ];
 
 // Da rimettere fra i casi quando il disco esterno con data/demo è collegato (runs/argo_casi_uso/lancia.sh):
 export const CASO_RISSA_SCHELETRI: CasoDUso = {
-  nome: "dataset_scheletri_violenza_fight_0978", inizio: 4, capitolo: "RISSA", titolo: "SOLO SCHELETRI", adatta: "contain",
-  credito: "RWF-2000 (uso accademico): mostrati solo gli scheletri, senza il video",
+  nome: "dataset_scheletri_violenza_fight_0978", inizio: 4, capitolo: "FIGHT", titolo: "SKELETONS ONLY", adatta: "contain",
+  credito: "RWF-2000 (academic use only): skeletons shown without the video",
 };
