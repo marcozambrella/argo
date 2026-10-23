@@ -30,3 +30,5 @@ pesi/taratura_warning.json
 sessioni/
 # dipinto originale (7 MB, pubblico dominio): si riscarica da Wikimedia Commons, vedi immagini/crea_immagini.py
 immagini/sorgenti/
+# musica candidata del video (CC BY, si riscarica)
+presentation/musica/

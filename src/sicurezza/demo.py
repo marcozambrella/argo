@@ -437,14 +437,14 @@ def analizza_video(percorso_video: str, percorso_classificatore: str | list[str]
                    percorso_modello_mani: str | None = None, tracker: str = TRACKER_PREDEFINITO,
                    percorso_testa_pixel: str | None = None, finestre_di_fila: int = FINESTRE_DI_FILA_ALLARME,
                    media_mobile_allarme: int = MEDIA_MOBILE_ALLARME, percorso_rete_pixel: str | None = None,
-                   solo_scheletri: bool = False) -> list[dict]:
+                   solo_scheletri: bool = False, pannello_nel_frame: bool = True) -> list[dict]:
     """Un video → video_annotato.mp4, eventi.json, probabilita.csv e keypoint.jsonl (opzioni come `AnalisiFlusso`)."""
     cartella_uscita = Path(cartella_uscita)
     cartella_uscita.mkdir(parents=True, exist_ok=True)
     info = leggi_info_video(percorso_video)
     analisi = AnalisiFlusso(percorso_classificatore, percorso_modello_armi, percorso_modello_pose, dispositivo, taratura,
                             percorso_modello_mani, tracker, percorso_testa_pixel, finestre_di_fila, media_mobile_allarme,
-                            percorso_rete_pixel, solo_scheletri)
+                            percorso_rete_pixel, solo_scheletri, pannello_nel_frame)
     scrittore = ScrittoreVideo(cartella_uscita / "video_annotato.mp4", info.larghezza, info.altezza)
     eventi = []
     with open(cartella_uscita / "keypoint.jsonl", "w") as file_keypoint:
@@ -481,12 +481,15 @@ def comando_analizza_video(argomenti: list[str] | None = None) -> None:
                         help="finestre su cui mediare le probabilità per l'allarme (D52)")
     parser.add_argument("--solo-scheletri", action="store_true",
                         help="scheletri e armi su fondo nero, senza i pixel del video (video pubblici dei dataset, D58)")
+    parser.add_argument("--senza-pannello", action="store_true",
+                        help="niente riquadro delle classi nel video (lo disegna chi monta, da eventi.json)")
     argomenti = parser.parse_args(argomenti)
     taratura = json.loads(Path(argomenti.taratura).read_text())["migliore"] if argomenti.taratura else None
     eventi = analizza_video(argomenti.video, argomenti.classificatore, argomenti.uscita, argomenti.modello_armi,
                             argomenti.modello_pose, argomenti.dispositivo, taratura, argomenti.modello_mani,
                             argomenti.tracker, argomenti.testa_pixel, argomenti.finestre_di_fila,
-                            argomenti.media_mobile, argomenti.rete_pixel, argomenti.solo_scheletri)
+                            argomenti.media_mobile, argomenti.rete_pixel, argomenti.solo_scheletri,
+                            not argomenti.senza_pannello)
     print(f"{len(eventi)} finestre analizzate → {argomenti.uscita}")
 
 # ==============================================================================================================
