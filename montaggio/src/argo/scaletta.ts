@@ -30,6 +30,9 @@ export type CasoDUso = {
   readonly titolo: string;        // es. "FOLLA"
   readonly credito: string;
   readonly adatta: "cover" | "contain";
+  readonly durata?: number;       // secondi sullo schermo (vetrina; nell'apertura decide la musica)
+  // Scheletri piccoli: il punto (cx, cy), in frazioni del riquadro, va verso il centro e si ingrandisce di "scala"
+  readonly zoom?: { readonly scala: number; readonly cx: number; readonly cy: number };
 };
 
 export const CASI: readonly CasoDUso[] = [
@@ -45,3 +48,23 @@ export const CASI: readonly CasoDUso[] = [
   { nome: "strada_roma_vicolo", inizio: 4, capitolo: "ROME", titolo: "ALLEY", adatta: "cover",
     credito: "VIDEO: Pexels #31524454" },
 ];
+
+// Vetrina per l'hero del sito (Marco, 23/10): tutti i casi d'uso, senza musica e senza città, i normali per ultimi.
+// Muta e in loop: dopo ROME si ricomincia dalla rapina.
+export const CASI_VETRINA: readonly CasoDUso[] = [
+  { nome: "arma_rapina_milton", inizio: 1.5, capitolo: "ROBBERY", titolo: "ARMED", adatta: "contain",
+    credito: "VIDEO: Queensland Police, CC BY · youtube.com/watch?v=A0eEbRnCfSA" },
+  { nome: "dataset_scheletri_violenza_fight_0978", inizio: 2, capitolo: "FIGHT", titolo: "SKELETONS ONLY", adatta: "contain",
+    credito: "RWF-2000 (academic use only): skeletons shown without the video" },
+  { nome: "dataset_scheletri_arma_w001", inizio: 0, durata: 4.8, capitolo: "WEAPON", titolo: "SKELETONS ONLY", adatta: "cover",
+    credito: "SCVD dataset (research use): skeletons shown without the video", zoom: { scala: 1.8, cx: 0.523, cy: 0.318 } },
+  { nome: "dataset_scheletri_scippo_Chain_Snatching66", inizio: 2, capitolo: "SNATCHING", titolo: "SKELETONS ONLY", adatta: "contain",
+    credito: "Chain-snatching CCTV dataset (Kaggle): skeletons shown without the video", zoom: { scala: 1.8, cx: 0.8, cy: 0.7 } },
+  { nome: "scippo_strada_delhi", inizio: 12.5, capitolo: "STREET", titolo: "SNATCH AND FIGHT", adatta: "contain",
+    credito: "VIDEO: ETV Andhra Pradesh, CC BY · youtube.com/watch?v=O2Ex648qVdk" },
+  { nome: "metro_folla", inizio: 3, capitolo: "METRO", titolo: "CROWD", adatta: "cover",
+    credito: "VIDEO: Footage 4, CC BY · youtube.com/watch?v=tCYc33IfUWs" },
+  { nome: "strada_roma_vicolo", inizio: 4, capitolo: "ROME", titolo: "ALLEY", adatta: "cover",
+    credito: "VIDEO: Pexels #31524454" },
+];
+export const SECONDI_VETRINA = 5;
