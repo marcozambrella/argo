@@ -4,8 +4,8 @@
 // profondità del manichino, pesi dell'attenzione e arma sono ILLUSTRATIVI e lo dicono le didascalie.
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { coloreCss, movimentoRidotto } from "./comune.js?v=20261023175745";
-import { PASSI } from "./passi-modello.js?v=20261023175745";
+import { coloreCss, movimentoRidotto } from "./comune.js?v=20261023175911";
+import { PASSI } from "./passi-modello.js?v=20261023175911";
 
 const OSSA = [[15,13],[13,11],[16,14],[14,12],[11,12],[5,11],[6,12],[5,6],[5,7],[6,8],[7,9],[8,10],[1,2],[0,1],[0,2],[1,3],[2,4],[3,5],[4,6]];
 const POLSI = [9, 10];
@@ -29,9 +29,9 @@ const STATI = {   // opacità dei livelli; camera = spostamento dal fuoco (centr
 };
 
 export async function avviaModello() {
-  const dati = await fetch("dati/esempio-finestra.json?v=20261023175745").then((r) => r.json());
+  const dati = await fetch("dati/esempio-finestra.json?v=20261023175911").then((r) => r.json());
   // probabilità VERE del sistema consegnato per le finestre di questa clip (argo analizza-video, D49 + D53)
-  const decisioni = await fetch("dati/esempio-decisione.json?v=20261023175745").then((r) => r.json()).catch(() => null);
+  const decisioni = await fetch("dati/esempio-decisione.json?v=20261023175911").then((r) => r.json()).catch(() => null);
   const tela = document.getElementById("modello-3d");
   const renderer = new THREE.WebGLRenderer({ canvas: tela, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));

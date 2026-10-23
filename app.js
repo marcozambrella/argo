@@ -1,7 +1,7 @@
 // Avvio del sito. Nessun dato inventato: mappa e risultati leggono i file in dati/.
-import { riempiSegnaposto, quandoVisibile, webglDisponibile } from "./js/comune.js?v=20261023175745";
-import { creaElencoPassi } from "./js/passi-modello.js?v=20261023175745";
-import { avviaPulviscolo } from "./js/lampione.js?v=20261023175745";
+import { riempiSegnaposto, quandoVisibile, webglDisponibile } from "./js/comune.js?v=20261023175911";
+import { creaElencoPassi } from "./js/passi-modello.js?v=20261023175911";
+import { avviaPulviscolo } from "./js/lampione.js?v=20261023175911";
 
 riempiSegnaposto();
 creaElencoPassi();
@@ -20,8 +20,8 @@ for (const voce of VOCI_VIMINALE) elencoVoci.appendChild(Object.assign(document.
 
 const tre = webglDisponibile();
 if (tre) {
-  quandoVisibile(document.getElementById("roma"), () => import("./js/mappa-roma.js?v=20261023175745").then((modulo) => modulo.avviaMappa()));
-  quandoVisibile(document.getElementById("come-funziona"), () => import("./js/modello-3d.js?v=20261023175745").then((modulo) => modulo.avviaModello()));
+  quandoVisibile(document.getElementById("roma"), () => import("./js/mappa-roma.js?v=20261023175911").then((modulo) => modulo.avviaMappa()));
+  quandoVisibile(document.getElementById("come-funziona"), () => import("./js/modello-3d.js?v=20261023175911").then((modulo) => modulo.avviaModello()));
 } else {
   for (const id of ["mappa-3d", "modello-3d"]) {
     const tela = document.getElementById(id);
@@ -66,17 +66,7 @@ const sezioneArmi = (w, a) => {
     </div>`;
 };
 
-const sezioneReali = (prove) => {
-  const normali = prove.filter((p) => p.vero === "normal"), incidenti = prove.filter((p) => p.vero !== "normal");
-  return `<h3>4 · Real videos it never saw</h3>
-    <div class="cifre">
-      <p><b>${normali.filter((p) => !p.allarme).length}/${normali.length}</b><span>normal scenes (metro, streets of Rome) with no false alarm</span></p>
-      <p><b>${incidenti.filter((p) => p.allarme).length}/${incidenti.length}</b><span>real incidents that raised an alarm: a shop robbery and a street fight</span></p>
-    </div>
-    <p class="spiega">ARGO is strongest on clear fights; quick snatchings and weapons seen from far away are the next step.</p>`;
-};
-
-const sezioneVelocita = () => `<h3>5 · Fast enough to act</h3>
+const sezioneVelocita = () => `<h3>4 · Fast enough to act</h3>
     <div class="cifre">
       <p><b>Every 0.4 s</b><span>a new decision: ARGO never stops looking</span></p>
       <p><b>Seconds</b><span>from the first blows to the VIOLENCE ALARM, while the fight is still on</span></p>
@@ -92,7 +82,7 @@ const glossario = `<details class="glossario"><summary class="sc">How to read th
     <dt>Test set</dt><dd>15% of the videos, kept apart from the start: no video is ever in both training and test.</dd>
   </dl></details>`;
 
-Promise.all([fetch("dati/risultati.json?v=20261023175745").then((r) => r.json()), fetch("dati/risultati-aggiuntivi.json?v=20261023175745").then((r) => r.json())])
+Promise.all([fetch("dati/risultati.json?v=20261023175911").then((r) => r.json()), fetch("dati/risultati-aggiuntivi.json?v=20261023175911").then((r) => r.json())])
   .then(([risultati, extra]) => {
     const st = risultati.modelli?.find((m) => m.nome === "ST-GCN");
     if (!st || !risultati.violenza) return;   // stato vuoto dichiarato nell'HTML
@@ -108,5 +98,5 @@ Promise.all([fetch("dati/risultati.json?v=20261023175745").then((r) => r.json())
       </div>
       <p class="spiega">Measured on videos kept apart from training.</p>
       ${sezioneViolenza(risultati.violenza, extra)}${sezioneClassi(st)}${sezioneArmi(risultati.warning_arma, extra.rilevatore_armi)}
-      ${sezioneReali(extra.prove_reali)}${sezioneVelocita()}${glossario}`;
+      ${sezioneVelocita()}${glossario}`;
   }).catch(() => {});
