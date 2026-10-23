@@ -23,12 +23,13 @@ DIARIO.md
 # configurazione locale di Claude Code (agente del sito)
 .claude/
 !pesi/*.npz
+!experiments_and_future_work/*.npz
 # pesi del sistema consegnato: nella Release v1.0, non in git (D60)
 pesi/testa_violenza.npz
 pesi/taratura_warning.json
 # registrazioni e analisi del pannello
 sessioni/
-# dipinto originale (7 MB, pubblico dominio): si riscarica da Wikimedia Commons, vedi immagini/crea_immagini.py
-immagini/sorgenti/
+# dipinto originale (7 MB, pubblico dominio): si riscarica da Wikimedia Commons, vedi media/immagini/crea_immagini.py
+media/immagini/sorgenti/
 # musica candidata del video (CC BY, si riscarica)
-presentation/musica/
+media/presentation/musica/

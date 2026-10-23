@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Lancia un kernel Kaggle di questa cartella: sostituisce KAGGLE_UTENTE con il tuo nome utente e fa il push.
-# Uso:  kaggle/lancia.sh benchmark        (poi: kaggle kernels status <utente>/roma-safe-cctv-benchmark)
+# Uso:  training/lancia.sh estrazione   (esperimenti: training/lancia.sh ../experiments_and_future_work/prova_rgb)
+#      (poi: kaggle kernels status <utente>/roma-safe-cctv-benchmark)
 set -euo pipefail
 cartella_kernel="$(cd "$(dirname "$0")" && pwd)/$1"
 utente="${KAGGLE_USERNAME:-$(kaggle config view 2>/dev/null | sed -n 's/^- username: //p')}"

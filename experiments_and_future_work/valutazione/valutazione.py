@@ -12,7 +12,7 @@ if shutil.which("ffprobe") is None:  # il lettore video usa ffmpeg/ffprobe: buil
                    "tar -xJ -C /tmp && cp /tmp/ffmpeg-*-static/ff* /usr/local/bin/", shell=True, check=True)
 # =====
 
-"""Solo CPU: dopo un addestramento fatto fuori da Kaggle (gpu_esterna/addestra.sh → dataset
+"""Solo CPU: dopo un addestramento fatto fuori da Kaggle (experiments_and_future_work/gpu_esterna/addestra.sh → dataset
 `roma-safe-cctv-addestramento-2`), il sistema intero sul test (modello + WARNING ARMA tarato + regola D6/D42) e
 l'analisi per sorgente e per video. Le timeline stanno qui (aggiungi-armi + estrazione-normali), le finestre, lo split
 e la taratura vengono dal kernel `roma-safe-cctv-finestre`."""

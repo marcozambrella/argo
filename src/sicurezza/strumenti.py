@@ -504,11 +504,11 @@ def comando_esporta_risultati_sito(argomenti: list[str] | None = None) -> None:
 
 
 # ==============================================================================================================
-# presentation/monta_presentazione
-# Monta la video presentation da presentation/scaletta.json con ffmpeg (D12). Riproducibile: quando il modello
+# media/presentation/monta_presentazione
+# Monta la video presentation da media/presentation/scaletta.json con ffmpeg (D12). Riproducibile: quando il modello
 # migliora si rigenerano i clip annotati e si rilancia questo script.
 #
-# Uso:  uv run python -m sicurezza.strumenti monta-presentazione [--scaletta presentation/scaletta.json] [--uscita runs/presentazione.mp4]
+# Uso:  uv run python -m sicurezza.strumenti monta-presentazione [--scaletta media/presentation/scaletta.json] [--uscita runs/presentazione.mp4]
 #
 # SEGNAPOSTO DESIGN: font, colori e transizioni sono provvisori (vedi STILE).
 # ==============================================================================================================
@@ -591,8 +591,8 @@ def monta(percorso_scaletta: Path, percorso_uscita: Path) -> None:
     print(f"presentazione: {percorso_uscita} ({len(pezzi)} scene)")
 
 def comando_monta_presentazione(argomenti: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Monta la video presentation da presentation/scaletta.json")
-    parser.add_argument("--scaletta", default="presentation/scaletta.json")
+    parser = argparse.ArgumentParser(description="Monta la video presentation da media/presentation/scaletta.json")
+    parser.add_argument("--scaletta", default="media/presentation/scaletta.json")
     parser.add_argument("--uscita", default="runs/presentazione.mp4")
     argomenti = parser.parse_args(argomenti)
     monta(Path(argomenti.scaletta), Path(argomenti.uscita))

@@ -1282,7 +1282,7 @@ def test_ramo_pixel_come_nei_kernel(tmp_path):
     ramo = RamoPixel(str(tmp_path / "testa.npz"))
     frame = [riduci_per_pixel(generatore.integers(0, 256, (240, 320, 3), dtype=np.uint8)) for _ in range(40)]
     assert frame[0].shape == (128, 171, 3)
-    finestra = np.stack(frame)            # come `vettori_clip` di kaggle/prova_rgb_clip
+    finestra = np.stack(frame)            # come `vettori_clip` di experiments_and_future_work/prova_rgb_clip
     scelti = finestra[np.linspace(0, 39, 16).round().astype(int), 8:120, 29:141]
     media = torch.tensor([0.43216, 0.394666, 0.37645]).view(1, 3, 1, 1, 1)
     deviazione = torch.tensor([0.22803, 0.22145, 0.216989]).view(1, 3, 1, 1, 1)

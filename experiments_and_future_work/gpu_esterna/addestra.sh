@@ -25,7 +25,7 @@ addestra() {   # modello, gpu, opzioni...
     CUDA_VISIBLE_DEVICES=$gpu python -m sicurezza.modelli addestra --finestre dati/finestre.npz --modello "$modello" \
         --uscita "risultati/$modello" --ore-massime "$ORE_MASSIME" "$@" 2>&1 | tee "log_$modello.txt"
 }
-# stessi iperparametri del kernel kaggle/addestramento (addestramento 2)
+# stessi iperparametri del kernel training/addestramento (addestramento 2)
 OPZIONI_STGCN=(--epoche 30 --pazienza 6)
 OPZIONI_GT=(--epoche 25 --pazienza 6 --dropout 0.3 --decadimento-pesi 0.1)
 if [ "$(nvidia-smi -L | wc -l)" -ge 2 ]; then
@@ -42,4 +42,4 @@ echo '{"title": "roma-safe-cctv addestramento 2", "id": "marcozambrella/roma-saf
     > risultati/dataset-metadata.json
 kaggle datasets create -p risultati --dir-mode zip \
     || kaggle datasets version -p risultati -m "addestramento 2" --dir-mode zip
-echo "fatto: ora lancia il kernel solo CPU roma-safe-cctv-valutazione (kaggle/lancia.sh valutazione)"
+echo "fatto: ora lancia il kernel solo CPU roma-safe-cctv-valutazione (training/lancia.sh ../experiments_and_future_work/valutazione)"

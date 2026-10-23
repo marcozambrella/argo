@@ -2,8 +2,8 @@
 Rubens (1610 circa, pubblico dominio, Wikimedia Commons: File:Peter Paul Rubens - Juno and Argus - WGA20280.jpg).
 Solo la coda del pavone con gli occhi di Argo, in bicromia con la palette del sito (Pietra e cenere), più la scritta.
 
-Uso:  uv run python immagini/crea_immagini.py --font <cartella con Megrim-Regular.ttf e IBMPlexMono-Regular.ttf>
-(font OFL da github.com/google/fonts). Il dipinto va in immagini/sorgenti/rubens_giunone_e_argo.jpg.
+Uso:  uv run python media/immagini/crea_immagini.py --font <cartella con Megrim-Regular.ttf e IBMPlexMono-Regular.ttf>
+(font OFL da github.com/google/fonts). Il dipinto va in media/immagini/sorgenti/rubens_giunone_e_argo.jpg.
 """
 import argparse
 import subprocess
@@ -72,4 +72,4 @@ if __name__ == "__main__":
     argomenti = parser.parse_args()
     componi(1600, 560, argomenti.font, CARTELLA / "argo_banner.jpg")
     componi(1280, 640, argomenti.font, CARTELLA / "argo_anteprima_social.jpg")   # anteprima del repo (Settings)
-    print("immagini/argo_banner.jpg, immagini/argo_anteprima_social.jpg")
+    print("media/immagini/argo_banner.jpg, media/immagini/argo_anteprima_social.jpg")

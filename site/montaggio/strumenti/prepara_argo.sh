@@ -4,7 +4,7 @@
 set -e
 RADICE=../..
 mkdir -p public/argo
-cp $RADICE/presentation/musica/candidati/*.mp3 public/argo/
+cp $RADICE/media/presentation/musica/candidati/*.mp3 public/argo/
 for cartella in $RADICE/runs/argo_casi_uso/*/; do
   nome=$(basename "$cartella")
   [ -f "$cartella/eventi.json" ] || continue

@@ -16,9 +16,9 @@ if shutil.which("ffprobe") is None:  # il lettore video usa ffmpeg/ffprobe: buil
 + regressione logistica di D48. Stesse finestre e stesso split dell'addestramento 2 (RWF-2000, CCTV-Fights, SCVD,
 UCF), stessa preparazione della demo (40 frame a 25 fps → 16 frame, 171×128, ritaglio 112×112; in train ritaglio a
 caso e specchio). L'epoca si sceglie su finestre sparse del validation; poi si rimisurano le STESSE finestre di clip
-intere di `prova-rgb-clip` (test mai visto dall'add. 1 + validation, indici in kaggle/finetune_rgb/finestre_clip.json),
+intere di `prova-rgb-clip` (test mai visto dall'add. 1 + validation, indici in training/finetune_rgb/finestre_clip.json),
 decodificate come nella demo, così in locale la fusione con gli scheletri si confronta alla pari con D48.
-Uscite: rete_violenza.pt (rete senza testa, fp16), testa_violenza.npz (stesso formato di pesi/testa_rgb.npz),
+Uscite: rete_violenza.pt (rete senza testa, fp16), testa_violenza.npz (stesso formato di experiments_and_future_work/testa_rgb.npz),
 prob_clip_test.npz / prob_clip_val.npz (indici, probabilità), storia.json."""
 import json, time
 from concurrent.futures import ThreadPoolExecutor
@@ -226,7 +226,7 @@ if __name__ == "__main__":
     os.remove(percorso_train)   # libera il disco per la misura finale
 
     # Misura finale sulle finestre di clip intere di prova-rgb-clip, decodificate come nella demo (un flusso per clip)
-    indici_clip = json.loads(Path("/tmp/repo/kaggle/finetune_rgb/finestre_clip.json").read_text())
+    indici_clip = json.loads(Path("/tmp/repo/training/finetune_rgb/finestre_clip.json").read_text())
     for nome in ("test", "val"):
         indici = np.array(indici_clip[nome])
         tutte_le_righe, tutte_le_p = [], []

@@ -1,4 +1,4 @@
-<p align="center"><img src="immagini/argo_banner.jpg" alt="ARGO: a stylised eye and the word ARGO next to a peacock tail full of eyes, from a painting by Rubens" width="100%"></p>
+<p align="center"><img src="media/immagini/argo_banner.jpg" alt="ARGO: a stylised eye and the word ARGO next to a peacock tail full of eyes, from a painting by Rubens" width="100%"></p>
 
 # ARGO
 
@@ -172,12 +172,16 @@ We say them plainly:
 
 ## Training from scratch
 
-The heavy computing was done on **Kaggle** (2× T4). The notebooks are in [`kaggle/`](kaggle) and are launched with `kaggle/lancia.sh`. The order is:
+You do not need this to use ARGO: the weights come from `argo scarica-pesi`.
+
+The heavy computing was done on **Kaggle** (2× T4). The notebooks that rebuild the delivered weights are in [`training/`](training) and are launched with `training/lancia.sh <name>`. The order is:
 1. weapon detector: `detector_armi`;
 2. skeleton and weapon extraction from all videos: `estrazione`, `aggiungi_armi`;
 3. windows: `finestre`;
 4. 4-class training: `addestramento`;
 5. video network fine-tuning: `finetune_rgb`.
+
+Discarded tries and ideas not shipped (bigger detector, hand zoom, longer training…) are in [`experiments_and_future_work/`](experiments_and_future_work), each with its outcome.
 
 The code is in [`src/sicurezza/`](src/sicurezza): `dati.py`, `visione.py`, `modelli.py`, `demo.py` (with the panel) and `strumenti.py`. Run the tests with `uv run pytest`.
 

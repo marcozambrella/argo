@@ -1,5 +1,5 @@
 """Analisi semplice di un brano per il montaggio (D62): BPM, battiti e il tratto da N secondi più energico che inizia
-su un attacco forte. Solo ffmpeg + numpy.   Uso: uv run python presentation/analizza_musica.py brano.mp3 [secondi]"""
+su un attacco forte. Solo ffmpeg + numpy.   Uso: uv run python media/presentation/analizza_musica.py brano.mp3 [secondi]"""
 import json
 import subprocess
 import sys

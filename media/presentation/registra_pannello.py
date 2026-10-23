@@ -5,7 +5,7 @@ Copione: qualche secondo sulla vista Telecamere (le telecamere collegate al pann
 sessione scelta la apre, la riproduce e, se c'è, clicca sull'evento ALLARME VIOLENZA o WARNING ARMA nel registro.
 
 Uso (Playwright è nell'ambiente dello strumento scrapling):
-    ~/.local/share/uv/tools/scrapling/bin/python presentation/registra_pannello.py --url http://127.0.0.1:8765 \
+    ~/.local/share/uv/tools/scrapling/bin/python media/presentation/registra_pannello.py --url http://127.0.0.1:8765 \
         --sessioni metro_rissa arma_rapina_milton --uscita runs/video/pannello_demo.mp4
 """
 import argparse

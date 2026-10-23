@@ -214,7 +214,7 @@ def probabilita_media(classificatori: list, nodi: np.ndarray, maschera: np.ndarr
 
 # Ramo pixel (D48), attivo con --testa-pixel: R(2+1)D-18 di torchvision preaddestrato su
 # Kinetics-400 e CONGELATO → vettore da 512 → regressione logistica violenza sì/no (testa allenata sul train
-# dell'add. 2, `pesi/testa_rgb.npz`). Stessa preparazione dei kernel `prova-rgb`: 16 frame dei 40, 171×128,
+# dell'add. 2, `experiments_and_future_work/testa_rgb.npz`). Stessa preparazione dei kernel `prova-rgb`: 16 frame dei 40, 171×128,
 # ritaglio centrale 112×112. Fusione: media tra la probabilità dei pixel e quella di violenza degli scheletri; sulle
 # clip intere mai viste 0,82 per pezzi da 30 s e 0,75 per finestra (scheletri da soli 0,78 e 0,71). ~1 s di CPU per finestra.
 LATO_PIXEL = (171, 128)                 # larghezza, altezza prima del ritaglio centrale 112×112
@@ -472,7 +472,7 @@ def comando_analizza_video(argomenti: list[str] | None = None) -> None:
     parser.add_argument("--modello-mani", default=None, help="classificatore dell'ingrandimento sulle mani (D44)")
     parser.add_argument("--tracker", default=TRACKER_PREDEFINITO, help="lo stesso dell'estrazione dei dati (D3)")
     parser.add_argument("--testa-pixel", default=None,
-                        help="pesi/testa_rgb.npz: fusione pixel + scheletri sulla violenza (D48)")
+                        help="testa_violenza.npz (o la vecchia experiments_and_future_work/testa_rgb.npz): fusione pixel + scheletri sulla violenza (D48)")
     parser.add_argument("--rete-pixel", default=None,
                         help="rete_violenza.pt fine-tunata (D53), da usare con la sua --testa-pixel testa_violenza.npz")
     parser.add_argument("--finestre-di-fila", type=int, default=FINESTRE_DI_FILA_ALLARME,
