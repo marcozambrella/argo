@@ -227,9 +227,9 @@ export async function avviaMappa() {
       const s = stime[c.chiave];
       return `<span>${c.nome}: ~${formattaNumero(s.base + s.zone_rosse)}</span>`;
     }).join("");
-    const zona = dati.zone_rosse[municipio.sigla] ? `<span>Zona rossa: ${dati.zone_rosse[municipio.sigla]} (peso +50%)</span>` : "";
-    scheda.innerHTML = `<b>Municipio ${municipio.sigla}</b><span>${formattaNumero(dati.popolazione_municipi[municipio.sigla])} residenti (31/12/2024)</span>
-      ${zona}${righe}<span class="stima">Stima, non un dato: vedi «Attenzione» in legenda.</span>`;
+    const zona = dati.zone_rosse[municipio.sigla] ? `<span>Red zone: ${dati.zone_rosse[municipio.sigla]} (weight +50%)</span>` : "";
+    scheda.innerHTML = `<b>District ${municipio.sigla}</b><span>${formattaNumero(dati.popolazione_municipi[municipio.sigla])} residents (31/12/2024)</span>
+      ${zona}${righe}<span class="stima">An estimate, not data: see «Warning» in the legend.</span>`;
   }
   tela.addEventListener("pointermove", scegli);
   tela.addEventListener("pointerdown", scegli);
@@ -286,9 +286,9 @@ function riempiLegenda(dati) {
     const fonte = dati.fonti[categoria.fonte];
     const voce = document.createElement("li");
     voce.innerHTML = `<i style="background: var(${COLORE_CATEGORIA[categoria.chiave]})"></i><div><b>${categoria.nome}</b>
-      <span class="valore">${formattaNumero(categoria.totale)}</span> nel ${categoria.anno} a Roma
-      <small>1 cubetto = ${categoria.unita_cubetto} · ${categoria.dettaglio}${categoria.nota ? ". " + categoria.nota : ""}
-      Fonte: <a href="${fonte.url}">${categoria.fonte === "prefettura" ? "Ministero dell'Interno" : "Annuario di Roma Capitale"}</a></small></div>`;
+      <span class="valore">${formattaNumero(categoria.totale)}</span> in ${categoria.anno} in Rome
+      <small>1 cube = ${categoria.unita_cubetto} · ${categoria.dettaglio}${categoria.nota ? ". " + categoria.nota : ""}
+      Source: <a href="${fonte.url}">${categoria.fonte === "prefettura" ? "Italian Ministry of the Interior" : "Rome City Statistical Yearbook"}</a></small></div>`;
     voci.appendChild(voce);
   }
   const colonna = document.getElementById("colonna-proporzioni");
@@ -298,8 +298,8 @@ function riempiLegenda(dati) {
     colonna.appendChild(pezzo);
   }
   document.getElementById("testo-proporzioni").textContent = dati.categorie
-    .map((c) => `${c.nome.toLowerCase()} ${(c.quota_sui_tre * 100).toLocaleString("it-IT", { maximumFractionDigits: 1 })}%`).join(" · ")
-    + ". Sulla mappa ogni colore ha la sua scala: le altezze tra colori diversi non si confrontano.";
+    .map((c) => `${c.nome.toLowerCase()} ${(c.quota_sui_tre * 100).toLocaleString("en-GB", { maximumFractionDigits: 1 })}%`).join(" · ")
+    + ". On the map each colour has its own scale: heights of different colours cannot be compared.";
   document.getElementById("testo-metodo").textContent = dati.metodo_stima.descrizione;
   const fonti = document.getElementById("elenco-fonti");
   for (const fonte of Object.values(dati.fonti)) {

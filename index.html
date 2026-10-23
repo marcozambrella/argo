@@ -1,30 +1,30 @@
 <!doctype html>
-<html lang="it">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="color-scheme" content="dark">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Argo — violenza, armi e scippi dalle telecamere CCTV</title>
-  <meta name="description" content="Argo riconosce violenza, violenza con arma e scippi dalle telecamere CCTV, con un WARNING ARMA. Il caso di Roma.">
+  <title>ARGO — violence, weapons and snatching from CCTV cameras</title>
+  <meta name="description" content="ARGO recognises violence, armed violence and snatching from CCTV cameras, with a weapon warning. The case of Rome.">
   <link rel="icon" href="immagini/argo-logo.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,400;0,700;1,400&family=Alegreya+Sans+SC:wght@500;700;800&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Megrim&family=Alegreya:ital,wght@0,400;0,700;1,400&family=Alegreya+Sans+SC:wght@500;700;800&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="stile.css">
   <script type="importmap">{ "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
     "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }</script>
 </head>
 <body>
-  <a class="salta" href="#contenuto">Vai al contenuto</a>
+  <a class="salta" href="#contenuto">Skip to content</a>
 
   <!-- ============================================ HERO ============================================ -->
   <header class="hero" id="inizio">
-    <nav class="barra" aria-label="Sezioni">
-      <span class="sigla sc"><img src="immagini/argo-logo.svg" alt="" width="26" height="26" class="logo-sigla"> Argo</span>
+    <nav class="barra" aria-label="Sections">
+      <span class="sigla sc"><img src="immagini/argo-logo.svg" alt="" width="26" height="26" class="logo-sigla"> ARGO</span>
       <div class="voci">
-        <a href="#visto">Il quartiere</a><a href="#roma">Roma</a><a href="#armi">Le armi</a>
-        <a href="#come-funziona">Come funziona</a><a href="#risultati">Risultati</a><a href="#futuro">Il futuro</a>
+        <a href="#visto">The neighbourhood</a><a href="#roma">Rome</a><a href="#armi">Weapons</a>
+        <a href="#come-funziona">How it works</a><a href="#risultati">Results</a><a href="#futuro">What next</a>
       </div>
     </nav>
     <div class="lampione" aria-hidden="true">
@@ -36,13 +36,12 @@
     </div>
     <div class="titoli">
       <p class="occhiello sc">Neighborhood Hacks 2026 · Safety &amp; Emergency Response</p>
-      <h1>Argo</h1>
+      <h1 class="nome-argo">ARGO</h1>
     </div>
     <figure class="video-hero">
-      <span class="etichetta-bozza sc">Bozza</span>
-      <video src="video/hero-bozza.mp4" poster="immagini/hero-bozza-locandina.jpg" autoplay muted loop playsinline
-        aria-label="Bozza del video: rilevazioni vere della rete (scheletri, ID, finestra di 40 frame) su clip di repertorio"></video>
-      <figcaption>Bozza. Scheletri, ID e finestra sono uscite reali della rete su clip Pexels; violenza e scippo aspettano le riprese del team.</figcaption>
+            <video src="video/argo-apertura.mp4" poster="immagini/argo-apertura-locandina.jpg" autoplay muted loop playsinline
+        aria-label="ARGO opening: crime numbers from five cities, then ARGO on real clips"></video>
+      <figcaption>The opening of the ARGO video. The panels are real outputs of ARGO on public clips (Pexels, CC BY).</figcaption>
     </figure>
   </header>
 
@@ -50,41 +49,41 @@
     <!-- ======================================= COSA HO VISTO ======================================= -->
     <section class="sezione" id="visto" aria-labelledby="titolo-visto">
       <p class="numero-sezione sc">I</p>
-      <h2 id="titolo-visto">Il quartiere</h2>
+      <h2 id="titolo-visto">The neighbourhood</h2>
     </section>
 
     <!-- ========================================= MAPPA ROMA ======================================== -->
     <section class="sezione sezione-mappa" id="roma" aria-labelledby="titolo-roma">
       <p class="numero-sezione sc">II</p>
-      <h2 id="titolo-roma">Roma, i reati</h2>
+      <h2 id="titolo-roma">Rome, the crimes</h2>
       <div class="tavola-mappa">
         <div class="area-mappa">
-          <canvas id="mappa-3d" role="img" aria-label="Mappa 3D dei 15 municipi di Roma con cubetti colorati per tipo di reato. La ripartizione per municipio è una stima; i totali sono ufficiali."></canvas>
-          <div class="interruttori-mappa" id="interruttori-mappa" role="group" aria-label="Categorie di reato"></div>
-          <div class="scheda-municipio" id="scheda-municipio" aria-live="polite"><b>Passa su un municipio</b><span>per vedere popolazione e stima</span></div>
-          <p class="attribuzione">Confini, metro, stazioni: © OpenStreetMap contributors, ODbL</p>
+          <canvas id="mappa-3d" role="img" aria-label="3D map of the 15 districts of Rome with coloured cubes for each type of crime. The split by district is an estimate; the totals are official."></canvas>
+          <div class="interruttori-mappa" id="interruttori-mappa" role="group" aria-label="Crime categories"></div>
+          <div class="scheda-municipio" id="scheda-municipio" aria-live="polite"><b>Hover over a district</b><span>to see population and estimate</span></div>
+          <p class="attribuzione">Boundaries, metro, stations: © OpenStreetMap contributors, ODbL</p>
         </div>
         <aside class="legenda-mappa">
-          <h3 class="sc">Legenda</h3>
+          <h3 class="sc">Legend</h3>
           <ul class="voci-legenda" id="voci-legenda"></ul>
-          <h3 class="sc">Proporzione vera tra i tre reati</h3>
+          <h3 class="sc">True proportion of the three crimes</h3>
           <div class="colonna-proporzioni" id="colonna-proporzioni" aria-hidden="true"></div>
           <p class="nota" id="testo-proporzioni"></p>
-          <h3 class="sc">Sulla mappa</h3>
+          <h3 class="sc">On the map</h3>
           <ul class="strati">
-            <li><i class="segno zona-rossa"></i>Zone rosse (Prefettura, 8 gennaio 2025)</li>
+            <li><i class="segno zona-rossa"></i>Red zones (Prefecture, 8 January 2025)</li>
             <li><i class="segno metro"></i>Metro A, B, C</li>
-            <li><i class="segno fermata"></i>Fermate della metro (74; passa sopra per il nome)</li>
-            <li><i class="segno stazione"></i>Stazioni Termini, Tiburtina, Ostiense, Trastevere</li>
+            <li><i class="segno fermata"></i>Metro stops (74; hover for the name)</li>
+            <li><i class="segno stazione"></i>Termini, Tiburtina, Ostiense and Trastevere stations</li>
           </ul>
           <div class="avviso-stima">
-            <b class="sc">Attenzione: la posizione è una stima</b>
+            <b class="sc">Warning: the position is an estimate</b>
             <p id="testo-metodo"></p>
           </div>
         </aside>
       </div>
       <details class="fonti">
-        <summary class="sc">Fonti e metodo</summary>
+        <summary class="sc">Sources and method</summary>
         <ul id="elenco-fonti"></ul>
       </details>
     </section>
@@ -92,11 +91,11 @@
     <!-- =========================================== ARMI =========================================== -->
     <section class="sezione" id="armi" aria-labelledby="titolo-armi">
       <p class="numero-sezione sc">III</p>
-      <h2 id="titolo-armi">Le armi</h2>
+      <h2 id="titolo-armi">Weapons</h2>
       <div class="voci-viminale">
-        <p class="nota">Le 34 voci con cui il Ministero dell'Interno conta i delitti a Roma (2024). Nessuna distingue i reati commessi con un'arma.</p>
+        <p class="nota">The 34 categories the Italian Ministry of the Interior uses to count crimes in Rome (2024). None of them separates crimes committed with a weapon.</p>
         <ol id="voci-viminale"></ol>
-        <p class="fonte-piccola">Fonte: <a href="https://prefettura.interno.gov.it/sites/default/files/57/2025-09/delitti-commessi-roma-capitale-2021.2022.2023-e-2024-con-perc.pdf">Ministero dell'Interno, delitti commessi a Roma Capitale 2021–2024</a></p>
+        <p class="fonte-piccola">Source: <a href="https://prefettura.interno.gov.it/sites/default/files/57/2025-09/delitti-commessi-roma-capitale-2021.2022.2023-e-2024-con-perc.pdf">Italian Ministry of the Interior, crimes committed in Rome 2021–2024</a></p>
       </div>
     </section>
 
@@ -104,7 +103,7 @@
     <section class="sezione-modello" id="come-funziona" aria-labelledby="titolo-come">
       <div class="testa-modello">
         <p class="numero-sezione sc">IV</p>
-        <h2 id="titolo-come">Come funziona</h2>
+        <h2 id="titolo-come">How it works</h2>
       </div>
       <div class="racconto-modello">
         <div class="scena-modello" aria-hidden="true">
@@ -119,47 +118,49 @@
     <!-- ========================================= RISULTATI ========================================= -->
     <section class="sezione" id="risultati" aria-labelledby="titolo-risultati">
       <p class="numero-sezione sc">V</p>
-      <h2 id="titolo-risultati">Risultati</h2>
+      <h2 id="titolo-risultati">Results</h2>
       <div id="tabella-risultati" class="stato-vuoto">
-        <b class="sc">In attesa dell'addestramento</b>
-        <p>Qui appariranno macro-F1 sul test, Graph-Transformer contro ST-GCN e matrice di confusione, letti da <code>dati/risultati.json</code>. Nessun numero finché il modello non è addestrato.</p>
+        <b class="sc">Loading the results</b>
+        <p>The test results are read from <code>dati/risultati.json</code>.</p>
       </div>
     </section>
 
     <!-- ========================================== FUTURO ========================================== -->
     <section class="sezione" id="futuro" aria-labelledby="titolo-futuro">
       <p class="numero-sezione sc">VI</p>
-      <h2 id="titolo-futuro">Chi lo userebbe</h2>
-      <h2 class="titolo-secondario">Limiti e prossimi passi</h2>
+      <h2 id="titolo-futuro">Who would use it</h2>
+      <h2 class="titolo-secondario">Limits and next steps</h2>
       <div class="scheda-misura">
-        <b class="sc">Misura fatta durante lo sviluppo</b>
-        <p>Su un fotogramma di Largo Argentina ripreso dall'alto, il detector YOLO26s trova 22 persone, il modello di posa YOLO26s-pose 0: con persone piccole e lontane la pipeline può perderle.</p>
+        <b class="sc">Measured during development</b>
+        <p>On a frame of Largo Argentina filmed from above, the YOLO26s detector finds 22 people and the YOLO26s-pose model 0: with small, distant people the pipeline can lose them.</p>
       </div>
-      <h2 class="titolo-secondario">Strumenti e intelligenza artificiale</h2>
+      <h2 class="titolo-secondario">Tools and artificial intelligence</h2>
       <ul class="elenco-strumenti">
-        <li><b>Visione</b>Ultralytics YOLO26s-pose, YOLO26s fine-tunato (armi), tracker TrackTrack</li>
-        <li><b>Modelli</b>PyTorch: ST-GCN (scelto) e Graph-Transformer; R(2+1)D-18 di torchvision (Kinetics-400) fine-tunata sulla violenza, sui pixel</li>
-        <li><b>Calcolo</b>Kaggle, 2 GPU T4</li>
-        <li><b>Mappe</b>OpenStreetMap (ODbL)</li>
+        <li><b>Vision</b>Ultralytics YOLO26s-pose, fine-tuned YOLO26s (weapons), TrackTrack tracker</li>
+        <li><b>Models</b>PyTorch: ST-GCN (chosen) and Graph-Transformer; torchvision R(2+1)D-18 (Kinetics-400) fine-tuned on violence, on the pixels</li>
+        <li><b>Compute</b>Kaggle, 2 T4 GPUs</li>
+        <li><b>Maps</b>OpenStreetMap (ODbL)</li>
       </ul>
     </section>
   </main>
 
   <footer class="piede">
     <div>
-      <h2 class="sc">Dati e crediti</h2>
+      <h2 class="sc">Data and credits</h2>
       <ul class="crediti">
-        <li>RWF-2000 — solo uso accademico, non ridistribuito</li>
+        <li>RWF-2000 — academic use only, not redistributed</li>
         <li>CCTV-Fights</li>
         <li>SCVD — Smart-City CCTV Violence Detection</li>
-        <li>UCF-Crime con annotazioni temporali UCA (Apache 2.0)</li>
-        <li>Chain-snatching CCTV — istanti dello scippo annotati a mano dal team</li>
-        <li>Master_Weapon_CCTV e CCTV Weapon Detect, Roboflow (CC BY 4.0)</li>
-        <li>Clip del video: Pexels (#31524454, #7230785)</li>
-        <li>Lampione: foto di Dietmar Rabich, <a href="https://commons.wikimedia.org/wiki/File:Rome_(Italy),_street_light_--_2013_--_3484.jpg">Wikimedia Commons</a>, <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.it">CC BY-SA 4.0</a>; scontornata e ritoccata per la notte (stessa licenza)</li>
+        <li>UCF-Crime with UCA temporal annotations (Apache 2.0)</li>
+        <li>Chain-snatching CCTV — snatching moments annotated by hand by the team</li>
+        <li>Master_Weapon_CCTV and CCTV Weapon Detect, Roboflow (CC BY 4.0)</li>
+        <li>Video clips: Pexels (#31524454, #7230785, #27690323) and CC BY clips from YouTube (see the repo)</li>
+        <li>Music: "Clash Defiant" Kevin MacLeod (incompetech.com), CC BY 4.0</li>
+        <li>Image: P. P. Rubens, <i>Juno and Argus</i> (c. 1610), public domain · Typeface of the ARGO name: Megrim (SIL OFL)</li>
+        <li>Street lamp: photo by Dietmar Rabich, <a href="https://commons.wikimedia.org/wiki/File:Rome_(Italy),_street_light_--_2013_--_3484.jpg">Wikimedia Commons</a>, <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.en">CC BY-SA 4.0</a>; cut out and retouched for night (same licence)</li>
       </ul>
     </div>
-    <p class="codice"><a href="https://github.com/marcozambrella/argo">Codice su GitHub</a></p>
+    <p class="codice"><a href="https://github.com/marcozambrella/argo">Code on GitHub</a></p>
   </footer>
   <script type="module" src="app.js"></script>
 </body>

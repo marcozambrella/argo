@@ -187,3 +187,7 @@ td, th { border-bottom: 1px solid var(--linea); padding: 8px; text-align: right;
   .voci { gap: 10px; font-size: 13px; }
   .titoli { padding-left: 22vw; }
 }
+
+/* D63: il nome ARGO in Megrim, "grassetto" con un contorno dello stesso colore */
+.nome-argo, .sigla { font-family: "Megrim", "Alegreya Sans SC", sans-serif; -webkit-text-stroke: 0.021em currentColor; letter-spacing: .06em; }
+.hero h1.nome-argo { font-family: "Megrim", var(--maiuscoletto); font-weight: 400; letter-spacing: .04em; }

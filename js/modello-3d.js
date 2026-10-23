@@ -110,11 +110,11 @@ export async function avviaModello() {
   // archi per tipo (stesso frame)
   const archi = nuovoLivello("archi");
   const TIPI_ARCO = {
-    ossa: { nome: "Ossa", colore: colore("--gesso"), opacita: .9 },
-    stessa: { nome: "Stessa persona", colore: colore("--tenue"), opacita: .12 },
-    diverse: { nome: "Persone diverse", colore: colore("--aggressioni"), opacita: .07 },
-    arma_polso: { nome: "Arma–polso", colore: colore("--rosso"), opacita: .5 },
-    arma_corpo: { nome: "Arma–corpo", colore: colore("--rosso"), opacita: .08 },
+    ossa: { nome: "Bones", colore: colore("--gesso"), opacita: .9 },
+    stessa: { nome: "Same person", colore: colore("--tenue"), opacita: .12 },
+    diverse: { nome: "Different people", colore: colore("--aggressioni"), opacita: .07 },
+    arma_polso: { nome: "Weapon–wrist", colore: colore("--rosso"), opacita: .5 },
+    arma_corpo: { nome: "Weapon–body", colore: colore("--rosso"), opacita: .08 },
   };
   const segmenti = Object.fromEntries(Object.keys(TIPI_ARCO).map((tipo) => [tipo, []]));
   const ossaInsieme = new Set(OSSA.map(([a, b]) => `${Math.min(a, b)}-${Math.max(a, b)}`));
@@ -172,7 +172,7 @@ export async function avviaModello() {
     const decisione = decisioni?.finestre?.[finestraScelta];
     for (const [classe, uscita] of righeClassi) {
       const valore = decisione?.probabilita?.[classe.replaceAll(" ", "_")];
-      uscita.textContent = valore === undefined ? "— in attesa dei risultati" : `${Math.round(valore * 100)}%`;
+      uscita.textContent = valore === undefined ? "— waiting for results" : `${Math.round(valore * 100)}%`;
       uscita.parentElement.classList.toggle("scelta", decisione?.classe === classe.replaceAll(" ", "_"));
     }
   }
@@ -215,19 +215,19 @@ export async function avviaModello() {
       const uscita = document.createElement("output");
       const scrivi = () => {
         const primo = finestraScelta * PASSO;
-        uscita.textContent = `finestra ${finestraScelta + 1} · frame ${primo}–${primo + FRAME_PER_FINESTRA - 1} · ${(primo / FPS).toFixed(1).replace(".", ",")}–${((primo + FRAME_PER_FINESTRA) / FPS).toFixed(1).replace(".", ",")} s`;
+        uscita.textContent = `window ${finestraScelta + 1} · frames ${primo}–${primo + FRAME_PER_FINESTRA - 1} · ${(primo / FPS).toFixed(1)}–${((primo + FRAME_PER_FINESTRA) / FPS).toFixed(1)} s`;
       };
-      cursore.setAttribute("aria-label", "Finestra di 40 frame");
+      cursore.setAttribute("aria-label", "40-frame window");
       cursore.addEventListener("input", () => { finestraScelta = Number(cursore.value); aggiornaFinestra(); scrivi(); });
       scrivi();
-      etichetta.append("Finestra", cursore, uscita);
+      etichetta.append("Window", cursore, uscita);
       comandi.appendChild(etichetta);
     } else if (tipo === "classi") {
-      for (const classe of ["normale", "violenza", "violenza con arma", "scippo"]) {
+      for (const [classe, testoClasse] of [["normale", "normal"], ["violenza", "violence"], ["violenza con arma", "armed violence"], ["scippo", "snatching"]]) {
         const riga = document.createElement("span");
         riga.className = "riga";
         const uscita = document.createElement("output");
-        riga.append(classe, " ", uscita);
+        riga.append(testoClasse, " ", uscita);
         righeClassi.set(classe, uscita);
         comandi.appendChild(riga);
       }
@@ -235,16 +235,16 @@ export async function avviaModello() {
     } else if (tipo === "warning") {
       const etichetta = document.createElement("label");
       const cursore = Object.assign(document.createElement("input"), { type: "range", min: 0, max: FRAME_PER_FINESTRA, value: frameConArma });
-      cursore.setAttribute("aria-label", "Frame con arma vicino a una persona (simulazione)");
+      cursore.setAttribute("aria-label", "Frames with a weapon near a person (simulation)");
       const uscita = document.createElement("output");
       const scrivi = () => {
         const scatta = frameConArma >= 5;
-        uscita.textContent = `${frameConArma}/40 frame con arma vicina → ${scatta ? "WARNING ARMA" : "nessun allarme"}`;
+        uscita.textContent = `${frameConArma}/40 frames with a weapon nearby → ${scatta ? "WEAPON WARNING" : "no alarm"}`;
         uscita.style.color = scatta ? coloreCss("--rosso") : "";
       };
       cursore.addEventListener("input", () => { frameConArma = Number(cursore.value); scrivi(); });
       scrivi();
-      etichetta.append("Simulazione", cursore, uscita);
+      etichetta.append("Simulation", cursore, uscita);
       comandi.appendChild(etichetta);
     }
   }

@@ -2,19 +2,19 @@
  "_nota": "Numeri ufficiali con fonte; la ripartizione per municipio è una STIMA dichiarata (vedi metodo_stima).",
  "fonti": {
   "annuario_sicurezza": {
-   "nome": "Roma Capitale, Annuario statistico 2025, cap. 15 Sicurezza urbana (elaborazioni su dati Istat)",
+   "nome": "Rome City, Statistical Yearbook 2025, ch. 15 Urban safety (based on Istat data)",
    "url": "https://www.comune.roma.it/web-resources/cms/documents/15_SicurezzaUrbana_Annuario_2025.pdf"
   },
   "prefettura": {
-   "nome": "Ministero dell'Interno / Prefettura di Roma, delitti commessi a Roma Capitale 2021-2024",
+   "nome": "Italian Ministry of the Interior / Prefecture of Rome, crimes committed in Rome 2021-2024",
    "url": "https://prefettura.interno.gov.it/sites/default/files/57/2025-09/delitti-commessi-roma-capitale-2021.2022.2023-e-2024-con-perc.pdf"
   },
   "annuario_popolazione": {
-   "nome": "Roma Capitale, Annuario statistico 2025, cap. 2 Popolazione, tab. 2.7 (iscritti in anagrafe al 31/12/2024)",
+   "nome": "Rome City, Statistical Yearbook 2025, ch. 2 Population, table 2.7 (registered residents at 31/12/2024)",
    "url": "https://www.comune.roma.it/web-resources/cms/documents/02_Popolazione_Annuario_2025.pdf"
   },
   "zone_rosse": {
-   "nome": "Prefettura di Roma, ordinanza sulle zone a vigilanza rafforzata dell'8 gennaio 2025 (riportata da RomaToday)",
+   "nome": "Prefecture of Rome, order on reinforced-surveillance zones of 8 January 2025 (reported by RomaToday)",
    "url": "https://www.romatoday.it/cronaca/zone-rosse-roma-quali-strade.html"
   },
   "osm": {
@@ -25,35 +25,35 @@
  "categorie": [
   {
    "chiave": "furti_persone",
-   "nome": "Furti alle persone",
+   "nome": "Thefts from people",
    "totale": 32145,
    "anno": 2023,
    "fonte": "annuario_sicurezza",
    "unita_cubetto": 250,
-   "dettaglio": "furti con destrezza 30.524 + furti con strappo 1.621 (tab. 15.3)",
-   "nota": "Non solo in strada: anche su bus, metro e nei locali.",
+   "dettaglio": "pickpocketing 30,524 + snatch theft 1,621 (table 15.3)",
+   "nota": "Not only on the street: also on buses, the metro and in venues.",
    "quota_sui_tre": 0.8971
   },
   {
    "chiave": "aggressioni",
-   "nome": "Aggressioni",
+   "nome": "Assaults",
    "totale": 3308,
    "anno": 2023,
    "fonte": "annuario_sicurezza",
    "unita_cubetto": 25,
-   "dettaglio": "percosse e lesioni (tab. 15.2)",
+   "dettaglio": "beatings and injuries (table 15.2)",
    "nota": "",
    "quota_sui_tre": 0.0923
   },
   {
    "chiave": "rapine_negozi",
-   "nome": "Rapine nei negozi",
+   "nome": "Shop robberies",
    "totale": 381,
    "anno": 2023,
    "fonte": "prefettura",
    "unita_cubetto": 5,
-   "dettaglio": "rapine in esercizi commerciali (Viminale, delitti commessi)",
-   "nota": "Fonte diversa dalle altre due categorie (delitti commessi, non denunciati).",
+   "dettaglio": "robberies of shops (Ministry of the Interior, crimes committed)",
+   "nota": "Different source from the other two categories (crimes committed, not reported).",
    "quota_sui_tre": 0.0106
   }
  ],
@@ -75,11 +75,11 @@
   "XV": 160620
  },
  "zone_rosse": {
-  "I": "Termini ed Esquilino",
+  "I": "Termini and Esquilino",
   "VII": "Tuscolano"
  },
  "metodo_stima": {
-  "descrizione": "Nessuna fonte pubblica dà i reati per municipio. Stima: totale cittadino × peso del municipio / somma dei pesi; peso = popolazione residente, +50% nei municipi con zone rosse (I e VII). Scelta del team, non un dato.",
+  "descrizione": "No public source gives crimes by district. Estimate: city total × district weight / sum of the weights; weight = resident population, +50% in the districts with red zones (I and VII). A choice of the team, not data.",
   "peso_extra_zone_rosse": 0.5,
   "somma_pesi": 3033469.0
  },
