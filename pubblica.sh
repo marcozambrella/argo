@@ -44,6 +44,10 @@ if grep -q 'class="segnaposto"' "$copia_sito/index.html" "$copia_sito/js/passi-m
   echo "ERRORE: riquadri dei testi ancora presenti, niente pubblicato" >&2; exit 1
 fi
 
+# 2b. versione nei link (stile.css, app.js, moduli, dati): il browser non usa la copia vecchia in cache (Pages: 10 min)
+versione=$(date +%Y%m%d%H%M%S)
+sed -i "s/__VERSIONE__/$versione/g" "$copia_sito"/index.html "$copia_sito"/app.js "$copia_sito"/js/*.js
+
 # 3. ogni file locale citato deve esserci
 mancanti=0
 for percorso in $(grep -ohE '(js|dati|immagini|video)/[A-Za-z0-9_.-]+\.[a-z0-9]+' \

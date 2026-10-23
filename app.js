@@ -1,7 +1,7 @@
 // Avvio del sito. Nessun dato inventato: mappa e risultati leggono i file in dati/.
-import { riempiSegnaposto, quandoVisibile, webglDisponibile } from "./js/comune.js";
-import { creaElencoPassi } from "./js/passi-modello.js";
-import { avviaPulviscolo } from "./js/lampione.js";
+import { riempiSegnaposto, quandoVisibile, webglDisponibile } from "./js/comune.js?v=20261023175745";
+import { creaElencoPassi } from "./js/passi-modello.js?v=20261023175745";
+import { avviaPulviscolo } from "./js/lampione.js?v=20261023175745";
 
 riempiSegnaposto();
 creaElencoPassi();
@@ -20,8 +20,8 @@ for (const voce of VOCI_VIMINALE) elencoVoci.appendChild(Object.assign(document.
 
 const tre = webglDisponibile();
 if (tre) {
-  quandoVisibile(document.getElementById("roma"), () => import("./js/mappa-roma.js").then((modulo) => modulo.avviaMappa()));
-  quandoVisibile(document.getElementById("come-funziona"), () => import("./js/modello-3d.js").then((modulo) => modulo.avviaModello()));
+  quandoVisibile(document.getElementById("roma"), () => import("./js/mappa-roma.js?v=20261023175745").then((modulo) => modulo.avviaMappa()));
+  quandoVisibile(document.getElementById("come-funziona"), () => import("./js/modello-3d.js?v=20261023175745").then((modulo) => modulo.avviaModello()));
 } else {
   for (const id of ["mappa-3d", "modello-3d"]) {
     const tela = document.getElementById(id);
@@ -92,7 +92,7 @@ const glossario = `<details class="glossario"><summary class="sc">How to read th
     <dt>Test set</dt><dd>15% of the videos, kept apart from the start: no video is ever in both training and test.</dd>
   </dl></details>`;
 
-Promise.all([fetch("dati/risultati.json").then((r) => r.json()), fetch("dati/risultati-aggiuntivi.json").then((r) => r.json())])
+Promise.all([fetch("dati/risultati.json?v=20261023175745").then((r) => r.json()), fetch("dati/risultati-aggiuntivi.json?v=20261023175745").then((r) => r.json())])
   .then(([risultati, extra]) => {
     const st = risultati.modelli?.find((m) => m.nome === "ST-GCN");
     if (!st || !risultati.violenza) return;   // stato vuoto dichiarato nell'HTML
