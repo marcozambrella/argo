@@ -3,4 +3,4 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 git push origin "$(git subtree split --prefix site main)":refs/heads/gh-pages --force
-echo "https://marcozambrella.github.io/roma-safe-cctv/"
+echo "https://marcozambrella.github.io/argo/"
