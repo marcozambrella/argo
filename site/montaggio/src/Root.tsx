@@ -1,4 +1,5 @@
 import { Composition, Folder } from "remotion";
+import { ArgoApertura } from "./argo/ArgoApertura";
 import { HeroCCTV } from "./HeroCCTV";
 import { ScenaAttesa } from "./scene/ScenaAttesa";
 import { ScenaClip } from "./scene/ScenaClip";
@@ -7,6 +8,18 @@ import { ScenaTitolo } from "./scene/ScenaTitolo";
 export const RemotionRoot: React.FC = () => {
   return (
     <>
+      <Folder name="Argo">
+        {/* D61: apertura brutalista + casi d'uso, ~45 s. Musica: presentation/musica/candidati (D62), tratto da analizza_musica.py */}
+        <Composition
+          id="ArgoApertura"
+          component={ArgoApertura}
+          durationInFrames={1200}
+          fps={25}
+          width={1920}
+          height={1080}
+          defaultProps={{ brano: "clash_defiant.mp3", inizioBrano: 127.34, bpm: 86.1 }}
+        />
+      </Folder>
       <Composition
         id="HeroCCTV"
         component={HeroCCTV}

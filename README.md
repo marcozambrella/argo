@@ -164,6 +164,12 @@ Li diciamo chiaramente:
 - **UCF-Crime è la sorgente più difficile**: video lunghi, di bassa qualità e con molte persone.
 - **Nelle folle molto dense** il tracking a volte perde le persone.
 - **Senza GPU** il pannello lavora in differita, non in tempo reale.
+- **Su video veri mai visti**, presi da YouTube con licenza CC BY:
+  - metro, scale mobili e vagoni restano sempre normali, senza falsi allarmi;
+  - una rapina armata viene riconosciuta come violenza, con ALLARME, ma senza WARNING ARMA;
+  - non vengono riconosciuti una rissa girata col telefono in verticale e due scippi veri (borsa strappata, scippo sotto la minaccia di una pistola).
+
+  Le analisi sono in `runs/argo_casi_uso/`, le fonti in [`annotations/video_pubblici/attribuzioni.csv`](annotations/video_pubblici/attribuzioni.csv).
 - Argo è un **aiuto per chi guarda le telecamere**, non un sistema che decide da solo. Ogni allarme va controllato da una persona.
 
 ## Addestrare da zero

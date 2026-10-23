@@ -18,7 +18,7 @@ export const PASSI = [
   { chiave: "tempo", titolo: "Attenzione nel tempo", tecnica: "Ogni nodo guarda se stesso nei 40 frame",
     didascalia: "Le scie sono i movimenti veri di ogni punto nei 40 frame della finestra." },
   { chiave: "classi", titolo: "La decisione", tecnica: "ST-GCN (scelto: macro-F1 0,40 contro 0,29 del Graph-Transformer) + rete video R(2+1)D-18 sui pixel per la violenza", comandi: "classi",
-    didascalia: "Quattro classi. Le probabilità compariranno quando il modello sarà addestrato." },
+    didascalia: "Quattro classi, con le probabilità vere del sistema per la finestra scelta: in questo vicolo è normale (circa 80%) in tutte le 13 finestre." },
   { chiave: "warning", titolo: "WARNING ARMA", tecnica: "Arma con confidenza ≥ 0,7 vicino a un polso in ≥ 5 frame su 40 (soglie tarate sul validation)", comandi: "warning",
     didascalia: "Regola indipendente dal classificatore. Simulazione: sposta il cursore per vedere quando scatta.",
     onesta: "Simulazione della regola, non un'uscita della rete." },
