@@ -4,8 +4,8 @@
 // profondità del manichino, pesi dell'attenzione e arma sono ILLUSTRATIVI e lo dicono le didascalie.
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { coloreCss, movimentoRidotto } from "./comune.js?v=20261023175911";
-import { PASSI } from "./passi-modello.js?v=20261023175911";
+import { coloreCss, movimentoRidotto } from "./comune.js?v=20261026171005";
+import { PASSI } from "./passi-modello.js?v=20261026171005";
 
 const OSSA = [[15,13],[13,11],[16,14],[14,12],[11,12],[5,11],[6,12],[5,6],[5,7],[6,8],[7,9],[8,10],[1,2],[0,1],[0,2],[1,3],[2,4],[3,5],[4,6]];
 const POLSI = [9, 10];
@@ -20,7 +20,7 @@ const STATI = {   // opacità dei livelli; camera = spostamento dal fuoco (centr
   fotogramma: { immagine: 1, punti2d: 1, intero: true, camera: [0, -2, 36] },
   punti: { immagine: .25, punti3d: 1, ossa: .5, camera: [4, -4, 12] },
   manichino: { immagine: .08, manichini: 1, punti3d: .6, camera: [11, -2.5, 8] },
-  armi: { manichini: .5, punti3d: .8, armi: 1, camera: [2, -6, 11] },
+  armi: { manichini: .85, punti3d: .5, armi: 1, camera: [2, -6, 11] },
   grafo: { punti3d: 1, archi: 1, armi: .7, camera: [0, -8, 11] },
   pila: { pila: 1, camera: [26, 4, 8], guarda: [0, 0, 0] },
   tempo: { scie: 1, punti3d: .4, camera: [20, -3, 6], guarda: [0, 0, 0] },
@@ -29,9 +29,9 @@ const STATI = {   // opacità dei livelli; camera = spostamento dal fuoco (centr
 };
 
 export async function avviaModello() {
-  const dati = await fetch("dati/esempio-finestra.json?v=20261023175911").then((r) => r.json());
+  const dati = await fetch("dati/esempio-finestra.json?v=20261026171005").then((r) => r.json());
   // probabilità VERE del sistema consegnato per le finestre di questa clip (argo analizza-video, D49 + D53)
-  const decisioni = await fetch("dati/esempio-decisione.json?v=20261023175911").then((r) => r.json()).catch(() => null);
+  const decisioni = await fetch("dati/esempio-decisione.json?v=20261026171005").then((r) => r.json()).catch(() => null);
   const tela = document.getElementById("modello-3d");
   const renderer = new THREE.WebGLRenderer({ canvas: tela, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -99,13 +99,72 @@ export async function avviaModello() {
     }
   });
 
-  // 2 nodi arma, vuoti in questa clip: cubi tratteggiati sopra la scena
+  // arma ILLUSTRATIVA (Marco, 26/10): in questa clip non ci sono armi, quindi per far capire cosa fa il detector si
+  // mette una pistola stilizzata nella mano di un manichino, lungo l'avambraccio, con il riquadro rosso del detector.
   const armi = nuovoLivello("armi");
-  const materialeArma = new THREE.LineDashedMaterial({ color: colore("--rosso"), dashSize: .16, gapSize: .12, transparent: true });
-  const posizioniArmi = [fuoco.clone().add(new THREE.Vector3(-2.4, 3.6, 2.5)), fuoco.clone().add(new THREE.Vector3(2.4, 3.6, 2.5))];
-  for (const posizioneArma of posizioniArmi) {
-    const bordi = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(.9, .9, .9)), materialeArma);
-    bordi.computeLineDistances(); bordi.position.copy(posizioneArma); armi.add(bordi);
+  const manoArmata = (() => {   // il polso visibile della persona più vicina, con il suo gomito
+    const candidati = [];
+    persone.forEach((persona) => {
+      for (const [polso, gomito] of [[10, 8], [9, 7]]) {
+        const kp = persona.keypoint[polso], kg = persona.keypoint[gomito];
+        if (kp[2] >= SOGLIA_VISIBILITA && kg[2] >= SOGLIA_VISIBILITA) {
+          const z = 0.9 + profondita[persona.id];
+          const visibili = persona.keypoint.filter((k) => k[2] >= SOGLIA_VISIBILITA);
+          const centroX = visibili.reduce((s, k) => s + posizione(k).x, 0) / visibili.length;
+          candidati.push({ z, polso: posizione(kp, z), gomito: posizione(kg, z), centroX });
+        }
+      }
+    });
+    candidati.sort((a, b) => b.z - a.z);
+    return candidati[0] ?? { polso: fuoco.clone().add(new THREE.Vector3(1, 0, 2)), gomito: fuoco.clone().add(new THREE.Vector3(0.4, -0.6, 2)), centroX: fuoco.x };
+  })();
+  const pistola = new THREE.Group();
+  const metallo = new THREE.MeshStandardMaterial({ color: 0x3b3936, roughness: .35, metalness: .7, transparent: true });
+  const scuro = new THREE.MeshStandardMaterial({ color: 0x1f1d1b, roughness: .6, metalness: .3, transparent: true });
+  const carrello = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.22, 0.16), metallo); carrello.position.set(0.3, 0.26, 0);
+  const canna = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.14, 12), scuro);
+  canna.rotation.z = Math.PI / 2; canna.position.set(0.85, 0.27, 0);
+  const impugnatura = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.52, 0.15), scuro);
+  impugnatura.position.set(-0.08, -0.02, 0); impugnatura.rotation.z = 0.28;
+  const guardia = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.022, 6, 16, Math.PI), metallo);
+  guardia.rotation.z = Math.PI; guardia.position.set(0.16, 0.1, 0);
+  const mirino = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.05, 0.05), scuro); mirino.position.set(0.74, 0.39, 0);
+  pistola.add(carrello, canna, impugnatura, guardia, mirino);
+  // l'impugnatura nel polso, la canna orizzontale e puntata in fuori rispetto al corpo (si legge meglio di una
+  // pistola che segue l'avambraccio verso terra), appena sollevata come quando si mira
+  pistola.scale.setScalar(1.35);
+  pistola.position.copy(manoArmata.polso);
+  if (manoArmata.polso.x < manoArmata.centroX) pistola.rotation.y = Math.PI;   // verso sinistra: impugnatura sempre in basso
+  pistola.rotation.z = 0.12;
+  armi.add(pistola);
+  // il riquadro del detector: un rettangolo nel piano dell'immagine attorno alla pistola, più l'etichetta
+  pistola.updateMatrixWorld(true);
+  const ingombro = new THREE.Box3().setFromObject(pistola).expandByScalar(0.14);
+  const centroArma = ingombro.getCenter(new THREE.Vector3()), misure = ingombro.getSize(new THREE.Vector3());
+  const riquadro = new THREE.Group(); riquadro.position.copy(centroArma); riquadro.position.z = ingombro.max.z;
+  const materialeArma = new THREE.MeshBasicMaterial({ color: colore("--rosso"), transparent: true });
+  const mezzi = [misure.x / 2, misure.y / 2], spessore = 0.05;   // quattro listelli: il bordo si vede anche da lontano
+  for (const [x, y, larghezza, altezza] of [[0, mezzi[1], misure.x, spessore], [0, -mezzi[1], misure.x, spessore],
+    [mezzi[0], 0, spessore, misure.y], [-mezzi[0], 0, spessore, misure.y]]) {
+    const listello = new THREE.Mesh(new THREE.PlaneGeometry(larghezza + spessore, altezza + spessore), materialeArma);
+    listello.position.set(x, y, 0); riquadro.add(listello);
+  }
+  const tela2d = Object.assign(document.createElement("canvas"), { width: 256, height: 64 });
+  const pennello = tela2d.getContext("2d");
+  pennello.fillStyle = coloreCss("--rosso"); pennello.fillRect(0, 0, 256, 64);
+  pennello.fillStyle = "#fff"; pennello.font = "700 40px 'Alegreya Sans SC', sans-serif"; pennello.textBaseline = "middle";
+  pennello.fillText("PISTOL", 20, 34);
+  const tramaEtichetta = new THREE.CanvasTexture(tela2d); tramaEtichetta.colorSpace = THREE.SRGBColorSpace;
+  const etichetta = new THREE.Sprite(new THREE.SpriteMaterial({ map: tramaEtichetta, transparent: true, depthTest: false }));
+  etichetta.scale.set(1.2, 0.3, 1); etichetta.position.set(-mezzi[0] + 0.6 - spessore / 2, mezzi[1] + 0.15 + spessore, 0);
+  riquadro.add(etichetta);
+  armi.add(riquadro);
+  const posizioniArmi = [centroArma];
+  // la camera, nei passi delle armi, guarda la mano
+  const versoArma = centroArma.clone().sub(fuoco);
+  for (const chiave of ["armi", "warning"]) {
+    STATI[chiave].guarda = versoArma.toArray();
+    STATI[chiave].camera = versoArma.clone().add(new THREE.Vector3(chiave === "armi" ? 1.6 : -1.4, -1.8, 5.5)).toArray();
   }
 
   // archi per tipo (stesso frame)
@@ -299,8 +358,8 @@ export async function avviaModello() {
     if (chiaveCorrente === "warning") {
       const allarme = frameConArma >= 5;
       materialeArma.color.set(allarme ? coloreCss("--rosso") : coloreCss("--tenue"));
-      armi.scale.setScalar(allarme && !movimentoRidotto() ? 1 + 0.08 * Math.sin(t * 8) : 1);
-    } else { materialeArma.color.set(coloreCss("--rosso")); armi.scale.setScalar(1); }
+      riquadro.scale.setScalar(allarme && !movimentoRidotto() ? 1 + 0.08 * Math.sin(t * 8) : 1);
+    } else { materialeArma.color.set(coloreCss("--rosso")); riquadro.scale.setScalar(1); }
     if (!interazioneUtente) {
       const centro = statoCorrente.intero ? new THREE.Vector3() : fuoco;
       posizioneCamera.lerp(centro.clone().add(new THREE.Vector3(...statoCorrente.camera)), velocita);

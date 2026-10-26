@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import { casualeConSeme, coloreCss, formattaNumero, movimentoRidotto } from "./comune.js?v=20261023175911";
+import { casualeConSeme, coloreCss, formattaNumero, movimentoRidotto } from "./comune.js?v=20261026171005";
 
 const LON0 = 12.49, LAT0 = 41.89, SCALA = 100, COS = Math.cos(LAT0 * Math.PI / 180);
 const proietta = ([lon, lat]) => new THREE.Vector2((lon - LON0) * COS * SCALA, (lat - LAT0) * SCALA);
@@ -22,7 +22,7 @@ function puntoNelPoligono(punto, anello) {
 }
 
 export async function avviaMappa() {
-  const [dati, geo] = await Promise.all([fetch("dati/roma.json?v=20261023175911").then((r) => r.json()), fetch("dati/mappa-roma.geojson?v=20261023175911").then((r) => r.json())]);
+  const [dati, geo] = await Promise.all([fetch("dati/roma.json?v=20261026171005").then((r) => r.json()), fetch("dati/mappa-roma.geojson?v=20261026171005").then((r) => r.json())]);
   riempiLegenda(dati);
 
   const tela = document.getElementById("mappa-3d");

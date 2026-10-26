@@ -1,7 +1,7 @@
 // Pulviscolo nel fascio del lampione: granelli che fluttuano lenti e brillano solo dentro la luce.
 // Il canvas ha la stessa forma del cono (clip-path nel CSS); qui i granelli sono più luminosi vicino alla lampada
 // e al centro del fascio. Si ferma quando il titolo non si vede; con movimento ridotto resta un'immagine ferma.
-import { movimentoRidotto } from "./comune.js?v=20261023175911";
+import { movimentoRidotto } from "./comune.js?v=20261026171005";
 
 const GRANELLI_PER_MEGAPIXEL = 260;
 // forma del fascio in frazioni del canvas: larghezza in alto (bocca della campana) e in basso
