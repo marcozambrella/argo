@@ -750,13 +750,17 @@ def prepara_video_esperimenti(cartella_input: Path, cartella_dati: Path) -> dict
     """D68, per i kernel che leggono i pixel (rete video, ritagli delle mani): prepara le scene di folla come
     l'estrazione normali, mette tutto sotto cartella_dati e aggiunge i pezzi normali di Snatch 1.0 già tagliati
     (dataset argo-snatch10-ridotto, cartella pezzi_normali/). Ritorna id_clip → ClipAnnotata."""
+    # niente collegamenti a /kaggle/input: con Python ≥ 3.13 il glob "**" non entra nelle cartelle collegate (01/11:
+    # così l'estrazione dei dati nuovi aveva perso scippi Kaggle e WVD). Elenchi separati e poi uniti.
     prepara_normali(cartella_input, cartella_dati, True)
-    for cartella in Path(cartella_input).iterdir():
-        collegamento = cartella_dati / cartella.name
-        if not collegamento.exists():
-            collegamento.symlink_to(cartella)
+    sorgenti_input = []
+    for nome in SORGENTI_ESPERIMENTI:
+        if nome != "normali_folla":
+            sorgenti_input.append(nome)
     clip_per_id = {}
-    for clip in prepara(cartella_dati, cartella_dati / "elenchi", SORGENTI_ESPERIMENTI):
+    for clip in prepara(cartella_input, cartella_dati / "elenchi_input", sorgenti_input):
+        clip_per_id[clip.id_clip] = clip
+    for clip in prepara(cartella_dati, cartella_dati / "elenchi_folla", ["normali_folla"]):
         clip_per_id[clip.id_clip] = clip
     # i pezzi hanno lo stesso id_clip dell'estrazione, ma il file comincia già all'inizio del pezzo
     for percorso in sorted(Path(cartella_input).glob("**/pezzi_normali/*.mp4")):

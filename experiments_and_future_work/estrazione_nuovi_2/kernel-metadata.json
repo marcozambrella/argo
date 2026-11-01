@@ -1,0 +1,22 @@
+{
+  "id": "KAGGLE_UTENTE/argo-estrazione-nuovi-2",
+  "title": "argo estrazione nuovi 2",
+  "code_file": "estrazione_nuovi_2.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "machine_shape": "NvidiaTeslaT4",
+  "dataset_sources": [
+    "gauravsingh72509/snatching-datasets",
+    "manutejachindukuru/snatching",
+    "thelarka/weapon-violence-dataset-wvd",
+    "KAGGLE_UTENTE/roma-safe-cctv-mani-modello"
+  ],
+  "kernel_sources": [
+    "KAGGLE_UTENTE/roma-safe-cctv-detector-armi-v3"
+  ],
+  "competition_sources": [],
+  "model_sources": []
+}
