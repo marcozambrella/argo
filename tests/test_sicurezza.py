@@ -11,7 +11,7 @@ import urllib.request
 import torch
 import yaml
 
-from sicurezza.dati import tipi_arma_da_frase, elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
+from sicurezza.dati import tipi_arma_scvd, tipi_arma_da_frase, elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
 from sicurezza.demo import pezzi_armi_scippi, accuratezza_bilanciata, scegli_soglia, intervallo_bootstrap, tipi_della_clip, Pannello, Telecamera, Videoregistratore, crea_server, ingresso_ffmpeg, leggi_telecamera, opzioni_dai_pesi, sorgente_senza_password, AllarmeViolenza, RamoPixel, classe_finale_con_pixel, fondi_con_pixel, riduci_per_pixel, pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import analizza_predizioni, ricuci_tracce, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.strumenti import violenza_per_il_sito, risultati_per_il_sito, scarica_con_riprova, scegli_candidati_scippo_telefono, scegli_immagini_coco
@@ -1525,3 +1525,10 @@ def test_intervallo_bootstrap_contiene_il_valore_e_vale_uno_se_perfetto():
     positivi = np.array([True, True, False, False])
     clip = np.array(["a", "b", "c", "d"])
     assert intervallo_bootstrap(punteggi, positivi, ~positivi, clip, 0.5) == [1.0, 1.0]
+
+
+def test_tipi_arma_scvd_dai_nomi_dei_file(tmp_path):
+    file = tmp_path / "tipo_arma_scvd.json"
+    file.write_text(json.dumps({"Test__t_w001_converted.mp4": ["fuoco"], "Train__w010_converted.mp4": []}))
+    assert tipi_arma_scvd(file) == {"scvd/Test/Weaponized/t_w001_converted": ["fuoco"],
+                                    "scvd/Train/Weaponized/w010_converted": []}

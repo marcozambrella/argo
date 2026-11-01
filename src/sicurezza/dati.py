@@ -494,6 +494,15 @@ def tipi_arma_ucf(cartella_uca: Path = CARTELLA_UCA) -> dict:
         if len(tipi) > 0:
             tipi_per_video[id_video] = sorted(tipi)
     return tipi_per_video
+
+
+def tipi_arma_scvd(percorso) -> dict:
+    """id_clip SCVD → tipi d'arma, dal file di `strumenti annota-tipo-arma` (chiavi "Test__t_w001_converted.mp4")."""
+    tipi_per_clip = {}
+    for nome_file, tipi in json.loads(Path(percorso).read_text()).items():
+        split, nome = Path(nome_file).stem.split("__")
+        tipi_per_clip[f"scvd/{split}/Weaponized/{nome}"] = tipi
+    return tipi_per_clip
 # ------------------------------------------------------------------------------------------------------------
 
 

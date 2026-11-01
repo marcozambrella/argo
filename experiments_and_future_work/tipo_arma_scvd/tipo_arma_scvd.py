@@ -1,7 +1,10 @@
 """D68, CPU: SCVD non dice che arma c'è nelle clip "Weaponized". Per ogni clip tre frame (a 1/4, 1/2 e 3/4) in
 provini da 12 clip, con il nome della clip scritto sopra: si guardano e si scrive il tipo d'arma (fuoco/coltello)
-in annotations/armi/tipo_arma_scvd.json."""
+in annotations/armi/tipo_arma_scvd.json. Le clip sono anche convertite in mp4 (video/<split>__<nome>.mp4): il
+browser dello strumento `annota-tipo-arma` non legge gli .avi."""
 from pathlib import Path
+import shutil
+import subprocess
 import cv2
 import numpy as np
 
@@ -41,4 +44,13 @@ for numero_provino in range(0, len(percorsi), CLIP_PER_PROVINO):
         righe.append(riga)
     cv2.imwrite(str(uscita / f"provino_{numero_provino // CLIP_PER_PROVINO:02d}.jpg"), np.vstack(righe),
                 [cv2.IMWRITE_JPEG_QUALITY, 85])
+
+if shutil.which("ffmpeg") is None:   # come nel blocco d'avvio dei kernel di training/
+    subprocess.run("curl -sL https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz | "
+                   "tar -xJ -C /tmp && cp /tmp/ffmpeg-*-static/ff* /usr/local/bin/", shell=True, check=True)
+(uscita / "video").mkdir(exist_ok=True)
+for percorso in percorsi:
+    nome = f"{percorso.parent.parent.name}__{percorso.stem}.mp4"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", str(percorso), "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                    "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2", "-an", str(uscita / "video" / nome)], check=True)
 print("fatto", flush=True)

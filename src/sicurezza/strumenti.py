@@ -223,9 +223,12 @@ class GestoreAnnotazioni(BaseHTTPRequestHandler):
         self.rispondi(200, b"{}", "application/json")
 
 
-def crea_gestore(cartella_video: Path, file_annotazioni: Path):
+def crea_gestore(cartella_video: Path, file_annotazioni: Path, classe_base=None):
     # una sottoclasse con le sue cartelle: così si possono avere più server con cartelle diverse
-    class GestoreDiQuesteCartelle(GestoreAnnotazioni):
+    if classe_base is None:
+        classe_base = GestoreAnnotazioni
+
+    class GestoreDiQuesteCartelle(classe_base):
         pass
     GestoreDiQuesteCartelle.cartella_video = cartella_video
     GestoreDiQuesteCartelle.file_annotazioni = file_annotazioni
@@ -242,6 +245,131 @@ def comando_annota_scippi(argomenti=None) -> None:
     server = ThreadingHTTPServer(("127.0.0.1", argomenti.porta),
                                  crea_gestore(Path(argomenti.video), Path(argomenti.uscita)))
     print(f"Apri http://localhost:{argomenti.porta} — annotazioni in {argomenti.uscita} (Ctrl+C per chiudere)")
+    server.serve_forever()
+
+
+# ==============================================================================================================
+# annota_tipo_arma
+# D68: SCVD non dice che arma c'è nelle clip "Weaponized"; per misurare armi da fuoco e coltelli separati il tipo
+# lo segna Marco guardando le clip (convertite in mp4 dal kernel experiments_and_future_work/tipo_arma_scvd).
+# Stesso server di annota-scippi, pagina più semplice: un tasto per clip, salva e passa alla prossima.
+#     F  arma da fuoco    C  coltello    E  entrambi    X  non si capisce
+#     Spazio play/pausa   ← →  ±1 s   1 2 3 velocità   P S  clip precedente / successiva
+# Uso:
+#     uv run python -m sicurezza.strumenti annota-tipo-arma --video <cartella video/ del kernel>
+#     (poi apri http://localhost:8771)
+# ==============================================================================================================
+
+FILE_TIPO_ARMA_PREDEFINITO = "annotations/armi/tipo_arma_scvd.json"
+
+PAGINA_TIPO_ARMA = """<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><title>Tipo d'arma</title>
+<style>
+ body { font: 15px system-ui, sans-serif; margin: 16px; background: #111; color: #eee; }
+ video { width: 100%; max-height: 75vh; background: #000; }
+ .riga { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+ .tasto { border: 1px solid #666; padding: 0 6px; border-radius: 3px; font-family: monospace; }
+ #stato { color: #9c9; } #gia { color: #fc6; }
+</style></head><body>
+<div class="riga"><strong id="nome">…</strong><span id="avanzamento"></span><span id="gia"></span>
+ <span id="stato"></span></div>
+<video id="video" controls loop autoplay muted></video>
+<div class="riga"><span><span class="tasto">F</span> arma da fuoco</span><span><span class="tasto">C</span> coltello</span>
+ <span><span class="tasto">E</span> entrambi</span><span><span class="tasto">X</span> non si capisce</span>
+ <span><span class="tasto">Spazio</span> play/pausa</span><span><span class="tasto">← →</span> ±1 s</span>
+ <span><span class="tasto">1 2 3</span> velocità</span><span><span class="tasto">P S</span> precedente / successiva</span></div>
+<script>
+const video = document.getElementById("video");
+let elenco = [], annotazioni = {}, indice = 0;
+const testo = (id, valore) => document.getElementById(id).textContent = valore;
+
+async function carica() {
+  const risposta = await (await fetch("/elenco")).json();
+  elenco = risposta.video; annotazioni = risposta.annotazioni;
+  if (risposta.problema) { testo("stato", risposta.problema); return; }
+  const primoDaFare = elenco.findIndex((nome) => !(nome in annotazioni));
+  apri(primoDaFare >= 0 ? primoDaFare : 0);
+}
+function apri(nuovoIndice) {
+  indice = nuovoIndice;
+  const nome = elenco[indice];
+  video.src = "/video/" + encodeURIComponent(nome); video.playbackRate = 1;
+  testo("nome", nome);
+  testo("avanzamento", `${Object.keys(annotazioni).length}/${elenco.length} segnate · clip ${indice + 1}`);
+  if (nome in annotazioni) testo("gia", "già segnata: " + (annotazioni[nome].join(" + ") || "non si capisce"));
+  else testo("gia", "");
+}
+async function segna(tipi) {
+  const nome = elenco[indice];
+  await fetch("/salva", { method: "POST", body: JSON.stringify({ video: nome, tipi }) });
+  annotazioni[nome] = tipi;
+  testo("stato", "salvata " + nome);
+  const prossimo = elenco.findIndex((n, i) => i > indice && !(n in annotazioni));
+  const qualsiasi = elenco.findIndex((n) => !(n in annotazioni));
+  if (prossimo >= 0) apri(prossimo); else if (qualsiasi >= 0) apri(qualsiasi);
+  else testo("stato", "Finito: tutte le clip sono segnate. Puoi chiudere la pagina.");
+}
+document.addEventListener("keydown", (evento) => {
+  const azioni = {
+    "f": () => segna(["fuoco"]),
+    "c": () => segna(["coltello"]),
+    "e": () => segna(["coltello", "fuoco"]),
+    "x": () => segna([]),
+    " ": () => (video.paused ? video.play() : video.pause()),
+    "ArrowLeft": () => (video.currentTime = Math.max(0, video.currentTime - 1)),
+    "ArrowRight": () => (video.currentTime += 1),
+    "1": () => { video.playbackRate = 0.25; },
+    "2": () => { video.playbackRate = 0.5; },
+    "3": () => { video.playbackRate = 1; },
+    "p": () => { if (indice > 0) apri(indice - 1); },
+    "s": () => { if (indice < elenco.length - 1) apri(indice + 1); },
+  };
+  const azione = azioni[evento.key] || azioni[evento.key.toLowerCase()];
+  if (azione) { evento.preventDefault(); azione(); }
+});
+carica();
+</script></body></html>
+"""
+
+
+class GestoreTipoArma(GestoreAnnotazioni):
+    """Come GestoreAnnotazioni (elenco e video uguali), ma con la sua pagina e il suo salvataggio."""
+
+    def do_GET(self):
+        if self.path == "/":
+            self.rispondi(200, PAGINA_TIPO_ARMA.encode(), "text/html; charset=utf-8")
+        else:
+            super().do_GET()
+
+    def do_POST(self):
+        if self.path != "/salva":
+            self.rispondi(404, b"", "text/plain")
+            return
+        dati = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        tipi = []
+        for tipo in dati["tipi"]:
+            if tipo in ("fuoco", "coltello"):
+                tipi.append(tipo)
+        with self.blocco_scrittura:
+            annotazioni = self.leggi_annotazioni()
+            annotazioni[Path(dati["video"]).name] = sorted(tipi)
+            self.file_annotazioni.parent.mkdir(parents=True, exist_ok=True)
+            righe = []   # una riga per clip, come i tempi degli scippi
+            for nome, valore in sorted(annotazioni.items()):
+                righe.append(f"{json.dumps(nome)}: {json.dumps(valore)}")
+            self.file_annotazioni.write_text("{\n" + ",\n".join(righe) + "\n}\n")
+        self.rispondi(200, b"{}", "application/json")
+
+
+def comando_annota_tipo_arma(argomenti=None) -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--video", required=True, help="cartella video/ scaricata dal kernel tipo_arma_scvd")
+    parser.add_argument("--uscita", default=FILE_TIPO_ARMA_PREDEFINITO)
+    parser.add_argument("--porta", type=int, default=8771)
+    argomenti = parser.parse_args(argomenti)
+    gestore = crea_gestore(Path(argomenti.video), Path(argomenti.uscita), GestoreTipoArma)
+    server = ThreadingHTTPServer(("127.0.0.1", argomenti.porta), gestore)
+    print(f"Apri http://localhost:{argomenti.porta} — tipi d'arma in {argomenti.uscita} (Ctrl+C per chiudere)")
     server.serve_forever()
 
 
@@ -709,7 +837,8 @@ def comando_monta_presentazione(argomenti=None) -> None:
 # ==============================================================================================================
 # riga di comando: python -m sicurezza.strumenti <comando> [opzioni]
 # ==============================================================================================================
-COMANDI = {"annota-scippi": comando_annota_scippi, "scarica-campioni": comando_scarica_campioni,
+COMANDI = {"annota-scippi": comando_annota_scippi, "annota-tipo-arma": comando_annota_tipo_arma,
+           "scarica-campioni": comando_scarica_campioni,
            "scarica-negativi-coco": comando_scarica_negativi_coco, "scarica-video-cc": comando_scarica_video_cc,
            "esporta-risultati-sito": comando_esporta_risultati_sito,
            "monta-presentazione": comando_monta_presentazione}

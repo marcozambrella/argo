@@ -19,7 +19,7 @@ import numpy as np
 import torch
 
 from .dati import CLASSI, FPS_ANALISI, FRAME_PER_FINESTRA, INDICE_CLASSE, OSSA, PASSO_FINESTRE, POLSI
-from .dati import leggi_frame, leggi_info_video, nome_file_estratto, tipi_arma_ucf
+from .dati import leggi_frame, leggi_info_video, nome_file_estratto, tipi_arma_scvd, tipi_arma_ucf
 from .modelli import TimelineVideo, carica_timeline, costruisci_finestra, crea_modello, metriche, timeline_da_dati
 from .visione import MODELLO_POSE_PREDEFINITO, TRACKER_PREDEFINITO, Estrattore, impacchetta_estrazione
 
@@ -1050,14 +1050,14 @@ def comando_valuta_armi_scippi(argomenti=None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--modelli", nargs="+", required=True,
                         help="cartelle con punteggi_val.npz e punteggi_test.npz (il nome della cartella è il nome)")
-    parser.add_argument("--tipi-scvd", default=None, help="json id_clip → tipi d'arma delle clip SCVD armate")
+    parser.add_argument("--tipi-scvd", default=None, help="file di `strumenti annota-tipo-arma`")
     parser.add_argument("--secondi-pezzo", type=float, default=10.0)
     parser.add_argument("--uscita", required=True)
     argomenti = parser.parse_args(argomenti)
     tipi_ucf = tipi_arma_ucf()
     tipi_scvd = {}
     if argomenti.tipi_scvd:
-        tipi_scvd = json.loads(Path(argomenti.tipi_scvd).read_text())
+        tipi_scvd = tipi_arma_scvd(argomenti.tipi_scvd)
     risultato = {"secondi_pezzo": argomenti.secondi_pezzo, "modelli": {}}
     for cartella in argomenti.modelli:
         nome = Path(cartella).name
