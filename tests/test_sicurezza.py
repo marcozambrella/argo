@@ -11,8 +11,8 @@ import urllib.request
 import torch
 import yaml
 
-from sicurezza.dati import elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
-from sicurezza.demo import Pannello, Telecamera, Videoregistratore, crea_server, ingresso_ffmpeg, leggi_telecamera, opzioni_dai_pesi, sorgente_senza_password, AllarmeViolenza, RamoPixel, classe_finale_con_pixel, fondi_con_pixel, riduci_per_pixel, pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
+from sicurezza.dati import tipi_arma_da_frase, elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
+from sicurezza.demo import pezzi_armi_scippi, accuratezza_bilanciata, scegli_soglia, intervallo_bootstrap, tipi_della_clip, Pannello, Telecamera, Videoregistratore, crea_server, ingresso_ffmpeg, leggi_telecamera, opzioni_dai_pesi, sorgente_senza_password, AllarmeViolenza, RamoPixel, classe_finale_con_pixel, fondi_con_pixel, riduci_per_pixel, pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import analizza_predizioni, ricuci_tracce, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.strumenti import violenza_per_il_sito, risultati_per_il_sito, scarica_con_riprova, scegli_candidati_scippo_telefono, scegli_immagini_coco
 from sicurezza.visione import mani_di_una_persona, precisione_media, probabilita_armi_in_mano, ritaglio_quadrato, ritagli_per_addestramento, prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
@@ -1469,3 +1469,59 @@ def test_telecamera_da_file_in_modalita_scheletri(tmp_path):
     assert len(righe) == 50 and len(json.loads(righe[0])["persone"][0]["keypoint"]) == 17
     assert leggi_info_video(str(telecamera.cartella / "video_annotato.mp4")).durata_secondi == pytest.approx(2.0, abs=0.1)
     assert telecamera.jpeg.startswith(b"\xff\xd8")
+
+
+# ==============================================================================================================
+# armi_e_scippi_a_pezzi (D68)
+# ==============================================================================================================
+
+def test_tipi_arma_da_frase():
+    assert tipi_arma_da_frase("A man pointed a gun at the cashier.") == ["fuoco"]
+    assert tipi_arma_da_frase("A man hit the woman with a knife.") == ["coltello"]
+    assert tipi_arma_da_frase("A man walks into the shop.") == []        # nessuna violenza armata
+    assert tipi_arma_da_frase("A man threatened the clerk with a weapon.") == []   # tipo non detto
+
+
+def test_tipi_della_clip():
+    tipi_ucf = {"Robbery001_x264": ["fuoco"]}
+    assert tipi_della_clip("ucf/Robbery001_x264@3.0-20.0", tipi_ucf, {}) == ["fuoco"]
+    assert tipi_della_clip("scvd/Test/Weaponized/t_w001_converted", tipi_ucf,
+                           {"scvd/Test/Weaponized/t_w001_converted": ["coltello"]}) == ["coltello"]
+    assert tipi_della_clip("scvd/Test/Weaponized/t_w002_converted", tipi_ucf, {}) == []
+
+
+def test_pezzi_armi_scippi_positivi_negativi_e_massimo():
+    # clip "ucf/A" armata con pistola nel primo pezzo; "b" normale; "c" scippo. Pezzi da 10 s = 250 frame.
+    punteggi = {"id_clip": np.array(["ucf/A@0-30", "ucf/A@0-30", "ucf/A@0-30", "b", "c"]),
+                "inizio_finestra": np.array([0, 10, 260, 0, 0]),
+                "etichetta": np.array([INDICE_CLASSE["violenza_con_arma"], INDICE_CLASSE["normale"],
+                                       INDICE_CLASSE["violenza"], INDICE_CLASSE["normale"], INDICE_CLASSE["scippo"]]),
+                "sorgente": np.array(["ucf_uca", "ucf_uca", "ucf_uca", "folla_mot17", "chain_snatching"]),
+                "arma": np.array([0.2, 0.9, 0.1, 0.3, 0.0])}
+    pezzi = pezzi_armi_scippi(punteggi, 10, {"A": ["fuoco"]}, {})
+    assert pezzi["pezzo"].tolist() == ["b#0", "c#0", "ucf/A@0-30#0", "ucf/A@0-30#1"]
+    assert pezzi["positivo_arma"].tolist() == [False, False, True, False]
+    assert pezzi["positivo_fuoco"].tolist() == [False, False, True, False]
+    assert pezzi["positivo_coltello"].tolist() == [False, False, False, False]
+    assert pezzi["negativo_coltello"].tolist() == [True, True, False, True]   # il pezzo con la pistola non conta
+    assert pezzi["positivo_scippo"].tolist() == [False, True, False, False]
+    assert pezzi["punteggio_arma"].tolist() == pytest.approx([0.3, 0.0, 0.9, 0.1])   # massimo delle finestre
+    assert "punteggio_scippo" not in pezzi
+
+
+def test_accuratezza_bilanciata_e_soglia():
+    punteggi = np.array([0.9, 0.8, 0.3, 0.2, 0.1, 0.7])
+    positivi = np.array([True, True, True, False, False, False])
+    negativi = ~positivi
+    misura = accuratezza_bilanciata(punteggi, positivi, negativi, 0.5)
+    assert misura["recall"] == pytest.approx(2 / 3, abs=1e-4)   # arrotondato a 4 cifre
+    assert misura["specificita"] == pytest.approx(2 / 3, abs=1e-4)
+    soglia = scegli_soglia(punteggi, positivi, negativi)
+    assert accuratezza_bilanciata(punteggi, positivi, negativi, soglia)["bilanciata"] >= misura["bilanciata"]
+
+
+def test_intervallo_bootstrap_contiene_il_valore_e_vale_uno_se_perfetto():
+    punteggi = np.array([0.9, 0.8, 0.2, 0.1])
+    positivi = np.array([True, True, False, False])
+    clip = np.array(["a", "b", "c", "d"])
+    assert intervallo_bootstrap(punteggi, positivi, ~positivi, clip, 0.5) == [1.0, 1.0]

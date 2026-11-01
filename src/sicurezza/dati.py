@@ -461,6 +461,39 @@ def classe_da_frase(frase: str):
     if violenza:
         return "violenza"
     return None
+
+
+# D68: le armi si misurano a parte per armi da fuoco e coltelli. In UCF il tipo si ricava dalla frase;
+# "weapon" da solo non dice il tipo (None).
+PAROLE_ARMA_DA_FUOCO = r"\b(gun|guns|pistol|handgun|rifle|shotgun|firearm|shot|shoot\w*|fired)\b"
+PAROLE_ARMA_BIANCA = r"\b(knife|knives|machete|dagger|stab\w*)\b"
+
+
+def tipi_arma_da_frase(frase: str) -> list:
+    """I tipi d'arma ("fuoco", "coltello") nominati in una frase UCA con violenza armata."""
+    if classe_da_frase(frase) != "violenza_con_arma":
+        return []
+    testo = frase.lower()
+    tipi = []
+    if re.search(PAROLE_ARMA_DA_FUOCO, testo):
+        tipi.append("fuoco")
+    if re.search(PAROLE_ARMA_BIANCA, testo):
+        tipi.append("coltello")
+    return tipi
+
+
+def tipi_arma_ucf(cartella_uca: Path = CARTELLA_UCA) -> dict:
+    """id del video UCF → tipi d'arma delle sue frasi armate (solo i video che ne hanno)."""
+    tipi_per_video = {}
+    for id_video, dati in carica_uca(cartella_uca).items():
+        tipi = []
+        for frase in dati["sentences"]:
+            for tipo in tipi_arma_da_frase(frase):
+                if tipo not in tipi:
+                    tipi.append(tipo)
+        if len(tipi) > 0:
+            tipi_per_video[id_video] = sorted(tipi)
+    return tipi_per_video
 # ------------------------------------------------------------------------------------------------------------
 
 

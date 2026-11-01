@@ -1,0 +1,16 @@
+{
+  "id": "KAGGLE_UTENTE/argo-tipo-arma-scvd",
+  "title": "argo tipo arma scvd",
+  "code_file": "tipo_arma_scvd.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": true,
+  "dataset_sources": [
+    "toluwaniaremu/smartcity-cctv-violence-detection-dataset-scvd"
+  ],
+  "kernel_sources": [],
+  "competition_sources": [],
+  "model_sources": []
+}

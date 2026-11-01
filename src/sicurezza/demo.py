@@ -19,7 +19,7 @@ import numpy as np
 import torch
 
 from .dati import CLASSI, FPS_ANALISI, FRAME_PER_FINESTRA, INDICE_CLASSE, OSSA, PASSO_FINESTRE, POLSI
-from .dati import leggi_frame, leggi_info_video, nome_file_estratto
+from .dati import leggi_frame, leggi_info_video, nome_file_estratto, tipi_arma_ucf
 from .modelli import TimelineVideo, carica_timeline, costruisci_finestra, crea_modello, metriche, timeline_da_dati
 from .visione import MODELLO_POSE_PREDEFINITO, TRACKER_PREDEFINITO, Estrattore, impacchetta_estrazione
 
@@ -888,6 +888,196 @@ def comando_valuta_allarme(argomenti=None) -> None:
 
 
 # ==============================================================================================================
+# Armi e scippi a pezzi (D68): "in questo pezzo da 10 s c'è un'arma da fuoco? un coltello? uno scippo?"
+# "arma" = arma di qualsiasi tipo, anche ignoto (SCVD non dice il tipo).
+# Ogni modello dà un punteggio per finestra e per tipo; il punteggio del pezzo è il massimo delle sue finestre.
+# Positivi di un tipo: pezzi con almeno una finestra di quel tipo. Negativi: pezzi senza finestre armate (per le
+# armi) o senza scippi (per gli scippi). I pezzi armati dell'altro tipo, o di tipo ignoto, non contano.
+# La soglia si sceglie sul validation (accuratezza bilanciata massima) e si misura sul test; l'intervallo di
+# confidenza è un bootstrap sulle clip (i pezzi della stessa clip si somigliano).
+#
+# Ogni modello è una cartella con punteggi_val.npz e punteggi_test.npz: id_clip, inizio_finestra, etichetta,
+# sorgente e i punteggi che il modello sa dare tra "arma", "fuoco", "coltello", "scippo".
+#     python -m sicurezza.demo valuta-armi-scippi --modelli runs/esperimenti_armi_scippi/stgcn_lungo ...
+#         --tipi-scvd annotations/armi/tipo_arma_scvd.json --uscita confronto.json
+# ==============================================================================================================
+TIPI_MISURATI = ("arma", "fuoco", "coltello", "scippo")
+SOGLIE_DA_PROVARE_PEZZI = 200
+RIPETIZIONI_BOOTSTRAP = 1000
+
+
+def tipi_della_clip(id_clip: str, tipi_ucf: dict, tipi_scvd: dict) -> list:
+    """Tipi d'arma di una clip armata: UCF dalle frasi (tipi_ucf per id del video), SCVD dall'annotazione."""
+    if id_clip.startswith("ucf/"):
+        id_video = id_clip[len("ucf/"):].split("@")[0]
+        if id_video in tipi_ucf:
+            return tipi_ucf[id_video]
+        return []
+    if id_clip in tipi_scvd:
+        return tipi_scvd[id_clip]
+    return []
+
+
+def pezzi_armi_scippi(punteggi: dict, secondi_pezzo: float, tipi_ucf: dict, tipi_scvd: dict) -> dict:
+    """Per ogni pezzo: clip, sorgente, e per ogni tipo misurato punteggio massimo, positivo, negativo."""
+    pezzi = pezzi_di_video(punteggi["id_clip"], punteggi["inizio_finestra"], secondi_pezzo)
+    nomi_pezzi, posizione = np.unique(pezzi, return_inverse=True)
+    numero_pezzi = len(nomi_pezzi)
+    armata = punteggi["etichetta"] == INDICE_CLASSE["violenza_con_arma"]
+    scippo = punteggi["etichetta"] == INDICE_CLASSE["scippo"]
+
+    # per ogni finestra, se è di quel tipo (una finestra armata può essere di tutti e due i tipi d'arma)
+    di_tipo = {"arma": armata, "fuoco": np.zeros(len(pezzi), bool), "coltello": np.zeros(len(pezzi), bool),
+               "scippo": scippo}
+    for riga in np.where(armata)[0]:
+        for tipo in tipi_della_clip(str(punteggi["id_clip"][riga]), tipi_ucf, tipi_scvd):
+            di_tipo[tipo][riga] = True
+
+    pezzo_armato = np.zeros(numero_pezzi, bool)
+    np.logical_or.at(pezzo_armato, posizione, armata)
+    pezzo_con_scippo = np.zeros(numero_pezzi, bool)
+    np.logical_or.at(pezzo_con_scippo, posizione, scippo)
+    clip = np.empty(numero_pezzi, dtype=object)
+    sorgente = np.empty(numero_pezzi, dtype=object)
+    clip[posizione] = punteggi["id_clip"]
+    sorgente[posizione] = punteggi["sorgente"]
+    risultato = {"pezzo": nomi_pezzi, "clip": clip.astype(str), "sorgente": sorgente.astype(str)}
+    for tipo in TIPI_MISURATI:
+        positivo = np.zeros(numero_pezzi, bool)
+        np.logical_or.at(positivo, posizione, di_tipo[tipo])
+        if tipo == "scippo":
+            negativo = ~pezzo_con_scippo
+        else:
+            negativo = ~pezzo_armato
+        risultato[f"positivo_{tipo}"] = positivo
+        risultato[f"negativo_{tipo}"] = negativo
+        if tipo in punteggi:
+            massimo = np.full(numero_pezzi, -np.inf)
+            np.maximum.at(massimo, posizione, np.asarray(punteggi[tipo], np.float64))
+            risultato[f"punteggio_{tipo}"] = massimo
+    return risultato
+
+
+def accuratezza_bilanciata(punteggi: np.ndarray, positivi: np.ndarray, negativi: np.ndarray, soglia: float) -> dict:
+    allarme = punteggi >= soglia
+    recall = float(allarme[positivi].mean())
+    specificita = float((~allarme[negativi]).mean())
+    return {"bilanciata": round((recall + specificita) / 2, 4), "recall": round(recall, 4),
+            "specificita": round(specificita, 4)}
+
+
+def scegli_soglia(punteggi: np.ndarray, positivi: np.ndarray, negativi: np.ndarray) -> float:
+    """La soglia con l'accuratezza bilanciata più alta tra i quantili dei punteggi."""
+    candidate = np.unique(np.quantile(punteggi[positivi | negativi], np.linspace(0, 1, SOGLIE_DA_PROVARE_PEZZI)))
+    migliore = float(candidate[0])
+    valore_migliore = -1.0
+    for soglia in candidate:
+        valore = accuratezza_bilanciata(punteggi, positivi, negativi, float(soglia))["bilanciata"]
+        if valore > valore_migliore:
+            migliore = float(soglia)
+            valore_migliore = valore
+    return migliore
+
+
+def intervallo_bootstrap(punteggi: np.ndarray, positivi: np.ndarray, negativi: np.ndarray, clip: np.ndarray,
+                         soglia: float, seme: int = 0) -> list:
+    """Intervallo al 95% dell'accuratezza bilanciata ricampionando le clip con ripetizione."""
+    nomi_clip, indice_clip = np.unique(clip, return_inverse=True)
+    allarme = punteggi >= soglia
+    # per ogni clip: quanti positivi ha, quanti ne prende, quanti negativi, quanti ne lascia stare
+    positivi_per_clip = np.bincount(indice_clip, weights=positivi, minlength=len(nomi_clip))
+    presi_per_clip = np.bincount(indice_clip, weights=positivi & allarme, minlength=len(nomi_clip))
+    negativi_per_clip = np.bincount(indice_clip, weights=negativi, minlength=len(nomi_clip))
+    lasciati_per_clip = np.bincount(indice_clip, weights=negativi & ~allarme, minlength=len(nomi_clip))
+    generatore = np.random.default_rng(seme)
+    valori = []
+    for _ in range(RIPETIZIONI_BOOTSTRAP):
+        scelte = generatore.integers(0, len(nomi_clip), len(nomi_clip))
+        totale_positivi = positivi_per_clip[scelte].sum()
+        totale_negativi = negativi_per_clip[scelte].sum()
+        if totale_positivi == 0 or totale_negativi == 0:
+            continue
+        recall = presi_per_clip[scelte].sum() / totale_positivi
+        specificita = lasciati_per_clip[scelte].sum() / totale_negativi
+        valori.append((recall + specificita) / 2)
+    return [round(float(np.quantile(valori, 0.025)), 4), round(float(np.quantile(valori, 0.975)), 4)]
+
+
+def misura_un_tipo(val: dict, test: dict, tipo: str) -> dict:
+    punteggi_val = val[f"punteggio_{tipo}"]
+    soglia = scegli_soglia(punteggi_val, val[f"positivo_{tipo}"], val[f"negativo_{tipo}"])
+    positivi = test[f"positivo_{tipo}"]
+    negativi = test[f"negativo_{tipo}"]
+    punteggi_test = test[f"punteggio_{tipo}"]
+    risultato = accuratezza_bilanciata(punteggi_test, positivi, negativi, soglia)
+    risultato["intervallo_95"] = intervallo_bootstrap(punteggi_test, positivi, negativi, test["clip"], soglia)
+    risultato["soglia"] = round(soglia, 4)
+    risultato["val"] = accuratezza_bilanciata(punteggi_val, val[f"positivo_{tipo}"], val[f"negativo_{tipo}"], soglia)
+    risultato["pezzi_positivi"] = int(positivi.sum())
+    risultato["clip_positive"] = len(set(test["clip"][positivi].tolist()))
+    risultato["pezzi_negativi"] = int(negativi.sum())
+    # recall per sorgente e falsi allarmi nelle folle (le scene di metro e stazione che contano per Roma)
+    allarme = punteggi_test >= soglia
+    risultato["recall_per_sorgente"] = {}
+    for sorgente in sorted(set(test["sorgente"][positivi].tolist())):
+        maschera = positivi & (test["sorgente"] == sorgente)
+        risultato["recall_per_sorgente"][sorgente] = round(float(allarme[maschera].mean()), 4)
+    folla = negativi & np.char.startswith(test["sorgente"], "folla")
+    if folla.any():
+        risultato["falsi_allarmi_folle"] = round(float(allarme[folla].mean()), 4)
+    return risultato
+
+
+def carica_punteggi(percorso) -> dict:
+    with np.load(percorso) as file:
+        punteggi = {}
+        for chiave in file.files:
+            punteggi[chiave] = file[chiave]
+    return punteggi
+
+
+def salva_punteggi(percorso, finestre: dict, punteggi_per_tipo: dict) -> None:
+    """finestre: id_clip, inizio_finestra, etichetta, sorgente; punteggi_per_tipo: tipo → [finestre]."""
+    campi = {}
+    for chiave in ("id_clip", "inizio_finestra", "etichetta", "sorgente"):
+        campi[chiave] = np.asarray(finestre[chiave])
+    for tipo, valori in punteggi_per_tipo.items():
+        campi[tipo] = np.asarray(valori, np.float32)
+    np.savez_compressed(percorso, **campi)
+
+
+def comando_valuta_armi_scippi(argomenti=None) -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--modelli", nargs="+", required=True,
+                        help="cartelle con punteggi_val.npz e punteggi_test.npz (il nome della cartella è il nome)")
+    parser.add_argument("--tipi-scvd", default=None, help="json id_clip → tipi d'arma delle clip SCVD armate")
+    parser.add_argument("--secondi-pezzo", type=float, default=10.0)
+    parser.add_argument("--uscita", required=True)
+    argomenti = parser.parse_args(argomenti)
+    tipi_ucf = tipi_arma_ucf()
+    tipi_scvd = {}
+    if argomenti.tipi_scvd:
+        tipi_scvd = json.loads(Path(argomenti.tipi_scvd).read_text())
+    risultato = {"secondi_pezzo": argomenti.secondi_pezzo, "modelli": {}}
+    for cartella in argomenti.modelli:
+        nome = Path(cartella).name
+        val = pezzi_armi_scippi(carica_punteggi(Path(cartella) / "punteggi_val.npz"), argomenti.secondi_pezzo,
+                                tipi_ucf, tipi_scvd)
+        test = pezzi_armi_scippi(carica_punteggi(Path(cartella) / "punteggi_test.npz"), argomenti.secondi_pezzo,
+                                 tipi_ucf, tipi_scvd)
+        risultato["modelli"][nome] = {}
+        for tipo in TIPI_MISURATI:
+            if f"punteggio_{tipo}" not in test:
+                continue
+            misura = misura_un_tipo(val, test, tipo)
+            risultato["modelli"][nome][tipo] = misura
+            print(f"{nome:28s} {tipo:9s} bilanciata {misura['bilanciata']:.3f} {misura['intervallo_95']}  "
+                  f"recall {misura['recall']:.2f}  specificità {misura['specificita']:.2f}  "
+                  f"({misura['clip_positive']} clip positive)")
+    Path(argomenti.uscita).write_text(json.dumps(risultato, indent=1, ensure_ascii=False))
+
+
+# ==============================================================================================================
 # pannello
 # Argo dal vivo (D56, D57): un pannello web locale collegato alle telecamere. Per ogni telecamera un ffmpeg registra
 # il flusso a segmenti da 10 s a 25 fps ("videoregistratore", in sessioni/<telecamera>/<data>/) e un thread li
@@ -1423,7 +1613,8 @@ def comando_scarica_pesi(argomenti=None) -> None:
 # ==============================================================================================================
 COMANDI = {"pannello": comando_pannello, "scarica-pesi": comando_scarica_pesi,
            "analizza-video": comando_analizza_video, "tara-warning": comando_tara_warning,
-           "valuta-sistema": comando_valuta_sistema, "valuta-allarme": comando_valuta_allarme}
+           "valuta-sistema": comando_valuta_sistema, "valuta-allarme": comando_valuta_allarme,
+           "valuta-armi-scippi": comando_valuta_armi_scippi}
 
 
 def main(argomenti=None) -> None:
