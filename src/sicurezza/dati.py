@@ -727,6 +727,42 @@ ARMI_DA_FUOCO_WVD = ("MG", "MGCombat", "PistolAP", "PistolCombat", "RifleBullpup
 COLTELLI_WVD = ("Knife", "Machette")
 
 
+URL_SNATCH10 = "https://zenodo.org/records/10812645/files/Snatch%201.0-20201231T071009Z-00{numero}.zip?download=1"
+SORGENTI_ESPERIMENTI = ("rwf2000", "cctv_fights", "scvd", "ucf_uca", "chain_snatching", "normali_folla", "snatch10",
+                        "snatch10_normali", "scippi_kaggle", "wvd")
+
+
+def prepara_video_esperimenti(cartella_input: Path, cartella_dati: Path) -> dict:
+    """D68, per i kernel che leggono i pixel (rete video, ritagli delle mani): scarica Snatch 1.0 da Zenodo (7 zip,
+    uno alla volta), prepara le scene di folla come l'estrazione normali e mette tutto sotto cartella_dati.
+    Ritorna id_clip → ClipAnnotata di tutte le sorgenti degli esperimenti."""
+    socket.setdefaulttimeout(120)   # un download bloccato non deve appendere il kernel
+    zenodo = cartella_dati / "zenodo"
+    zenodo.mkdir(parents=True, exist_ok=True)
+    for numero in range(1, 8):
+        archivio = cartella_dati / "snatch.zip"
+        for tentativo in range(3):
+            try:
+                urllib.request.urlretrieve(URL_SNATCH10.format(numero=numero), archivio)
+                break
+            except OSError:
+                if tentativo == 2:
+                    raise
+        with zipfile.ZipFile(archivio) as dentro:
+            dentro.extractall(zenodo)
+        archivio.unlink()
+        print(f"Snatch 1.0: zip {numero} di 7", flush=True)
+    prepara_normali(cartella_input, cartella_dati, True)
+    for cartella in Path(cartella_input).iterdir():
+        collegamento = cartella_dati / cartella.name
+        if not collegamento.exists():
+            collegamento.symlink_to(cartella)
+    clip_per_id = {}
+    for clip in prepara(cartella_dati, cartella_dati / "elenchi", SORGENTI_ESPERIMENTI):
+        clip_per_id[clip.id_clip] = clip
+    return clip_per_id
+
+
 def tipi_arma_wvd(id_clip: str) -> list:
     arma = id_clip.split("/")[-1].split("-")[1]
     if arma in ARMI_DA_FUOCO_WVD:

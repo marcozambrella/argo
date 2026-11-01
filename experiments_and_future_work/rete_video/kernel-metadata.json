@@ -1,0 +1,32 @@
+{
+  "id": "KAGGLE_UTENTE/argo-rete-video-VARIANTE",
+  "title": "argo rete video VARIANTE",
+  "code_file": "rete_video.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "machine_shape": "NvidiaTeslaT4",
+  "dataset_sources": [
+    "vulamnguyen/rwf2000",
+    "mohamedtariki/vsd-cctv-fights",
+    "toluwaniaremu/smartcity-cctv-violence-detection-dataset-scvd",
+    "bypktt/ucf-crimes",
+    "aniketsahu09/chain-snatching-cctv-dataset",
+    "gauravsingh72509/snatching-datasets",
+    "manutejachindukuru/snatching",
+    "thelarka/weapon-violence-dataset-wvd",
+    "ismailelbouknify/mot-20",
+    "hoangxuanviet/crohd-head-tracking-21",
+    "ahmedsamir1598/mot17challenge",
+    "flowerb123/shanghaitech-campus",
+    "smmohiuddinkhanshiam/ubi-fights",
+    "hihnguynth/cuhk-avenue-dataset"
+  ],
+  "kernel_sources": [
+    "marcozambrella/argo-finestre-v3"
+  ],
+  "competition_sources": [],
+  "model_sources": []
+}

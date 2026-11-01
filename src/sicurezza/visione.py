@@ -921,6 +921,41 @@ def ritagli_delle_mani(frame: np.ndarray, box_persone: np.ndarray, keypoint_pers
     return ritagli, persona_del_ritaglio
 
 
+ISTANTI_RITAGLI_FINESTRA = (3, 10, 16, 23, 29, 36)   # D68: 6 frame dei 40 di una finestra
+LATO_RITAGLI_FINESTRA = 56
+MANI_PER_FINESTRA = 8                                # 4 persone × 2 polsi
+
+
+def ritagli_della_finestra(frame_finestra: np.ndarray, tracce_scelte: list,
+                           istanti=ISTANTI_RITAGLI_FINESTRA, lato_uscita: int = LATO_RITAGLI_FINESTRA):
+    """D68, strada A: i ritagli delle mani delle persone scelte (`modelli.tracce_scelte_della_finestra`) in alcuni
+    frame della finestra. frame_finestra [40, H, W, 3] alla risoluzione dei keypoint. Ritorna (ritagli
+    [istanti, 8, lato, lato, 3] uint8, presenti [istanti, 8] bool); il posto è persona * 2 + polso."""
+    import cv2
+    ritagli = np.zeros((len(istanti), MANI_PER_FINESTRA, lato_uscita, lato_uscita, 3), np.uint8)
+    presenti = np.zeros((len(istanti), MANI_PER_FINESTRA), bool)
+    for numero_istante, istante in enumerate(istanti):
+        if istante >= len(frame_finestra):
+            continue
+        for posto_persona, (punteggio, keypoint, box) in enumerate(tracce_scelte):
+            if np.isnan(box[istante, 0]):
+                continue   # la persona non c'è in questo frame
+            lato = max(LATO_RITAGLIO_SU_ALTEZZA * float(box[istante, 3] - box[istante, 1]), LATO_MINIMO_RITAGLIO)
+            for numero_polso, (polso, gomito) in enumerate(zip(POLSI, GOMITI)):
+                if not keypoint[istante, polso, 2] >= CONFIDENZA_MINIMA_POLSO:   # anche NaN = polso non visto
+                    continue
+                x = float(keypoint[istante, polso, 0])
+                y = float(keypoint[istante, polso, 1])
+                if keypoint[istante, gomito, 2] >= CONFIDENZA_MINIMA_POLSO:
+                    x += SPOSTAMENTO_OLTRE_IL_POLSO * (x - float(keypoint[istante, gomito, 0]))
+                    y += SPOSTAMENTO_OLTRE_IL_POLSO * (y - float(keypoint[istante, gomito, 1]))
+                ritaglio = ritaglio_quadrato(frame_finestra[istante], x, y, lato)
+                posto = posto_persona * 2 + numero_polso
+                ritagli[numero_istante, posto] = cv2.resize(ritaglio, (lato_uscita, lato_uscita))
+                presenti[numero_istante, posto] = True
+    return ritagli, presenti
+
+
 def probabilita_armi_in_mano(modello_mani, frame: np.ndarray, box_persone: np.ndarray, keypoint_persone: np.ndarray,
                              dispositivo=None) -> np.ndarray:
     """[persone, 3]: per ogni persona la probabilità più alta (tra le due mani) di pistola, coltello, fucile."""

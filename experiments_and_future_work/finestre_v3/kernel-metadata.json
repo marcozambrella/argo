@@ -1,0 +1,18 @@
+{
+  "id": "KAGGLE_UTENTE/argo-finestre-v3",
+  "title": "argo finestre v3",
+  "code_file": "finestre_v3.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "kernel_sources": [
+    "KAGGLE_UTENTE/roma-safe-cctv-aggiungi-armi",
+    "KAGGLE_UTENTE/roma-safe-cctv-estrazione-normali",
+    "KAGGLE_UTENTE/argo-estrazione-nuovi"
+  ],
+  "competition_sources": [],
+  "model_sources": []
+}

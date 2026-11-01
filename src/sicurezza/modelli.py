@@ -252,10 +252,11 @@ def punteggio_presenza_e_movimento(keypoint: np.ndarray, box: np.ndarray) -> flo
 CRITERI_SCELTA_PERSONE = {"presenza_e_movimento": punteggio_presenza_e_movimento}
 
 
-def costruisci_finestra(timeline: TimelineVideo, inizio_finestra: int,
-                        frame_per_finestra: int = FRAME_PER_FINESTRA,
-                        criterio_scelta_persone: str = "presenza_e_movimento"):
-    """Ritorna (nodi [T, 70, 5] float32, maschera [T, 70] bool, classe_arma [T, 2] int8 con 0 = nessuna arma)."""
+def tracce_scelte_della_finestra(timeline: TimelineVideo, inizio_finestra: int,
+                                 frame_per_finestra: int = FRAME_PER_FINESTRA,
+                                 criterio_scelta_persone: str = "presenza_e_movimento") -> list:
+    """Le (al più) 4 persone della finestra, come (punteggio, keypoint [T, 17, 3], box [T, 4]). Usata anche dai
+    ritagli delle mani (D68), così le mani sono quelle delle stesse persone che vede il classificatore."""
     fine_finestra = inizio_finestra + frame_per_finestra
     punteggio = CRITERI_SCELTA_PERSONE[criterio_scelta_persone]
 
@@ -271,7 +272,16 @@ def costruisci_finestra(timeline: TimelineVideo, inizio_finestra: int,
     def punteggio_della_traccia(traccia):
         return traccia[0]
     tracce_in_finestra.sort(key=punteggio_della_traccia, reverse=True)
-    tracce_scelte = tracce_in_finestra[:NUMERO_PERSONE]
+    return tracce_in_finestra[:NUMERO_PERSONE]
+
+
+def costruisci_finestra(timeline: TimelineVideo, inizio_finestra: int,
+                        frame_per_finestra: int = FRAME_PER_FINESTRA,
+                        criterio_scelta_persone: str = "presenza_e_movimento"):
+    """Ritorna (nodi [T, 70, 5] float32, maschera [T, 70] bool, classe_arma [T, 2] int8 con 0 = nessuna arma)."""
+    fine_finestra = inizio_finestra + frame_per_finestra
+    tracce_scelte = tracce_scelte_della_finestra(timeline, inizio_finestra, frame_per_finestra,
+                                                 criterio_scelta_persone)
 
     # scala e centro della scena: altezza mediana delle persone scelte, centro medio dei loro box
     if len(tracce_scelte) > 0:
@@ -913,8 +923,9 @@ def salva_split(finestre: dict, percorso_uscita: Path, seme: int = 0) -> dict:
 def addestra(finestre: dict, nome_modello: str, cartella_uscita: Path, epoche: int = 50, dimensione_lotto: int = 64,
              tasso_apprendimento: float = 5e-4, decadimento_pesi: float = 0.05, pazienza: int = 10,
              bilanciamento: str = "pesi", seme: int = 0, iperparametri_modello=None,
-             ore_massime=None) -> dict:
-    """ore_massime: tetto di tempo (quota GPU di Kaggle). Si controlla a fine epoca: poi si valuta il migliore."""
+             ore_massime=None, sorgenti_escluse_train=()) -> dict:
+    """ore_massime: tetto di tempo (quota GPU di Kaggle). Si controlla a fine epoca: poi si valuta il migliore.
+    sorgenti_escluse_train (D68): finestre tolte dal train, per confrontare con e senza una sorgente (es. WVD)."""
     torch.manual_seed(seme)
     inizio_addestramento = time.perf_counter()
     generatore = np.random.default_rng(seme)
@@ -922,6 +933,9 @@ def addestra(finestre: dict, nome_modello: str, cartella_uscita: Path, epoche: i
     cartella_uscita.mkdir(parents=True, exist_ok=True)
 
     indici_split = salva_split(finestre, cartella_uscita / "split.npz", seme)
+    if len(sorgenti_escluse_train) > 0:
+        da_tenere = ~np.isin(finestre["sorgente"][indici_split["train"]], list(sorgenti_escluse_train))
+        indici_split["train"] = indici_split["train"][da_tenere]
 
     if iperparametri_modello is None:
         iperparametri_modello = {}
@@ -996,11 +1010,16 @@ def addestra(finestre: dict, nome_modello: str, cartella_uscita: Path, epoche: i
             print(f"stop: superate {ore_massime} h (tetto di tempo)", flush=True)
             break
 
+    # D68 (Marco: niente early stop): anche le probabilità dell'ultima epoca, per confrontarla con la migliore sul val
+    for nome in ("val", "test"):
+        probabilita, vere = predici(modello, finestre, indici_split[nome], dispositivo)
+        np.save(cartella_uscita / f"probabilita_{nome}_ultima.npy", probabilita)
     salvato = torch.load(cartella_uscita / "migliore.pt", map_location=dispositivo)
     modello.load_state_dict(salvato["stato"])
     impostazioni = {"epoche": epoche, "dimensione_lotto": dimensione_lotto,
                     "tasso_apprendimento": tasso_apprendimento, "decadimento_pesi": decadimento_pesi,
-                    "bilanciamento": bilanciamento, "seme": seme}
+                    "bilanciamento": bilanciamento, "seme": seme,
+                    "sorgenti_escluse_train": list(sorgenti_escluse_train)}
     impostazioni.update(iperparametri_modello)
     risultati = {"modello": nome_modello, "parametri": conta_parametri(modello), "epoca_migliore": salvato["epoca"],
                  "storia": storia, "impostazioni": impostazioni}
@@ -1035,6 +1054,7 @@ def comando_addestra(argomenti=None) -> None:
     parser.add_argument("--decadimento-pesi", type=float, default=0.05)
     parser.add_argument("--dropout", type=float, default=None, help="se omesso, quello predefinito del modello")
     parser.add_argument("--ore-massime", type=float, default=None, help="tetto di tempo (quota GPU)")
+    parser.add_argument("--senza-sorgenti-train", nargs="*", default=[], help="sorgenti tolte dal train (es. wvd)")
     argomenti = parser.parse_args(argomenti)
     iperparametri_modello = {}
     if argomenti.dropout is not None:
@@ -1043,7 +1063,8 @@ def comando_addestra(argomenti=None) -> None:
                          argomenti.epoche, argomenti.lotto, argomenti.tasso_apprendimento,
                          decadimento_pesi=argomenti.decadimento_pesi, pazienza=argomenti.pazienza,
                          bilanciamento=argomenti.bilanciamento, seme=argomenti.seme,
-                         iperparametri_modello=iperparametri_modello, ore_massime=argomenti.ore_massime)
+                         iperparametri_modello=iperparametri_modello, ore_massime=argomenti.ore_massime,
+                         sorgenti_escluse_train=argomenti.senza_sorgenti_train)
     da_mostrare = {"val": risultati["val"], "test": risultati["test"],
                    "latenza_cpu_ms_per_finestra": risultati["latenza_cpu_ms_per_finestra"]}
     print(json.dumps(da_mostrare, indent=2, ensure_ascii=False))

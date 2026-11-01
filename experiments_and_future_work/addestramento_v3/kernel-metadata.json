@@ -1,0 +1,17 @@
+{
+  "id": "KAGGLE_UTENTE/argo-addestramento-v3",
+  "title": "argo addestramento v3",
+  "code_file": "addestramento_v3.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "machine_shape": "NvidiaTeslaT4",
+  "dataset_sources": [],
+  "kernel_sources": [
+    "marcozambrella/argo-finestre-v3"
+  ],
+  "competition_sources": [],
+  "model_sources": []
+}

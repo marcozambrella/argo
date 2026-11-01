@@ -13,9 +13,9 @@ import yaml
 
 from sicurezza.dati import elenca_clip_snatch10, elenca_clip_snatch10_normali, elenca_clip_scippi_kaggle, elenca_clip_wvd, tipi_arma_wvd, tipi_arma_scvd, tipi_arma_da_frase, elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
 from sicurezza.demo import pezzi_armi_scippi, accuratezza_bilanciata, scegli_soglia, intervallo_bootstrap, tipi_della_clip, Pannello, Telecamera, Videoregistratore, crea_server, ingresso_ffmpeg, leggi_telecamera, opzioni_dai_pesi, sorgente_senza_password, AllarmeViolenza, RamoPixel, classe_finale_con_pixel, fondi_con_pixel, riduci_per_pixel, pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
-from sicurezza.modelli import indici_degli_split, analizza_predizioni, ricuci_tracce, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
+from sicurezza.modelli import tracce_scelte_della_finestra, indici_degli_split, analizza_predizioni, ricuci_tracce, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.strumenti import violenza_per_il_sito, risultati_per_il_sito, scarica_con_riprova, scegli_candidati_scippo_telefono, scegli_immagini_coco
-from sicurezza.visione import mani_di_una_persona, precisione_media, probabilita_armi_in_mano, ritaglio_quadrato, ritagli_per_addestramento, prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
+from sicurezza.visione import ritagli_della_finestra, mani_di_una_persona, precisione_media, probabilita_armi_in_mano, ritaglio_quadrato, ritagli_per_addestramento, prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
 
 
 # ==============================================================================================================
@@ -774,6 +774,19 @@ def test_addestramento_impara(dataset_finto, nome_modello, tmp_path):
     assert json.loads((tmp_path / "risultati.json").read_text())["modello"] == nome_modello
     # polsi agitati vs fermi: il compito è facilissimo, un modello che funziona lo impara
     assert risultati["val"]["macro_f1"] >= 0.8, risultati["storia"]
+
+
+def test_tutte_le_epoche_ultima_epoca_e_sorgente_tolta_dal_train(dataset_finto, tmp_path):
+    finestre = dict(dataset_finto)
+    sorgenti = finestre["sorgente"].copy()
+    sorgenti[:30] = "wvd"
+    finestre["sorgente"] = sorgenti
+    risultati = addestra(finestre, "graph_transformer", tmp_path, epoche=3, dimensione_lotto=16, pazienza=3,
+                         sorgenti_escluse_train=["wvd"],
+                         iperparametri_modello={"dimensione": 16, "blocchi": 1})
+    assert len(risultati["storia"]) == 3   # nessuno stop anticipato
+    assert (tmp_path / "probabilita_test_ultima.npy").exists() and (tmp_path / "probabilita_val_ultima.npy").exists()
+    assert risultati["impostazioni"]["sorgenti_escluse_train"] == ["wvd"]
 
 
 @pytest.mark.lento
@@ -1616,3 +1629,22 @@ def test_wvd_sempre_in_train():
     for nome in ("val", "test"):
         assert len(split[nome]) > 0
         assert not np.any(finestre["sorgente"][split[nome]] == "wvd")
+
+
+def test_ritagli_della_finestra_mani_delle_persone_scelte():
+    frame = np.zeros((40, 240, 320, 3), np.uint8)
+    frame[:, 100:140, 140:180] = 255          # un quadrato bianco dove c'è il polso destro
+    keypoint = np.full((40, 17, 3), np.nan, np.float32)
+    box = np.full((40, 4), np.nan, np.float32)
+    keypoint[:20, 10] = (160, 120, 0.9)        # polso destro visibile solo nei primi 20 frame
+    box[:20] = (120, 40, 200, 240)              # persona alta 200 px
+    ritagli, presenti = ritagli_della_finestra(frame, [(1.0, keypoint, box)])
+    assert ritagli.shape == (6, 8, 56, 56, 3) and presenti.shape == (6, 8)
+    assert presenti[:3, 1].all() and not presenti[3:].any() and not presenti[:, 0].any()
+    assert ritagli[0, 1, 28, 28].tolist() == [255, 255, 255]   # il centro del ritaglio è sul polso
+
+
+def test_tracce_scelte_della_finestra_come_nella_finestra():
+    timeline = timeline_da_dati(estrazione_finta_con_agitazione(agitazione=40.0, seme=1))
+    scelte = tracce_scelte_della_finestra(timeline, 0)
+    assert 0 < len(scelte) <= 4 and scelte[0][1].shape[1:] == (17, 3)
