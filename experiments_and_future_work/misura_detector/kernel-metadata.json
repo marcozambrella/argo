@@ -1,0 +1,19 @@
+{
+  "id": "KAGGLE_UTENTE/argo-misura-detector",
+  "title": "argo misura detector",
+  "code_file": "misura_detector.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "kernel_sources": [
+    "marcozambrella/argo-finestre-v3",
+    "marcozambrella/roma-safe-cctv-aggiungi-armi",
+    "marcozambrella/roma-safe-cctv-estrazione-normali",
+    "marcozambrella/argo-estrazione-nuovi"
+  ],
+  "competition_sources": [],
+  "model_sources": []
+}

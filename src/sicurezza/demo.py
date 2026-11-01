@@ -599,14 +599,18 @@ FRAME_MINIMI_DA_PROVARE = tuple(range(1, 16))
 
 
 def confidenza_arma_per_frame(timeline: TimelineVideo, inizio_finestra: int, vicinanza: str,
-                              frame_per_finestra: int = FRAME_PER_FINESTRA) -> np.ndarray:
+                              frame_per_finestra: int = FRAME_PER_FINESTRA, classi=None) -> np.ndarray:
     """[frame_per_finestra]: confidenza massima di un'arma vicina a una persona in ogni frame (0 se nessuna).
-    `vicinanza` può unire più criteri con "+": vale il più alto."""
+    `vicinanza` può unire più criteri con "+": vale il più alto. `classi` (D68): solo queste classi d'arma
+    (indici di NOMI_ARMI), per misurare a parte armi da fuoco e coltelli; None = tutte."""
     confidenze = np.zeros(frame_per_finestra, np.float32)
     fine_finestra = inizio_finestra + frame_per_finestra
     criteri = vicinanza.split("+")
     if "mani" in criteri and timeline.mani_per_frame is not None:
-        mani = timeline.mani_per_frame[inizio_finestra:fine_finestra].max(axis=1)
+        colonne_mani = list(range(len(NOMI_ARMI)))
+        if classi is not None:
+            colonne_mani = list(classi)
+        mani = timeline.mani_per_frame[inizio_finestra:fine_finestra][:, colonne_mani].max(axis=1)
         confidenze[:len(mani)] = mani
     criteri_detector = []
     for criterio in criteri:
@@ -618,6 +622,8 @@ def confidenza_arma_per_frame(timeline: TimelineVideo, inizio_finestra: int, vic
         frame = int(timeline.armi_frame[indice])
         if frame < inizio_finestra or frame >= fine_finestra:
             continue   # arma fuori dalla finestra
+        if classi is not None and int(timeline.armi_classe[indice]) not in classi:
+            continue
         box_persone, polsi_persone = persone_nel_frame(timeline, frame)
         vicina = False
         for criterio in criteri_detector:
@@ -628,6 +634,20 @@ def confidenza_arma_per_frame(timeline: TimelineVideo, inizio_finestra: int, vic
             posizione = frame - inizio_finestra
             confidenze[posizione] = max(confidenze[posizione], float(timeline.armi_confidenza[indice]))
     return confidenze
+
+
+CLASSI_PER_TIPO = {"arma": (0, 1, 2), "fuoco": (0, 2), "coltello": (1,)}   # indici di NOMI_ARMI
+
+
+def punteggi_detector_finestra(timeline: TimelineVideo, inizio_finestra: int, vicinanza: str,
+                               frame_minimi: int) -> dict:
+    """D68: per ogni tipo (arma, fuoco, coltello) la frame_minimi-esima confidenza più alta della finestra: il
+    WARNING ARMA (tarato) scatta se e solo se questo punteggio arriva alla soglia, quindi è il suo punteggio."""
+    punteggi = {}
+    for tipo, classi in CLASSI_PER_TIPO.items():
+        confidenze = np.sort(confidenza_arma_per_frame(timeline, inizio_finestra, vicinanza, classi=classi))
+        punteggi[tipo] = float(confidenze[-frame_minimi])
+    return punteggi
 
 
 def tara_warning_arma(confidenze_per_vicinanza: dict, arma_vera: np.ndarray) -> dict:
@@ -1038,6 +1058,22 @@ def carica_punteggi(percorso) -> dict:
     return punteggi
 
 
+def chiavi_finestre(punteggi: dict) -> np.ndarray:
+    """Una chiave per finestra: "id_clip|inizio"."""
+    chiavi = []
+    for clip, inizio in zip(punteggi["id_clip"].tolist(), punteggi["inizio_finestra"].tolist()):
+        chiavi.append(f"{clip}|{inizio}")
+    return np.array(chiavi)
+
+
+def tieni_finestre(punteggi: dict, chiavi_da_tenere: set) -> dict:
+    tenere = np.isin(chiavi_finestre(punteggi), list(chiavi_da_tenere))
+    filtrati = {}
+    for chiave, valori in punteggi.items():
+        filtrati[chiave] = valori[tenere]
+    return filtrati
+
+
 def salva_punteggi(percorso, finestre: dict, punteggi_per_tipo: dict) -> None:
     """finestre: id_clip, inizio_finestra, etichetta, sorgente; punteggi_per_tipo: tipo → [finestre]."""
     campi = {}
@@ -1054,19 +1090,39 @@ def comando_valuta_armi_scippi(argomenti=None) -> None:
                         help="cartelle con punteggi_val.npz e punteggi_test.npz (il nome della cartella è il nome)")
     parser.add_argument("--tipi-scvd", default=None, help="file di `strumenti annota-tipo-arma`")
     parser.add_argument("--secondi-pezzo", type=float, default=10.0)
+    parser.add_argument("--finestre-comuni", action="store_true",
+                        help="solo le finestre che hanno tutti i modelli (es. i ritagli: una ogni 4)")
     parser.add_argument("--uscita", required=True)
     argomenti = parser.parse_args(argomenti)
     tipi_ucf = tipi_arma_ucf()
     tipi_scvd = {}
     if argomenti.tipi_scvd:
         tipi_scvd = tipi_arma_scvd(argomenti.tipi_scvd)
-    risultato = {"secondi_pezzo": argomenti.secondi_pezzo, "modelli": {}}
+    punteggi_per_modello = {}
     for cartella in argomenti.modelli:
+        # il nome: la cartella, con quella sopra se è punteggi_migliore / punteggi_ultima
         nome = Path(cartella).name
-        val = pezzi_armi_scippi(carica_punteggi(Path(cartella) / "punteggi_val.npz"), argomenti.secondi_pezzo,
-                                tipi_ucf, tipi_scvd)
-        test = pezzi_armi_scippi(carica_punteggi(Path(cartella) / "punteggi_test.npz"), argomenti.secondi_pezzo,
-                                 tipi_ucf, tipi_scvd)
+        if nome.startswith("punteggi_"):
+            nome = f"{Path(cartella).parent.name}_{nome[len('punteggi_'):]}"
+        punteggi_per_modello[nome] = {"val": carica_punteggi(Path(cartella) / "punteggi_val.npz"),
+                                      "test": carica_punteggi(Path(cartella) / "punteggi_test.npz")}
+    if argomenti.finestre_comuni:
+        for nome_split in ("val", "test"):
+            comuni = None
+            for punteggi in punteggi_per_modello.values():
+                chiavi = set(chiavi_finestre(punteggi[nome_split]).tolist())
+                if comuni is None:
+                    comuni = chiavi
+                else:
+                    comuni = comuni & chiavi
+            for punteggi in punteggi_per_modello.values():
+                punteggi[nome_split] = tieni_finestre(punteggi[nome_split], comuni)
+            print(f"finestre comuni {nome_split}: {len(comuni)}")
+    risultato = {"secondi_pezzo": argomenti.secondi_pezzo, "finestre_comuni": argomenti.finestre_comuni,
+                 "modelli": {}}
+    for nome, punteggi in punteggi_per_modello.items():
+        val = pezzi_armi_scippi(punteggi["val"], argomenti.secondi_pezzo, tipi_ucf, tipi_scvd)
+        test = pezzi_armi_scippi(punteggi["test"], argomenti.secondi_pezzo, tipi_ucf, tipi_scvd)
         risultato["modelli"][nome] = {}
         for tipo in TIPI_MISURATI:
             if f"punteggio_{tipo}" not in test:

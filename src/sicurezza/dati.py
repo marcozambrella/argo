@@ -727,31 +727,29 @@ ARMI_DA_FUOCO_WVD = ("MG", "MGCombat", "PistolAP", "PistolCombat", "RifleBullpup
 COLTELLI_WVD = ("Knife", "Machette")
 
 
-URL_SNATCH10 = "https://zenodo.org/records/10812645/files/Snatch%201.0-20201231T071009Z-00{numero}.zip?download=1"
 SORGENTI_ESPERIMENTI = ("rwf2000", "cctv_fights", "scvd", "ucf_uca", "chain_snatching", "normali_folla", "snatch10",
-                        "snatch10_normali", "scippi_kaggle", "wvd")
+                        "scippi_kaggle", "wvd")
+
+
+def ritaglia_pezzi_normali_snatch10(radice_snatch10: Path, cartella_uscita: Path) -> int:
+    """Taglia i pezzi di `elenca_clip_snatch10_normali` dalle registrazioni lunghe, uno per file
+    ("<registrazione>@<inizio>-<fine>.mp4"): Zenodo dà ~2 MB/s a Kaggle, così i kernel dei pixel caricano
+    ~1 GB invece di 12,5 (dataset privato argo-snatch10-ridotto)."""
+    cartella_uscita.mkdir(parents=True, exist_ok=True)
+    clip = elenca_clip_snatch10_normali(radice_snatch10)
+    for singola in clip:
+        nome = singola.id_clip.split("/", 1)[1]
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{singola.inizio_secondi:.3f}", "-i",
+                        singola.percorso_video, "-t", f"{singola.fine_secondi - singola.inizio_secondi:.3f}",
+                        "-c:v", "libx264", "-crf", "20", "-pix_fmt", "yuv420p", "-an",
+                        str(cartella_uscita / f"{nome}.mp4")], check=True)
+    return len(clip)
 
 
 def prepara_video_esperimenti(cartella_input: Path, cartella_dati: Path) -> dict:
-    """D68, per i kernel che leggono i pixel (rete video, ritagli delle mani): scarica Snatch 1.0 da Zenodo (7 zip,
-    uno alla volta), prepara le scene di folla come l'estrazione normali e mette tutto sotto cartella_dati.
-    Ritorna id_clip → ClipAnnotata di tutte le sorgenti degli esperimenti."""
-    socket.setdefaulttimeout(120)   # un download bloccato non deve appendere il kernel
-    zenodo = cartella_dati / "zenodo"
-    zenodo.mkdir(parents=True, exist_ok=True)
-    for numero in range(1, 8):
-        archivio = cartella_dati / "snatch.zip"
-        for tentativo in range(3):
-            try:
-                urllib.request.urlretrieve(URL_SNATCH10.format(numero=numero), archivio)
-                break
-            except OSError:
-                if tentativo == 2:
-                    raise
-        with zipfile.ZipFile(archivio) as dentro:
-            dentro.extractall(zenodo)
-        archivio.unlink()
-        print(f"Snatch 1.0: zip {numero} di 7", flush=True)
+    """D68, per i kernel che leggono i pixel (rete video, ritagli delle mani): prepara le scene di folla come
+    l'estrazione normali, mette tutto sotto cartella_dati e aggiunge i pezzi normali di Snatch 1.0 già tagliati
+    (dataset argo-snatch10-ridotto, cartella pezzi_normali/). Ritorna id_clip → ClipAnnotata."""
     prepara_normali(cartella_input, cartella_dati, True)
     for cartella in Path(cartella_input).iterdir():
         collegamento = cartella_dati / cartella.name
@@ -760,6 +758,13 @@ def prepara_video_esperimenti(cartella_input: Path, cartella_dati: Path) -> dict
     clip_per_id = {}
     for clip in prepara(cartella_dati, cartella_dati / "elenchi", SORGENTI_ESPERIMENTI):
         clip_per_id[clip.id_clip] = clip
+    # i pezzi hanno lo stesso id_clip dell'estrazione, ma il file comincia già all'inizio del pezzo
+    for percorso in sorted(Path(cartella_input).glob("**/pezzi_normali/*.mp4")):
+        id_clip = f"snatch10_normali/{percorso.stem}"
+        registrazione = percorso.stem.split("@")[0]
+        clip_per_id[id_clip] = ClipAnnotata(id_clip=id_clip, sorgente="snatch10_normali",
+                                            gruppo=f"snatch10_normali/{registrazione}", percorso_video=str(percorso),
+                                            classe_intera="normale")
     return clip_per_id
 
 
