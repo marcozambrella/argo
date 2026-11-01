@@ -13,11 +13,10 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import urllib.parse
 import urllib.request
 import zipfile
-
-
 
 
 # ==============================================================================================================
@@ -135,76 +134,106 @@ carica();
 """
 
 
-def crea_gestore(cartella_video: Path, file_annotazioni: Path):
-    blocco_scrittura = threading.Lock()
+class GestoreAnnotazioni(BaseHTTPRequestHandler):
+    """Il server della pagina di annotazione. cartella_video e file_annotazioni li assegna `crea_gestore`."""
+    cartella_video = None
+    file_annotazioni = None
+    blocco_scrittura = None   # due salvataggi insieme non devono mescolare il file
 
-    def leggi_annotazioni() -> dict:
-        return json.loads(file_annotazioni.read_text()) if file_annotazioni.exists() else {}
+    def log_message(self, *argomenti):  # niente log per ogni richiesta di pezzi di video
+        pass
 
-    class Gestore(BaseHTTPRequestHandler):
-        def log_message(self, *argomenti):  # niente log per ogni richiesta di pezzi di video
+    def leggi_annotazioni(self) -> dict:
+        if not self.file_annotazioni.exists():
+            return {}
+        return json.loads(self.file_annotazioni.read_text())
+
+    def rispondi(self, codice: int, contenuto: bytes, tipo: str, intestazioni=None):
+        self.send_response(codice)
+        self.send_header("Content-Type", tipo)
+        self.send_header("Content-Length", str(len(contenuto)))
+        if intestazioni is not None:
+            for chiave, valore in intestazioni.items():
+                self.send_header(chiave, valore)
+        self.end_headers()
+        try:
+            self.wfile.write(contenuto)
+        except (BrokenPipeError, ConnectionResetError):  # il browser interrompe i pezzi di video che non servono
             pass
 
-        def rispondi(self, codice: int, contenuto: bytes, tipo: str, intestazioni: dict | None = None):
-            self.send_response(codice)
-            self.send_header("Content-Type", tipo)
-            self.send_header("Content-Length", str(len(contenuto)))
-            for chiave, valore in (intestazioni or {}).items():
-                self.send_header(chiave, valore)
-            self.end_headers()
-            try:
-                self.wfile.write(contenuto)
-            except (BrokenPipeError, ConnectionResetError):  # il browser interrompe i pezzi di video che non servono
-                pass
-
-        def do_GET(self):
-            if self.path == "/":
-                return self.rispondi(200, PAGINA.encode(), "text/html; charset=utf-8")
-            if self.path == "/elenco":
-                video = sorted(p.name for p in cartella_video.glob("*.mp4"))
-                problema = "" if video else (f"Nessun video in {cartella_video}: il disco esterno è montato? "
-                                             "(udisksctl mount -b /dev/sda1, poi ricarica la pagina)")
-                corpo = json.dumps({"video": video, "annotazioni": leggi_annotazioni(), "problema": problema}).encode()
-                return self.rispondi(200, corpo, "application/json")
-            if self.path.startswith("/video/"):
-                percorso = cartella_video / Path(unquote(self.path[len("/video/"):])).name
-                if not percorso.exists():
-                    return self.rispondi(404, b"", "text/plain")
-                return self.invia_video(percorso)
+    def do_GET(self):
+        if self.path == "/":
+            self.rispondi(200, PAGINA.encode(), "text/html; charset=utf-8")
+        elif self.path == "/elenco":
+            video = []
+            for percorso in self.cartella_video.glob("*.mp4"):
+                video.append(percorso.name)
+            video.sort()
+            problema = ""
+            if len(video) == 0:
+                problema = (f"Nessun video in {self.cartella_video}: il disco esterno è montato? "
+                            "(udisksctl mount -b /dev/sda1, poi ricarica la pagina)")
+            corpo = json.dumps({"video": video, "annotazioni": self.leggi_annotazioni(), "problema": problema})
+            self.rispondi(200, corpo.encode(), "application/json")
+        elif self.path.startswith("/video/"):
+            nome = Path(unquote(self.path[len("/video/"):])).name   # solo il nome: niente percorsi dal browser
+            percorso = self.cartella_video / nome
+            if percorso.exists():
+                self.invia_video(percorso)
+            else:
+                self.rispondi(404, b"", "text/plain")
+        else:
             self.rispondi(404, b"", "text/plain")
 
-        def invia_video(self, percorso: Path):
-            """Supporta le richieste Range: senza, il browser non permette di spostarsi nel video."""
-            dimensione = percorso.stat().st_size
-            intervallo = re.match(r"bytes=(\d*)-(\d*)", self.headers.get("Range", ""))
-            if not intervallo:
-                return self.rispondi(200, percorso.read_bytes(), "video/mp4", {"Accept-Ranges": "bytes"})
-            primo = int(intervallo.group(1) or 0)
-            ultimo = min(int(intervallo.group(2) or dimensione - 1), dimensione - 1)
-            with open(percorso, "rb") as file_video:
-                file_video.seek(primo)
-                pezzo = file_video.read(ultimo - primo + 1)
-            self.rispondi(206, pezzo, "video/mp4", {"Accept-Ranges": "bytes",
-                                                     "Content-Range": f"bytes {primo}-{ultimo}/{dimensione}"})
+    def invia_video(self, percorso: Path):
+        """Supporta le richieste Range: senza, il browser non permette di spostarsi nel video."""
+        dimensione = percorso.stat().st_size
+        intervallo = re.match(r"bytes=(\d*)-(\d*)", self.headers.get("Range", ""))
+        if not intervallo:
+            self.rispondi(200, percorso.read_bytes(), "video/mp4", {"Accept-Ranges": "bytes"})
+            return
+        primo = 0
+        if intervallo.group(1):
+            primo = int(intervallo.group(1))
+        ultimo = dimensione - 1
+        if intervallo.group(2):
+            ultimo = min(int(intervallo.group(2)), dimensione - 1)
+        with open(percorso, "rb") as file_video:
+            file_video.seek(primo)
+            pezzo = file_video.read(ultimo - primo + 1)
+        self.rispondi(206, pezzo, "video/mp4", {"Accept-Ranges": "bytes",
+                                                 "Content-Range": f"bytes {primo}-{ultimo}/{dimensione}"})
 
-        def do_POST(self):
-            if self.path != "/salva":
-                return self.rispondi(404, b"", "text/plain")
-            dati = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-            with blocco_scrittura:
-                annotazioni = leggi_annotazioni()
-                annotazioni[Path(dati["video"]).name] = {
-                    "eventi": [[round(float(a), 2), round(float(b), 2)] for a, b in dati["eventi"]],
-                    "nessuno_scippo": bool(dati["nessuno_scippo"])}
-                file_annotazioni.parent.mkdir(parents=True, exist_ok=True)
-                righe = [f"{json.dumps(nome)}: {json.dumps(valore)}" for nome, valore in sorted(annotazioni.items())]
-                file_annotazioni.write_text("{\n" + ",\n".join(righe) + "\n}\n")  # una riga per video
-            self.rispondi(200, b"{}", "application/json")
+    def do_POST(self):
+        if self.path != "/salva":
+            self.rispondi(404, b"", "text/plain")
+            return
+        dati = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        eventi = []
+        for inizio, fine in dati["eventi"]:
+            eventi.append([round(float(inizio), 2), round(float(fine), 2)])
+        with self.blocco_scrittura:
+            annotazioni = self.leggi_annotazioni()
+            annotazioni[Path(dati["video"]).name] = {"eventi": eventi, "nessuno_scippo": bool(dati["nessuno_scippo"])}
+            self.file_annotazioni.parent.mkdir(parents=True, exist_ok=True)
+            righe = []   # una riga per video: il file si legge bene anche a occhio
+            for nome, valore in sorted(annotazioni.items()):
+                righe.append(f"{json.dumps(nome)}: {json.dumps(valore)}")
+            self.file_annotazioni.write_text("{\n" + ",\n".join(righe) + "\n}\n")
+        self.rispondi(200, b"{}", "application/json")
 
-    return Gestore
+
+def crea_gestore(cartella_video: Path, file_annotazioni: Path):
+    # una sottoclasse con le sue cartelle: così si possono avere più server con cartelle diverse
+    class GestoreDiQuesteCartelle(GestoreAnnotazioni):
+        pass
+    GestoreDiQuesteCartelle.cartella_video = cartella_video
+    GestoreDiQuesteCartelle.file_annotazioni = file_annotazioni
+    GestoreDiQuesteCartelle.blocco_scrittura = threading.Lock()
+    return GestoreDiQuesteCartelle
 
 
-def comando_annota_scippi(argomenti: list[str] | None = None) -> None:
+def comando_annota_scippi(argomenti=None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--video", default=CARTELLA_VIDEO_PREDEFINITA)
     parser.add_argument("--uscita", default=FILE_ANNOTAZIONI_PREDEFINITO)
@@ -247,20 +276,23 @@ def scarica_file(riferimento_dataset: str, percorso_interno: str, destinazione: 
     destinazione.write_bytes(contenuto)
 
 
-def elenca_file_dataset(riferimento_dataset: str) -> list[str]:
-    nomi, segnalibro = [], None
+def elenca_file_dataset(riferimento_dataset: str) -> list:
+    """Tutti i file di un dataset Kaggle: l'API li dà a pagine da 200, il segnalibro dice dove riprendere."""
+    nomi = []
+    segnalibro = None
     while True:
         url = f"{API}/list/{riferimento_dataset}?pageSize=200"
         if segnalibro:
             url += f"&pageToken={urllib.parse.quote(segnalibro)}"
         risposta = json.load(urllib.request.urlopen(url, timeout=60))
-        nomi += [file["name"] for file in risposta.get("datasetFiles", [])]
+        for file in risposta.get("datasetFiles", []):
+            nomi.append(file["name"])
         segnalibro = risposta.get("nextPageTokenNullable")
         if not segnalibro:
             return nomi
 
 
-def comando_scarica_campioni(argomenti: list[str] | None = None) -> None:
+def comando_scarica_campioni(argomenti=None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cartella", default="data/campioni")
     parser.add_argument("--dataset-intero", default=None, help="scarica tutti i file di questo dataset Kaggle")
@@ -298,17 +330,32 @@ CATEGORIE_NEGATIVE_ADDESTRAMENTO = ("knife", "cell phone", "scissors", "umbrella
 
 
 def scegli_immagini_coco(annotazioni: dict, categorie=CATEGORIE_NEGATIVE_COCO, per_categoria: int = 100,
-                         escludi: set[str] = frozenset()) -> dict[str, list[str]]:
-    id_categoria = {categoria["name"]: categoria["id"] for categoria in annotazioni["categories"]}
-    immagini_con_categoria: dict[int, set[int]] = {}
+                         escludi=()) -> dict:
+    """Per ogni categoria i nomi dei file scelti; `escludi` = nomi di file da non prendere."""
+    id_categoria = {}
+    for categoria in annotazioni["categories"]:
+        id_categoria[categoria["name"]] = categoria["id"]
+    immagini_con_categoria = {}   # id categoria → insieme degli id delle immagini che la contengono
     for oggetto in annotazioni["annotations"]:
-        immagini_con_categoria.setdefault(oggetto["category_id"], set()).add(oggetto["image_id"])
-    nome_file = {immagine["id"]: immagine["file_name"] for immagine in annotazioni["images"]}
-    gia_prese, scelte = {id_immagine for id_immagine, nome in nome_file.items() if nome in escludi}, {}
+        if oggetto["category_id"] not in immagini_con_categoria:
+            immagini_con_categoria[oggetto["category_id"]] = set()
+        immagini_con_categoria[oggetto["category_id"]].add(oggetto["image_id"])
+    nome_file = {}
+    for immagine in annotazioni["images"]:
+        nome_file[immagine["id"]] = immagine["file_name"]
+
+    gia_prese = set()   # ogni immagine in una sola categoria
+    for id_immagine, nome in nome_file.items():
+        if nome in escludi:
+            gia_prese.add(id_immagine)
+    scelte = {}
     for categoria in categorie:
-        candidate = sorted(immagini_con_categoria.get(id_categoria[categoria], set()) - gia_prese)[:per_categoria]
+        con_categoria = immagini_con_categoria.get(id_categoria[categoria], set())
+        candidate = sorted(con_categoria - gia_prese)[:per_categoria]   # le prime per id: sempre le stesse
         gia_prese.update(candidate)
-        scelte[categoria] = [nome_file[id_immagine] for id_immagine in candidate]
+        scelte[categoria] = []
+        for id_immagine in candidate:
+            scelte[categoria].append(nome_file[id_immagine])
     return scelte
 
 
@@ -323,7 +370,7 @@ def scarica_con_riprova(url: str, destinazione: Path, tentativi: int = 3) -> Non
                 raise
 
 
-def comando_scarica_negativi_coco(argomenti: list[str] | None = None) -> None:
+def comando_scarica_negativi_coco(argomenti=None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cartella", default="data/negativi_coco")
     parser.add_argument("--per-categoria", type=int, default=100)
@@ -343,13 +390,20 @@ def comando_scarica_negativi_coco(argomenti: list[str] | None = None) -> None:
         archivio_zip.unlink()
     annotazioni = json.loads(file_annotazioni.read_text())
     if argomenti.per_addestramento:
-        prova = {nome for nomi in scegli_immagini_coco(annotazioni).values() for nome in nomi}
+        # le immagini della prova non si usano per addestrare
+        prova = set()
+        for nomi in scegli_immagini_coco(annotazioni).values():
+            for nome in nomi:
+                prova.add(nome)
         scelte = scegli_immagini_coco(annotazioni, CATEGORIE_NEGATIVE_ADDESTRAMENTO, argomenti.per_categoria, prova)
         (cartella / "data.yaml").write_text("train: ../train/images\nnames: []\n")
     else:
         scelte = scegli_immagini_coco(annotazioni, per_categoria=argomenti.per_categoria)
     for categoria, nomi_file in scelte.items():
-        sottocartella = cartella / ("train/images" if argomenti.per_addestramento else categoria.replace(" ", "_"))
+        if argomenti.per_addestramento:
+            sottocartella = cartella / "train/images"
+        else:
+            sottocartella = cartella / categoria.replace(" ", "_")
         sottocartella.mkdir(parents=True, exist_ok=True)
         for nome in nomi_file:
             if not (sottocartella / nome).exists():
@@ -368,30 +422,36 @@ def comando_scarica_negativi_coco(argomenti: list[str] | None = None) -> None:
 #           --cartella data/phone_snatching
 # ==============================================================================================================
 
-PAROLE_FURTO = re.compile(r"snatch|chor\b|thief|theft|steal|stolen|robb|jambret|furto|roub|vol de|vole|ladr", re.IGNORECASE)
-PAROLE_TELEFONO = re.compile(r"mobile|phone|cell|handphone|celular|t[ée]l[ée]phone|telefono|smartphone", re.IGNORECASE)
+PAROLE_FURTO = re.compile(r"snatch|chor\b|thief|theft|steal|stolen|robb|jambret|furto|roub|vol de|vole|ladr",
+                          re.IGNORECASE)
+PAROLE_TELEFONO = re.compile(r"mobile|phone|cell|handphone|celular|t[ée]l[ée]phone|telefono|smartphone",
+                             re.IGNORECASE)
 PAROLE_DA_SCARTARE = re.compile(r"prank|funny|vines|idiotz|be like|thug|review|first look|unboxing|animation|"
                                 r"explainer|salman|#shorts|hack|software|flashing", re.IGNORECASE)
 DURATA_MASSIMA_SECONDI = 360   # le compilation lunghe le annota male anche una persona: meglio clip brevi
 
 
-def scegli_candidati_scippo_telefono(righe: list[str]) -> list[tuple[str, str]]:
+def scegli_candidati_scippo_telefono(righe: list) -> list:
     """Righe "id | durata | canale | ... | titolo" (formato del sub-agente) → [(id, titolo)] senza doppioni."""
-    scelti, visti = [], set()
+    scelti = []
+    visti = set()
     for riga in righe:
-        campi = [campo.strip() for campo in re.sub(r"^\[\d+\]\s*", "", riga).split(" | ")]
+        riga = re.sub(r"^\[\d+\]\s*", "", riga)   # toglie un eventuale "[12] " all'inizio
+        campi = []
+        for campo in riga.split(" | "):
+            campi.append(campo.strip())
         if len(campi) < 2 or campi[0] in visti:
             continue
         titolo = campi[-1]
-        if PAROLE_FURTO.search(titolo) and PAROLE_TELEFONO.search(titolo) and not PAROLE_DA_SCARTARE.search(titolo) \
-                and "chain" not in titolo.lower():
+        parla_di_furto_di_telefono = PAROLE_FURTO.search(titolo) and PAROLE_TELEFONO.search(titolo)
+        da_scartare = PAROLE_DA_SCARTARE.search(titolo) or "chain" in titolo.lower()
+        if parla_di_furto_di_telefono and not da_scartare:
             visti.add(campi[0])
             scelti.append((campi[0], titolo))
     return scelti
 
 
-def comando_scarica_video_cc(argomenti: list[str] | None = None) -> None:
-    import time
+def comando_scarica_video_cc(argomenti=None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--candidati", required=True, help="un video per riga: id | ... | titolo")
     parser.add_argument("--cartella", default="data/phone_snatching")
@@ -402,10 +462,13 @@ def comando_scarica_video_cc(argomenti: list[str] | None = None) -> None:
     file_attribuzioni = cartella / "attribuzioni.csv"
     gia_visti = set()
     if file_attribuzioni.exists():
-        gia_visti = {riga["id"] for riga in csv.DictReader(file_attribuzioni.open())}
+        with file_attribuzioni.open() as file_csv:
+            for riga in csv.DictReader(file_csv):
+                gia_visti.add(riga["id"])
     else:
         file_attribuzioni.write_text("id,esito,licenza,durata_secondi,canale,titolo,url\n")
-    for id_video, _ in scegli_candidati_scippo_telefono(Path(argomenti.candidati).read_text().splitlines()):
+    candidati = scegli_candidati_scippo_telefono(Path(argomenti.candidati).read_text().splitlines())
+    for id_video, titolo in candidati:
         if id_video in gia_visti:
             continue
         url = f"https://www.youtube.com/watch?v={id_video}"
@@ -414,20 +477,26 @@ def comando_scarica_video_cc(argomenti: list[str] | None = None) -> None:
         if "not a bot" in lettura.stderr:
             print("YouTube chiede la verifica anti-robot: mi fermo (vanno scaricati a mano).")
             break
-        if lettura.returncode:
-            esito, informazioni = "non_disponibile", {}
+        if lettura.returncode != 0:
+            esito = "non_disponibile"
+            informazioni = {}
         else:
             informazioni = json.loads(lettura.stdout)
-            licenza, durata = informazioni.get("license") or "", informazioni.get("duration") or 0
+            licenza = informazioni.get("license") or ""    # il campo può mancare o valere None
+            durata = informazioni.get("duration") or 0
             if "Creative Commons" not in licenza:
                 esito = "licenza_non_cc"
             elif durata > DURATA_MASSIMA_SECONDI:
                 esito = "troppo_lungo"
             else:
-                scaricamento = subprocess.run(["yt-dlp", "-q", "-f", "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720]",
+                scaricamento = subprocess.run(["yt-dlp", "-q", "-f",
+                                               "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720]",
                                                "--merge-output-format", "mp4", "-o", str(cartella / "%(id)s.%(ext)s"),
                                                url], capture_output=True, text=True, check=False)
-                esito = "scaricato" if scaricamento.returncode == 0 else "errore_scaricamento"
+                if scaricamento.returncode == 0:
+                    esito = "scaricato"
+                else:
+                    esito = "errore_scaricamento"
         with file_attribuzioni.open("a", newline="") as uscita:
             csv.writer(uscita).writerow([id_video, esito, informazioni.get("license", ""),
                                          informazioni.get("duration", ""), informazioni.get("channel", ""),
@@ -453,17 +522,30 @@ NOMI_MODELLI_SITO = {"graph_transformer": "Graph-Transformer", "stgcn": "ST-GCN"
 
 
 def violenza_per_il_sito(fusione: dict, sistema: str, confronto: str) -> dict:
+    """Dal file della fusione si tengono solo le misure che il sito mostra, per il sistema e per i soli scheletri."""
     tieni = ("accuratezza", "recall", "falsi_allarmi", "pezzi", "ic95", "finestre_di_fila", "media_mobile")
-    return {nome: {misura: {chiave: valore for chiave, valore in fusione[chiave_fusione][misura].items() if chiave in tieni}
-                   for misura in ("per_finestra", "pezzi_10s", "pezzi_30s")}
-            for nome, chiave_fusione in (("sistema", sistema), ("solo_scheletri", confronto))}
+    uscita = {}
+    for nome, chiave_fusione in (("sistema", sistema), ("solo_scheletri", confronto)):
+        uscita[nome] = {}
+        for misura in ("per_finestra", "pezzi_10s", "pezzi_30s"):
+            uscita[nome][misura] = {}
+            for chiave, valore in fusione[chiave_fusione][misura].items():
+                if chiave in tieni:
+                    uscita[nome][misura][chiave] = valore
+    return uscita
 
 
-def risultati_per_il_sito(risultati_modelli: list[dict], taratura_warning: dict | None = None,
-                          versione: str = "", violenza: dict | None = None) -> dict:
+def risultati_per_il_sito(risultati_modelli: list, taratura_warning=None, versione: str = "",
+                          violenza=None) -> dict:
     modelli = []
     for risultati in risultati_modelli:
         test = risultati["test"]
+        finestre_test = 0   # la somma di tutta la matrice di confusione
+        for riga in test["matrice_confusione"]:
+            finestre_test += sum(riga)
+        macro_f1_per_epoca = []
+        for epoca in risultati["storia"]:
+            macro_f1_per_epoca.append(round(epoca["macro_f1_val"], 4))
         modelli.append({
             "nome": NOMI_MODELLI_SITO.get(risultati["modello"], risultati["modello"]),
             "macro_f1": round(test["macro_f1"], 4), "accuratezza": round(test["accuratezza"], 4),
@@ -471,11 +553,14 @@ def risultati_per_il_sito(risultati_modelli: list[dict], taratura_warning: dict 
             "parametri": risultati["parametri"], "epoca_migliore": risultati["epoca_migliore"],
             "recall": test["recall"], "precisione": test["precisione"], "f1": test["f1"],
             "matrice_confusione": test["matrice_confusione"],
-            "finestre_test": int(sum(map(sum, test["matrice_confusione"]))),
-            "macro_f1_val_per_epoca": [round(epoca["macro_f1_val"], 4) for epoca in risultati["storia"]],
+            "finestre_test": int(finestre_test),
+            "macro_f1_val_per_epoca": macro_f1_per_epoca,
         })
+    classi = []
+    if len(modelli) > 0:
+        classi = list(modelli[0]["recall"])   # i nomi delle classi sono le chiavi di "recall"
     uscita = {"_nota": "Generato da `strumenti esporta-risultati-sito`: metriche sul test set (split per video, P4).",
-              "versione": versione, "classi": list(modelli[0]["recall"]) if modelli else [], "modelli": modelli}
+              "versione": versione, "classi": classi, "modelli": modelli}
     if taratura_warning:
         uscita["warning_arma"] = taratura_warning["migliore"]
     if violenza:
@@ -483,7 +568,7 @@ def risultati_per_il_sito(risultati_modelli: list[dict], taratura_warning: dict 
     return uscita
 
 
-def comando_esporta_risultati_sito(argomenti: list[str] | None = None) -> None:
+def comando_esporta_risultati_sito(argomenti=None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--risultati", nargs="+", required=True, help="risultati.json di ogni modello")
     parser.add_argument("--taratura", default=None, help="taratura_warning.json (facoltativo)")
@@ -493,14 +578,21 @@ def comando_esporta_risultati_sito(argomenti: list[str] | None = None) -> None:
     parser.add_argument("--sistema", default="pixel + add1", help="chiave del sistema consegnato in --violenza")
     parser.add_argument("--confronto", default="scheletri add1", help="chiave dei soli scheletri in --violenza")
     argomenti = parser.parse_args(argomenti)
-    taratura = json.loads(Path(argomenti.taratura).read_text()) if argomenti.taratura else None
-    violenza = (violenza_per_il_sito(json.loads(Path(argomenti.violenza).read_text()), argomenti.sistema,
-                                     argomenti.confronto) if argomenti.violenza else None)
-    uscita = risultati_per_il_sito([json.loads(Path(p).read_text()) for p in argomenti.risultati], taratura,
-                                   argomenti.versione, violenza)
+    taratura = None
+    if argomenti.taratura:
+        taratura = json.loads(Path(argomenti.taratura).read_text())
+    violenza = None
+    if argomenti.violenza:
+        fusione = json.loads(Path(argomenti.violenza).read_text())
+        violenza = violenza_per_il_sito(fusione, argomenti.sistema, argomenti.confronto)
+    risultati_modelli = []
+    for percorso in argomenti.risultati:
+        risultati_modelli.append(json.loads(Path(percorso).read_text()))
+    uscita = risultati_per_il_sito(risultati_modelli, taratura, argomenti.versione, violenza)
     Path(argomenti.uscita).write_text(json.dumps(uscita, indent=1, ensure_ascii=False))
     for modello in uscita["modelli"]:
-        print(f"{modello['nome']:18s} macro-F1 test {modello['macro_f1']:.3f}  {modello['latenza_cpu_ms']:.1f} ms/finestra")
+        print(f"{modello['nome']:18s} macro-F1 test {modello['macro_f1']:.3f}  "
+              f"{modello['latenza_cpu_ms']:.1f} ms/finestra")
 
 
 # ==============================================================================================================
@@ -508,7 +600,8 @@ def comando_esporta_risultati_sito(argomenti: list[str] | None = None) -> None:
 # Monta la video presentation da media/presentation/scaletta.json con ffmpeg (D12). Riproducibile: quando il modello
 # migliora si rigenerano i clip annotati e si rilancia questo script.
 #
-# Uso:  uv run python -m sicurezza.strumenti monta-presentazione [--scaletta media/presentation/scaletta.json] [--uscita runs/presentazione.mp4]
+# Uso:  uv run python -m sicurezza.strumenti monta-presentazione [--scaletta media/presentation/scaletta.json] \
+#           [--uscita runs/presentazione.mp4]
 #
 # SEGNAPOSTO DESIGN: font, colori e transizioni sono provvisori (vedi STILE).
 # ==============================================================================================================
@@ -516,8 +609,8 @@ def comando_esporta_risultati_sito(argomenti: list[str] | None = None) -> None:
 STILE = {"sfondo": "0x111111", "colore_testo": "white", "dimensione_titolo": 64, "dimensione_sottotitolo": 30}
 
 
-def ffmpeg(*argomenti: str) -> None:
-    subprocess.run(["ffmpeg", "-v", "error", "-y", *argomenti], check=True)
+def ffmpeg(argomenti: list) -> None:
+    subprocess.run(["ffmpeg", "-v", "error", "-y"] + argomenti, check=True)
 
 
 def testo_sicuro(testo: str) -> str:
@@ -531,8 +624,8 @@ def scena_titolo(scena, larghezza, altezza, fps, uscita: Path) -> None:
     if scena.get("sottotitolo"):
         filtro += (f",drawtext=text='{testo_sicuro(scena['sottotitolo'])}':fontcolor={STILE['colore_testo']}:"
                    f"fontsize={STILE['dimensione_sottotitolo']}:x=(w-text_w)/2:y=h/2+20")
-    ffmpeg("-f", "lavfi", "-i", f"color=c={STILE['sfondo']}:s={larghezza}x{altezza}:r={fps}:d={scena['secondi']}",
-           "-vf", filtro, "-c:v", "libx264", "-pix_fmt", "yuv420p", str(uscita))
+    ffmpeg(["-f", "lavfi", "-i", f"color=c={STILE['sfondo']}:s={larghezza}x{altezza}:r={fps}:d={scena['secondi']}",
+            "-vf", filtro, "-c:v", "libx264", "-pix_fmt", "yuv420p", str(uscita)])
 
 
 def scena_clip(scena, larghezza, altezza, fps, uscita: Path) -> None:
@@ -541,7 +634,7 @@ def scena_clip(scena, larghezza, altezza, fps, uscita: Path) -> None:
     if scena.get("didascalia"):
         filtro += (f",drawtext=text='{testo_sicuro(scena['didascalia'])}':fontcolor=white:fontsize=26:"
                    f"box=1:boxcolor=black@0.5:x=(w-text_w)/2:y=h-60")
-    ffmpeg("-i", scena["percorso"], "-vf", filtro, "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(uscita))
+    ffmpeg(["-i", scena["percorso"], "-vf", filtro, "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(uscita)])
 
 
 def scena_grafico_probabilita(scena, larghezza, altezza, fps, uscita: Path) -> None:
@@ -551,11 +644,19 @@ def scena_grafico_probabilita(scena, larghezza, altezza, fps, uscita: Path) -> N
 
     with open(scena["percorso_csv"]) as file_csv:
         righe = list(csv.DictReader(file_csv))
-    classi = [nome for nome in righe[0] if nome not in {"inizio_secondi", "fine_secondi", "classe", "warning_arma"}]
-    tempi = [float(riga["fine_secondi"]) for riga in righe]
+    classi = []   # le colonne del CSV che sono probabilità
+    for nome in righe[0]:
+        if nome not in {"inizio_secondi", "fine_secondi", "classe", "warning_arma"}:
+            classi.append(nome)
+    tempi = []
+    for riga in righe:
+        tempi.append(float(riga["fine_secondi"]))
     figura, asse = plt.subplots(figsize=(larghezza / 100, altezza / 100), dpi=100)
     for classe in classi:  # SEGNAPOSTO DESIGN: colori di matplotlib
-        asse.plot(tempi, [float(riga[classe]) for riga in righe], label=classe, linewidth=2)
+        valori = []
+        for riga in righe:
+            valori.append(float(riga[classe]))
+        asse.plot(tempi, valori, label=classe, linewidth=2)
     asse.set_xlabel("secondi")
     asse.set_ylabel("probabilità")
     asse.set_ylim(0, 1)
@@ -564,8 +665,8 @@ def scena_grafico_probabilita(scena, larghezza, altezza, fps, uscita: Path) -> N
     immagine = uscita.with_suffix(".png")
     figura.savefig(immagine)
     plt.close(figura)
-    ffmpeg("-loop", "1", "-i", str(immagine), "-t", str(scena["secondi"]), "-r", str(fps),
-           "-vf", f"scale={larghezza}:{altezza}", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(uscita))
+    ffmpeg(["-loop", "1", "-i", str(immagine), "-t", str(scena["secondi"]), "-r", str(fps),
+            "-vf", f"scale={larghezza}:{altezza}", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(uscita)])
 
 
 SCENE = {"titolo": scena_titolo, "clip": scena_clip, "grafico_probabilita": scena_grafico_probabilita}
@@ -578,19 +679,26 @@ def monta(percorso_scaletta: Path, percorso_uscita: Path) -> None:
         pezzi = []
         for numero, scena in enumerate(scaletta["scene"]):
             pezzo = Path(cartella_temporanea) / f"{numero:03d}.mp4"
-            percorso_necessario = scena.get("percorso") or scena.get("percorso_csv")
+            percorso_necessario = scena.get("percorso")   # il video della clip, oppure il CSV del grafico
+            if not percorso_necessario:
+                percorso_necessario = scena.get("percorso_csv")
             if percorso_necessario and not Path(percorso_necessario).exists():
                 print(f"salto la scena {numero} ({scena['tipo']}): manca {percorso_necessario}")
                 continue
             SCENE[scena["tipo"]](scena, larghezza, altezza, scaletta["fps"], pezzo)
             pezzi.append(pezzo)
+        # l'elenco dei pezzi per il concat di ffmpeg: una riga "file '...'" per pezzo
         elenco = Path(cartella_temporanea) / "elenco.txt"
-        elenco.write_text("".join(f"file '{pezzo}'\n" for pezzo in pezzi))
+        testo_elenco = ""
+        for pezzo in pezzi:
+            testo_elenco += f"file '{pezzo}'\n"
+        elenco.write_text(testo_elenco)
         percorso_uscita.parent.mkdir(parents=True, exist_ok=True)
-        ffmpeg("-f", "concat", "-safe", "0", "-i", str(elenco), "-c", "copy", str(percorso_uscita))
+        ffmpeg(["-f", "concat", "-safe", "0", "-i", str(elenco), "-c", "copy", str(percorso_uscita)])
     print(f"presentazione: {percorso_uscita} ({len(pezzi)} scene)")
 
-def comando_monta_presentazione(argomenti: list[str] | None = None) -> None:
+
+def comando_monta_presentazione(argomenti=None) -> None:
     parser = argparse.ArgumentParser(description="Monta la video presentation da media/presentation/scaletta.json")
     parser.add_argument("--scaletta", default="media/presentation/scaletta.json")
     parser.add_argument("--uscita", default="runs/presentazione.mp4")
@@ -601,10 +709,13 @@ def comando_monta_presentazione(argomenti: list[str] | None = None) -> None:
 # ==============================================================================================================
 # riga di comando: python -m sicurezza.strumenti <comando> [opzioni]
 # ==============================================================================================================
-COMANDI = {"annota-scippi": comando_annota_scippi, "scarica-campioni": comando_scarica_campioni, "scarica-negativi-coco": comando_scarica_negativi_coco, "scarica-video-cc": comando_scarica_video_cc, "esporta-risultati-sito": comando_esporta_risultati_sito, "monta-presentazione": comando_monta_presentazione}
+COMANDI = {"annota-scippi": comando_annota_scippi, "scarica-campioni": comando_scarica_campioni,
+           "scarica-negativi-coco": comando_scarica_negativi_coco, "scarica-video-cc": comando_scarica_video_cc,
+           "esporta-risultati-sito": comando_esporta_risultati_sito,
+           "monta-presentazione": comando_monta_presentazione}
 
 
-def main(argomenti: list[str] | None = None) -> None:
+def main(argomenti=None) -> None:
     argomenti = sys.argv[1:] if argomenti is None else argomenti
     if not argomenti or argomenti[0] not in COMANDI:
         print("uso: python -m sicurezza.strumenti {" + "|".join(COMANDI) + "} [opzioni]  (--help dopo il comando)")
