@@ -875,7 +875,9 @@ def dividi_per_gruppi(gruppi: np.ndarray, etichette: np.ndarray, sorgenti: np.nd
     for chiave in sorted(strati):
         gruppi_strato = strati[chiave]
         generatore.shuffle(gruppi_strato)
-        totale = sum(finestre_per_gruppo[gruppo] for gruppo in gruppi_strato)
+        totale = 0
+        for gruppo in gruppi_strato:
+            totale += finestre_per_gruppo[gruppo]
         cumulate = 0
         for gruppo in gruppi_strato:
             # il gruppo va nello split in cui cade il suo punto centrale (in finestre cumulate)

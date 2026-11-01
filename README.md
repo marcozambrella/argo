@@ -185,7 +185,7 @@ The heavy computing was done on **Kaggle** (2× T4). The notebooks that rebuild 
 
 Discarded tries and ideas not shipped (bigger detector, hand zoom, longer training…) are in [`experiments_and_future_work/`](experiments_and_future_work), each with its outcome.
 
-The code is in [`src/sicurezza/`](src/sicurezza): `dati.py`, `visione.py`, `modelli.py`, `demo.py` (with the panel) and `strumenti.py`. Run the tests with `uv run pytest`.
+The code is in [`src/sicurezza/`](src/sicurezza): `dati.py` (videos, labels, splits), `visione.py` (skeletons, tracking, weapons), `modelli.py` (windows, ST-GCN, training), `demo.py` (video analysis and the panel) and `strumenti.py` (annotation and download tools). It is written to be easy for a team to read: plain loops and `if`/`else`, one step per line, with comments that explain why. Run the tests with `uv run pytest`.
 
 ## Data, weights and licences
 
