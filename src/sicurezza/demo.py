@@ -19,7 +19,7 @@ import numpy as np
 import torch
 
 from .dati import CLASSI, FPS_ANALISI, FRAME_PER_FINESTRA, INDICE_CLASSE, OSSA, PASSO_FINESTRE, POLSI
-from .dati import leggi_frame, leggi_info_video, nome_file_estratto, tipi_arma_scvd, tipi_arma_ucf
+from .dati import leggi_frame, leggi_info_video, nome_file_estratto, tipi_arma_scvd, tipi_arma_ucf, tipi_arma_wvd
 from .modelli import TimelineVideo, carica_timeline, costruisci_finestra, crea_modello, metriche, timeline_da_dati
 from .visione import MODELLO_POSE_PREDEFINITO, TRACKER_PREDEFINITO, Estrattore, impacchetta_estrazione
 
@@ -908,6 +908,8 @@ RIPETIZIONI_BOOTSTRAP = 1000
 
 def tipi_della_clip(id_clip: str, tipi_ucf: dict, tipi_scvd: dict) -> list:
     """Tipi d'arma di una clip armata: UCF dalle frasi (tipi_ucf per id del video), SCVD dall'annotazione."""
+    if id_clip.startswith("wvd/"):
+        return tipi_arma_wvd(id_clip)
     if id_clip.startswith("ucf/"):
         id_video = id_clip[len("ucf/"):].split("@")[0]
         if id_video in tipi_ucf:

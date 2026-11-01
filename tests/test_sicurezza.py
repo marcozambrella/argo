@@ -11,9 +11,9 @@ import urllib.request
 import torch
 import yaml
 
-from sicurezza.dati import tipi_arma_scvd, tipi_arma_da_frase, elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
+from sicurezza.dati import elenca_clip_snatch10, elenca_clip_snatch10_normali, elenca_clip_scippi_kaggle, elenca_clip_wvd, tipi_arma_wvd, tipi_arma_scvd, tipi_arma_da_frase, elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
 from sicurezza.demo import pezzi_armi_scippi, accuratezza_bilanciata, scegli_soglia, intervallo_bootstrap, tipi_della_clip, Pannello, Telecamera, Videoregistratore, crea_server, ingresso_ffmpeg, leggi_telecamera, opzioni_dai_pesi, sorgente_senza_password, AllarmeViolenza, RamoPixel, classe_finale_con_pixel, fondi_con_pixel, riduci_per_pixel, pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
-from sicurezza.modelli import analizza_predizioni, ricuci_tracce, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
+from sicurezza.modelli import indici_degli_split, analizza_predizioni, ricuci_tracce, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.strumenti import violenza_per_il_sito, risultati_per_il_sito, scarica_con_riprova, scegli_candidati_scippo_telefono, scegli_immagini_coco
 from sicurezza.visione import mani_di_una_persona, precisione_media, probabilita_armi_in_mano, ritaglio_quadrato, ritagli_per_addestramento, prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
 
@@ -1549,3 +1549,70 @@ def test_tipi_arma_scvd_dai_nomi_dei_file(tmp_path):
     file.write_text(json.dumps({"Test__t_w001_converted.mp4": ["fuoco"], "Train__w010_converted.mp4": []}))
     assert tipi_arma_scvd(file) == {"scvd/Test/Weaponized/t_w001_converted": ["fuoco"],
                                     "scvd/Train/Weaponized/w010_converted": []}
+
+
+# ==============================================================================================================
+# dati_nuovi (D68)
+# ==============================================================================================================
+
+def test_snatch10_e_scippi_kaggle_solo_annotati(tmp_path):
+    crea_file(tmp_path, "Snatch 1.0/Chain Snatching Videos/Snatch Theft/10_0.mp4",
+              "snatching/SN_02.mp4", "snatching/SN_03.mp4", "snatching_5.mp4")
+    tempi = {"10_0.mp4": {"eventi": [[2.0, 3.5]], "nessuno_scippo": False}}
+    (tmp_path / "snatch10.json").write_text(json.dumps(tempi))
+    clip = elenca_clip_snatch10(tmp_path, file_tempi=tmp_path / "snatch10.json")
+    assert [c.id_clip for c in clip] == ["snatch10/10_0"] and clip[0].eventi_secondi == [(2.0, 3.5, "scippo")]
+    # SN_03 non è annotato (doppione del chain-snatching): non entra
+    tempi = {"SN_02.mp4": {"eventi": [[1.0, 2.0]], "nessuno_scippo": False},
+             "snatching_5.mp4": {"eventi": [], "nessuno_scippo": False, "non_idoneo": True}}
+    (tmp_path / "kaggle.json").write_text(json.dumps(tempi))
+    clip = elenca_clip_scippi_kaggle(tmp_path, file_tempi=tmp_path / "kaggle.json")
+    assert [c.id_clip for c in clip] == ["scippi_kaggle/SN_02"]
+
+
+def test_snatch10_normali_pezzi_da_un_minuto(tmp_path):
+    cartella = tmp_path / "Snatch 1.0" / "Chain Snatching Videos" / "Normal"
+    cartella.mkdir(parents=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=64x48:rate=25:duration=150",
+                    str(cartella / "s_2.avi")], check=True)
+    clip = elenca_clip_snatch10_normali(tmp_path)
+    assert len(clip) == 4
+    for singola in clip:
+        assert singola.classe_intera == "normale" and singola.gruppo == "snatch10_normali/s_2"
+        assert singola.fine_secondi - singola.inizio_secondi == pytest.approx(60.0)
+    assert [c.id_clip for c in elenca_clip_snatch10_normali(tmp_path)] == [c.id_clip for c in clip]   # riproducibile
+
+
+def test_wvd_classi_gruppi_e_tipi(tmp_path):
+    crea_file(tmp_path, "WVD-VideoFormat/WVD-VideoFormat/Hot/hot-PistolAP-DuskSunny.avi",
+              "WVD-VideoFormat/WVD-VideoFormat/Cold/cold-Knife-MorningSunny.avi",
+              "WVD-VideoFormat/WVD-VideoFormat/Cold/cold-Hammer-MorningSunny.avi",
+              "WVD-VideoFormat/WVD-VideoFormat/NotViolent/notviolent-Yoga-MorningSunny.avi",
+              "WVD-OpticFlow/WVD-OpticFlow/HotOpticFlow/hot-PistolAP-DuskSunny.avi")
+    clip = elenca_clip_wvd(tmp_path)
+    classi = {}
+    for singola in clip:
+        classi[singola.id_clip] = singola.classe_intera
+    assert classi == {"wvd/Cold/cold-Hammer-MorningSunny": "violenza_con_arma",
+                      "wvd/Cold/cold-Knife-MorningSunny": "violenza_con_arma",
+                      "wvd/Hot/hot-PistolAP-DuskSunny": "violenza_con_arma",
+                      "wvd/NotViolent/notviolent-Yoga-MorningSunny": "normale"}
+    assert tipi_arma_wvd("wvd/Hot/hot-PistolAP-DuskSunny") == ["fuoco"]
+    assert tipi_arma_wvd("wvd/Cold/cold-Knife-MorningSunny") == ["coltello"]
+    assert tipi_arma_wvd("wvd/Cold/cold-Hammer-MorningSunny") == []
+    assert tipi_della_clip("wvd/Cold/cold-Knife-MorningSunny", {}, {}) == ["coltello"]
+
+
+def test_wvd_sempre_in_train():
+    gruppi = []
+    sorgenti = []
+    etichette = []
+    for numero in range(40):
+        gruppi += [f"rwf/{numero}", f"wvd/Hot/{numero}"]
+        sorgenti += ["rwf2000", "wvd"]
+        etichette += [numero % 2, 2]
+    finestre = {"gruppo": np.array(gruppi), "sorgente": np.array(sorgenti), "etichetta": np.array(etichette)}
+    split = indici_degli_split(finestre)
+    for nome in ("val", "test"):
+        assert len(split[nome]) > 0
+        assert not np.any(finestre["sorgente"][split[nome]] == "wvd")

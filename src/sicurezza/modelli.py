@@ -883,9 +883,14 @@ def predici(modello, finestre, indici, dispositivo, dimensione_lotto=256):
 
 
 def indici_degli_split(finestre: dict, seme: int = 0) -> dict:
-    """Split P4 per video (D33) + D26. Deterministico: rifatto sulle stesse finestre dà gli stessi indici."""
+    """Split P4 per video (D33) + D26. Deterministico: rifatto sulle stesse finestre dà gli stessi indici.
+    D68: i video sintetici di WVD vanno sempre in train (val e test restano solo video veri)."""
+    sempre_in_train = set(gruppi_visti_dal_detector())
+    for gruppo, sorgente in zip(finestre["gruppo"].tolist(), finestre["sorgente"].tolist()):
+        if sorgente == "wvd":
+            sempre_in_train.add(gruppo)
     split = dividi_per_gruppi(finestre["gruppo"], finestre["etichetta"], finestre["sorgente"], seme=seme,
-                              gruppi_sempre_in_train=gruppi_visti_dal_detector())
+                              gruppi_sempre_in_train=sempre_in_train)
     indici_split = {}
     for numero, nome in enumerate(NOMI_SPLIT):   # 0 train, 1 val, 2 test
         indici_split[nome] = np.flatnonzero(split == numero)

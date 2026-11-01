@@ -655,6 +655,88 @@ def clip_da_tempi_annotati(percorsi_video: list, file_tempi: Path, sorgente: str
 
 
 # ==============================================================================================================
+# dati nuovi (D68, 01/11): più scippi e più armi, scelti da Marco dopo la ricerca
+# - Snatch 1.0 (Zenodo 10812645, CC BY-SA 4.0): telecamere del traffico di Hyderabad. 35 clip brevi di scippo,
+#   annotate da Marco (annotations/snatch10/), e 29 registrazioni lunghe "Normal" delle stesse strade: da queste
+#   si prendono pezzi normali, così "strada indiana" non vuol dire "scippo". Lo scarica il kernel da Zenodo.
+# - scippi da Kaggle (gauravsingh72509/snatching-datasets, manutejachindukuru/snatching): si usano solo i video
+#   annotati da Marco (annotations/scippi_kaggle/), che non contiene i doppioni del chain-snatching.
+# - WVD (Kaggle thelarka/weapon-violence-dataset-wvd, CC0): video sintetici GTA-V. Solo train, mai val/test.
+# ==============================================================================================================
+
+FILE_TEMPI_SNATCH10 = CARTELLA_ANNOTAZIONI / "snatch10" / "tempi_scippo.json"
+FILE_TEMPI_SCIPPI_KAGGLE = CARTELLA_ANNOTAZIONI / "scippi_kaggle" / "tempi_scippo.json"
+PEZZI_PER_REGISTRAZIONE_NORMALE = 4
+SECONDI_PER_PEZZO_NORMALE = 60.0
+
+
+def elenca_clip_snatch10(radice_dataset, file_tempi: Path = FILE_TEMPI_SNATCH10) -> list:
+    percorsi_video = sorted(Path(radice_dataset).glob("**/Snatch Theft/*.mp4"))
+    return clip_da_tempi_annotati(percorsi_video, file_tempi, "snatch10")
+
+
+def elenca_clip_snatch10_normali(radice_dataset, seme: int = 0) -> list:
+    """Pezzi da un minuto, in posizioni casuali ma riproducibili, delle registrazioni lunghe senza scippi."""
+    generatore = random.Random(seme)
+    clip = []
+    for percorso in sorted(Path(radice_dataset).glob("**/Chain Snatching Videos/Normal/*.avi")):
+        durata = leggi_info_video(str(percorso)).durata_secondi
+        for numero in range(PEZZI_PER_REGISTRAZIONE_NORMALE):
+            inizio = generatore.uniform(0.0, max(0.0, durata - SECONDI_PER_PEZZO_NORMALE))
+            fine = min(durata, inizio + SECONDI_PER_PEZZO_NORMALE)
+            clip.append(ClipAnnotata(
+                id_clip=f"snatch10_normali/{percorso.stem}@{inizio:.1f}-{fine:.1f}", sorgente="snatch10_normali",
+                gruppo=f"snatch10_normali/{percorso.stem}", percorso_video=str(percorso), inizio_secondi=inizio,
+                fine_secondi=fine, classe_intera="normale"))
+    return clip
+
+
+def elenca_clip_scippi_kaggle(radice_dataset, file_tempi: Path = FILE_TEMPI_SCIPPI_KAGGLE) -> list:
+    annotati = set()
+    if Path(file_tempi).exists():
+        annotati = set(json.loads(Path(file_tempi).read_text()))
+    percorsi_video = []
+    for schema in ("**/SN_*.mp4", "**/snatching_*.mp4"):
+        for percorso in sorted(Path(radice_dataset).glob(schema)):
+            if percorso.name in annotati:   # gli altri sono doppioni del chain-snatching (non annotati apposta)
+                percorsi_video.append(percorso)
+    return clip_da_tempi_annotati(percorsi_video, file_tempi, "scippi_kaggle")
+
+
+CLASSE_PER_CARTELLA_WVD = {"Hot": "violenza_con_arma", "Cold": "violenza_con_arma", "NotViolent": "normale"}
+
+
+def elenca_clip_wvd(radice_dataset) -> list:
+    """Nome dei file: "<hot|cold|...>-<arma o scena>-<ora del giorno>.avi"; le 6 ore della stessa arma = un gruppo."""
+    clip = []
+    for percorso in sorted(Path(radice_dataset).glob("**/WVD-VideoFormat/*/*.avi")):
+        cartella_classe = percorso.parent.name
+        if cartella_classe not in CLASSE_PER_CARTELLA_WVD:
+            continue
+        arma_o_scena = percorso.stem.split("-")[1]
+        clip.append(ClipAnnotata(
+            id_clip=f"wvd/{cartella_classe}/{percorso.stem}", sorgente="wvd",
+            gruppo=f"wvd/{cartella_classe}/{arma_o_scena}", percorso_video=str(percorso),
+            classe_intera=CLASSE_PER_CARTELLA_WVD[cartella_classe]))
+    return clip
+
+
+# tipo d'arma delle clip WVD armate, dal nome dell'arma; mazze, martelli, bottiglie... sono armi ma senza tipo
+ARMI_DA_FUOCO_WVD = ("MG", "MGCombat", "PistolAP", "PistolCombat", "RifleBullpup", "RifleCarbine", "ShotgunAssault",
+                     "ShotgunPump", "SMGMicro", "SMGMp5")
+COLTELLI_WVD = ("Knife", "Machette")
+
+
+def tipi_arma_wvd(id_clip: str) -> list:
+    arma = id_clip.split("/")[-1].split("-")[1]
+    if arma in ARMI_DA_FUOCO_WVD:
+        return ["fuoco"]
+    if arma in COLTELLI_WVD:
+        return ["coltello"]
+    return []
+
+
+# ==============================================================================================================
 # normali_folla (D41, D46)
 # Scene NORMALI in luoghi affollati (stazioni, metro, incroci, campus, strade), tutte classe "normale": la
 # confusione più grande del modello è normale↔violenza. Fonti scelte dalla ricerca del sub-agente
@@ -822,7 +904,9 @@ def comando_prepara_normali(argomenti=None) -> None:
 
 SORGENTI = {"rwf2000": elenca_clip_rwf2000, "cctv_fights": elenca_clip_cctv_fights, "scvd": elenca_clip_scvd,
             "ucf_uca": elenca_clip_ucf_uca, "chain_snatching": elenca_clip_chain_snatching,
-            "phone_snatching": elenca_clip_phone_snatching, "normali_folla": elenca_clip_normali_folla}
+            "phone_snatching": elenca_clip_phone_snatching, "normali_folla": elenca_clip_normali_folla,
+            "snatch10": elenca_clip_snatch10, "snatch10_normali": elenca_clip_snatch10_normali,
+            "scippi_kaggle": elenca_clip_scippi_kaggle, "wvd": elenca_clip_wvd}
 
 
 def prepara(cartella_input: Path, cartella_uscita: Path, sorgenti=tuple(SORGENTI)):
