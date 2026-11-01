@@ -1,9 +1,6 @@
 """Sicurezza NN — dati. File unico (richiesta di Marco: massimo 5 file Python)."""
 
 from collections import Counter
-from collections import defaultdict
-from collections.abc import Iterator
-from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from dataclasses import field
 from pathlib import Path
@@ -11,8 +8,11 @@ import argparse
 import json
 import random
 import re
+import socket
 import subprocess
 import sys
+import urllib.request
+import zipfile
 
 import numpy as np
 
@@ -26,6 +26,9 @@ FPS_ANALISI = 25                 # tutti i video vengono letti a 25 fps
 FRAME_PER_FINESTRA = 40          # 1,6 secondi
 PASSO_FINESTRE = 10              # finestre 0-39, 10-49, 20-59, ...
 FRAME_MINIMI_EVENTO = 20         # frame di evento necessari perché la finestra prenda la classe dell'evento
+
+# cartella annotations/ del repo (questo file è in src/sicurezza/, due cartelle più giù)
+CARTELLA_ANNOTAZIONI = Path(__file__).resolve().parents[2] / "annotations"
 
 CLASSI = ("normale", "violenza", "violenza_con_arma", "scippo")
 INDICE_CLASSE = {nome: indice for indice, nome in enumerate(CLASSI)}
@@ -76,25 +79,39 @@ def leggi_info_video(percorso_video: str) -> InfoVideo:
     ).stdout
     dati = json.loads(uscita_ffprobe)
     flusso_video = dati["streams"][0]
-    larghezza, altezza = int(flusso_video["width"]), int(flusso_video["height"])
+    larghezza = int(flusso_video["width"])
+    altezza = int(flusso_video["height"])
+
     # ffmpeg ruota automaticamente i video con metadato di rotazione: le dimensioni in uscita vanno scambiate
-    rotazione = next((int(dato["rotation"]) for dato in flusso_video.get("side_data_list", []) if "rotation" in dato), 0)
-    if rotazione % 180:
+    rotazione = 0
+    for dato in flusso_video.get("side_data_list", []):
+        if "rotation" in dato:
+            rotazione = int(dato["rotation"])
+            break
+    if rotazione % 180 != 0:
         larghezza, altezza = altezza, larghezza
-    durata = float(flusso_video.get("duration") or dati.get("format", {}).get("duration") or 0.0)
-    return InfoVideo(larghezza, altezza, durata)
+
+    # la durata a volte manca nel flusso video: allora si prende quella del file
+    durata = flusso_video.get("duration")
+    if not durata:
+        durata = dati.get("format", {}).get("duration")
+    if not durata:
+        durata = 0.0
+    return InfoVideo(larghezza, altezza, float(durata))
 
 
-def leggi_frame(percorso_video: str, fps: int = FPS_ANALISI, inizio_secondi: float | None = None,
-                fine_secondi: float | None = None) -> Iterator[np.ndarray]:
-    """Frame BGR (altezza, larghezza, 3) uint8 a `fps` costanti, opzionalmente solo tra inizio e fine (secondi)."""
+def leggi_frame(percorso_video: str, fps: int = FPS_ANALISI, inizio_secondi=None, fine_secondi=None):
+    """Frame BGR (altezza, larghezza, 3) uint8 a `fps` costanti, opzionalmente solo tra inizio e fine (secondi).
+
+    È un generatore (`yield`): dà un frame alla volta, perché un video intero non starebbe in memoria."""
     info = leggi_info_video(percorso_video)
     comando = ["ffmpeg", "-v", "error", "-nostdin"]
     if inizio_secondi:
         comando += ["-ss", f"{inizio_secondi:.3f}"]
     comando += ["-i", str(percorso_video)]
     if fine_secondi is not None:
-        comando += ["-t", f"{fine_secondi - (inizio_secondi or 0):.3f}"]
+        durata = fine_secondi - (inizio_secondi or 0)
+        comando += ["-t", f"{durata:.3f}"]
     comando += ["-vf", f"fps={fps}", "-an", "-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
 
     byte_per_frame = info.larghezza * info.altezza * 3
@@ -105,7 +122,8 @@ def leggi_frame(percorso_video: str, fps: int = FPS_ANALISI, inizio_secondi: flo
             dati_frame = processo_ffmpeg.stdout.read(byte_per_frame)
             if len(dati_frame) < byte_per_frame:
                 break
-            yield np.frombuffer(dati_frame, np.uint8).reshape(info.altezza, info.larghezza, 3)
+            frame = np.frombuffer(dati_frame, np.uint8).reshape(info.altezza, info.larghezza, 3)
+            yield frame
     finally:
         processo_ffmpeg.stdout.close()
         processo_ffmpeg.kill()
@@ -117,8 +135,8 @@ def leggi_frame(percorso_video: str, fps: int = FPS_ANALISI, inizio_secondi: flo
 # Finestre temporali di 40 frame con passo 10 ed etichettatura dalle annotazioni (D2 e P3 nel diario).
 # ==============================================================================================================
 
-# Evento annotato: (primo frame, frame dopo l'ultimo, indice classe) -> intervallo semiaperto [primo, fine)
-Evento = tuple[int, int, int]
+# Un evento annotato è una tupla (primo frame, frame dopo l'ultimo, indice classe):
+# l'intervallo è semiaperto [primo, fine), cioè il frame "fine" non fa parte dell'evento.
 
 
 def inizi_finestre(numero_frame: int, frame_per_finestra: int = FRAME_PER_FINESTRA,
@@ -129,26 +147,37 @@ def inizi_finestre(numero_frame: int, frame_per_finestra: int = FRAME_PER_FINEST
     return np.arange(0, numero_frame - frame_per_finestra + 1, passo)
 
 
-def secondi_in_frame(inizio_secondi: float, fine_secondi: float, fps: int = FPS_ANALISI) -> tuple[int, int]:
-    return round(inizio_secondi * fps), round(fine_secondi * fps)
+def secondi_in_frame(inizio_secondi: float, fine_secondi: float, fps: int = FPS_ANALISI):
+    primo_frame = round(inizio_secondi * fps)
+    frame_dopo_ultimo = round(fine_secondi * fps)
+    return primo_frame, frame_dopo_ultimo
 
 
-def frame_coperti_per_classe(inizio_finestra: int, eventi: Sequence[Evento],
-                             frame_per_finestra: int = FRAME_PER_FINESTRA) -> dict[int, int]:
-    """Per ogni classe, quanti frame della finestra cadono in almeno un suo evento (sovrapposizioni contate una volta)."""
+def frame_coperti_per_classe(inizio_finestra: int, eventi: list,
+                             frame_per_finestra: int = FRAME_PER_FINESTRA) -> dict:
+    """Per ogni classe, quanti frame della finestra cadono in almeno un suo evento.
+    Se due eventi della stessa classe si sovrappongono, i frame in comune si contano una volta sola."""
     fine_finestra = inizio_finestra + frame_per_finestra
-    maschere_per_classe: dict[int, np.ndarray] = {}
+    # per ogni classe una maschera di 40 frame: True dove c'è un evento di quella classe
+    maschere_per_classe = {}
     for primo_frame, frame_dopo_ultimo, classe in eventi:
-        da, a = max(primo_frame, inizio_finestra), min(frame_dopo_ultimo, fine_finestra)
-        if da < a:
-            maschera = maschere_per_classe.setdefault(classe, np.zeros(frame_per_finestra, dtype=bool))
-            maschera[da - inizio_finestra:a - inizio_finestra] = True
-    return {classe: int(maschera.sum()) for classe, maschera in maschere_per_classe.items()}
+        da = max(primo_frame, inizio_finestra)
+        a = min(frame_dopo_ultimo, fine_finestra)
+        if da >= a:
+            continue   # l'evento non tocca la finestra
+        if classe not in maschere_per_classe:
+            maschere_per_classe[classe] = np.zeros(frame_per_finestra, dtype=bool)
+        maschere_per_classe[classe][da - inizio_finestra:a - inizio_finestra] = True
+
+    coperti = {}
+    for classe, maschera in maschere_per_classe.items():
+        coperti[classe] = int(maschera.sum())
+    return coperti
 
 
-def etichetta_finestra(inizio_finestra: int, eventi: Sequence[Evento], classe_sfondo: int | None,
+def etichetta_finestra(inizio_finestra: int, eventi: list, classe_sfondo,
                        frame_per_finestra: int = FRAME_PER_FINESTRA,
-                       frame_minimi_evento: int = FRAME_MINIMI_EVENTO) -> int | None:
+                       frame_minimi_evento: int = FRAME_MINIMI_EVENTO):
     """Classe della finestra, oppure None se va scartata.
 
     - un evento "conta" se copre ≥ frame_minimi_evento frame della finestra (P3), oppure, se l'evento è più corto
@@ -173,7 +202,11 @@ def etichetta_finestra(inizio_finestra: int, eventi: Sequence[Evento], classe_sf
     if not classi_che_contano:
         return None
     copertura = frame_coperti_per_classe(inizio_finestra, eventi, frame_per_finestra)
-    return max(classi_che_contano, key=lambda classe: copertura[classe])
+    classe_migliore = None
+    for classe in classi_che_contano:
+        if classe_migliore is None or copertura[classe] > copertura[classe_migliore]:
+            classe_migliore = classe
+    return classe_migliore
 
 
 # ==============================================================================================================
@@ -185,17 +218,24 @@ class VideoDaEstrarre:
     """Un video (o un suo segmento) da estrarre. `id_clip` diventa il nome del file .npz."""
     id_clip: str
     percorso_video: str
-    inizio_secondi: float | None = None
-    fine_secondi: float | None = None
+    inizio_secondi: float = None      # None = dall'inizio del video
+    fine_secondi: float = None        # None = fino alla fine
     telecamera_mobile: bool = False   # D20: la compensazione del movimento (GMC) del tracker serve solo qui
 
 
-def leggi_elenco(percorso_elenco: str | Path) -> list[VideoDaEstrarre]:
+def leggi_elenco(percorso_elenco) -> list:
+    video_da_estrarre = []
     with open(percorso_elenco) as file_elenco:
-        return [VideoDaEstrarre(**json.loads(riga)) for riga in file_elenco if riga.strip()]
+        for riga in file_elenco:
+            if not riga.strip():
+                continue
+            campi = json.loads(riga)
+            # **campi: ogni chiave del dizionario diventa il campo con lo stesso nome
+            video_da_estrarre.append(VideoDaEstrarre(**campi))
+    return video_da_estrarre
 
 
-def scrivi_elenco(video_da_estrarre: list[VideoDaEstrarre], percorso_elenco: str | Path) -> None:
+def scrivi_elenco(video_da_estrarre: list, percorso_elenco) -> None:
     with open(percorso_elenco, "w") as file_elenco:
         for video in video_da_estrarre:
             file_elenco.write(json.dumps(asdict(video)) + "\n")
@@ -219,12 +259,14 @@ class ClipAnnotata:
     sorgente: str                   # rwf2000, cctv_fights, scvd, ucf_uca, chain_snatching
     gruppo: str                     # video originale: tutte le clip dello stesso gruppo stanno nello stesso split (P4)
     percorso_video: str
-    inizio_secondi: float | None = None
-    fine_secondi: float | None = None
-    eventi_secondi: list[tuple[float, float, str]] = field(default_factory=list)  # relativi all'inizio della clip
-    classe_intera: str | None = None    # tutta la clip ha questa classe (dataset già tagliati)
-    classe_sfondo: str | None = None    # classe delle finestre senza eventi (None = scartarle)
-    split_originale: str | None = None
+    inizio_secondi: float = None
+    fine_secondi: float = None
+    # eventi (inizio, fine, classe) in secondi, relativi all'inizio della clip;
+    # field(default_factory=list): ogni clip ha la sua lista vuota (non una lista condivisa da tutte)
+    eventi_secondi: list = field(default_factory=list)
+    classe_intera: str = None           # tutta la clip ha questa classe (dataset già tagliati)
+    classe_sfondo: str = None           # classe delle finestre senza eventi (None = scartarle)
+    split_originale: str = None
     telecamera_mobile: bool = False     # D20: accende la compensazione del movimento nel tracker
     note: str = ""
 
@@ -232,26 +274,40 @@ class ClipAnnotata:
         return VideoDaEstrarre(self.id_clip, self.percorso_video, self.inizio_secondi, self.fine_secondi,
                                self.telecamera_mobile)
 
-    def eventi_in_frame(self, numero_frame: int) -> list[Evento]:
+    def eventi_in_frame(self, numero_frame: int) -> list:
         if self.classe_intera is not None:
             return [(0, numero_frame, INDICE_CLASSE[self.classe_intera])]
-        return [(*secondi_in_frame(inizio, fine), INDICE_CLASSE[classe]) for inizio, fine, classe in self.eventi_secondi]
+        eventi = []
+        for inizio, fine, classe in self.eventi_secondi:
+            primo_frame, frame_dopo_ultimo = secondi_in_frame(inizio, fine)
+            eventi.append((primo_frame, frame_dopo_ultimo, INDICE_CLASSE[classe]))
+        return eventi
 
-    def indice_classe_sfondo(self) -> int | None:
-        return None if self.classe_sfondo is None else INDICE_CLASSE[self.classe_sfondo]
+    def indice_classe_sfondo(self):
+        if self.classe_sfondo is None:
+            return None
+        return INDICE_CLASSE[self.classe_sfondo]
 
 
-def scrivi_annotazioni(clip: list[ClipAnnotata], percorso: str | Path) -> None:
+def scrivi_annotazioni(clip: list, percorso) -> None:
     with open(percorso, "w") as file_annotazioni:
         for singola_clip in clip:
             file_annotazioni.write(json.dumps(asdict(singola_clip)) + "\n")
 
 
-def leggi_annotazioni(percorso: str | Path) -> list[ClipAnnotata]:
+def leggi_annotazioni(percorso) -> list:
+    clip = []
     with open(percorso) as file_annotazioni:
-        clip = [ClipAnnotata(**json.loads(riga)) for riga in file_annotazioni if riga.strip()]
-    for singola_clip in clip:
-        singola_clip.eventi_secondi = [tuple(evento) for evento in singola_clip.eventi_secondi]
+        for riga in file_annotazioni:
+            if not riga.strip():
+                continue
+            singola_clip = ClipAnnotata(**json.loads(riga))
+            # in JSON le tuple diventano liste: si rimettono come tuple (inizio, fine, classe)
+            eventi = []
+            for evento in singola_clip.eventi_secondi:
+                eventi.append(tuple(evento))
+            singola_clip.eventi_secondi = eventi
+            clip.append(singola_clip)
     return clip
 
 
@@ -263,10 +319,11 @@ def leggi_annotazioni(percorso: str | Path) -> list[ClipAnnotata]:
 CLASSE_PER_CARTELLA_RWF2000 = {"Fight": "violenza", "NonFight": "normale"}
 
 
-def elenca_clip_rwf2000(radice_dataset: str | Path) -> list[ClipAnnotata]:
+def elenca_clip_rwf2000(radice_dataset) -> list:
     clip = []
     for percorso in sorted(Path(radice_dataset).glob("**/RWF-2000/*/*/*.avi")):
-        cartella_classe, cartella_split = percorso.parent.name, percorso.parent.parent.name
+        cartella_classe = percorso.parent.name
+        cartella_split = percorso.parent.parent.name
         if cartella_classe not in CLASSE_PER_CARTELLA_RWF2000:
             continue
         # i nomi sono <id YouTube>_<n>: clip dello stesso video originale devono finire nello stesso split
@@ -287,21 +344,31 @@ def elenca_clip_rwf2000(radice_dataset: str | Path) -> list[ClipAnnotata]:
 # Il groundtruth NON è nel repo (accordo di licenza NTU): si legge dal dataset Kaggle.
 # ==============================================================================================================
 
-def elenca_clip_cctv_fights(radice_dataset: str | Path, percorso_groundtruth: str | Path | None = None,
-                fonti_ammesse: tuple[str, ...] | None = None) -> list[ClipAnnotata]:
-    """`fonti_ammesse` = None tiene tutto; ("CCTV",) tiene solo le telecamere di sorveglianza (DA DECIDERE)."""
+def elenca_clip_cctv_fights(radice_dataset, percorso_groundtruth=None, fonti_ammesse=None) -> list:
+    """`fonti_ammesse` = None tiene tutto; ("CCTV",) tiene solo le telecamere di sorveglianza (DA DECIDERE).
+
+    Se il groundtruth.json non si trova (dataset non montato) solleva StopIteration: `prepara` la gestisce."""
     radice_dataset = Path(radice_dataset)
-    percorso_groundtruth = percorso_groundtruth or next(radice_dataset.glob("**/groundtruth.json"))
+    if percorso_groundtruth is None:
+        # next(...) prende il primo file trovato; se non ce n'è nessuno solleva StopIteration
+        percorso_groundtruth = next(radice_dataset.glob("**/groundtruth.json"))
     database = json.loads(Path(percorso_groundtruth).read_text())["database"]
-    percorso_per_id = {percorso.stem: percorso for percorso in radice_dataset.glob("**/fight_*.*")
-                       if percorso.suffix in {".mp4", ".webm", ".avi", ".mkv"}}
+
+    percorso_per_id = {}
+    for percorso in radice_dataset.glob("**/fight_*.*"):
+        if percorso.suffix in {".mp4", ".webm", ".avi", ".mkv"}:
+            percorso_per_id[percorso.stem] = percorso
+
     clip = []
     for id_video, dati in sorted(database.items()):
         if fonti_ammesse is not None and dati.get("source") not in fonti_ammesse:
             continue
         if id_video not in percorso_per_id:
             continue
-        eventi = [(float(a["segment"][0]), float(a["segment"][1]), "violenza") for a in dati["annotations"]]
+        eventi = []
+        for annotazione in dati["annotations"]:
+            inizio, fine = annotazione["segment"]
+            eventi.append((float(inizio), float(fine), "violenza"))
         clip.append(ClipAnnotata(
             id_clip=f"cctv_fights/{id_video}", sorgente="cctv_fights", gruppo=f"cctv_fights/{id_video}",
             percorso_video=str(percorso_per_id[id_video]), eventi_secondi=eventi, classe_sfondo="normale",
@@ -321,10 +388,11 @@ def elenca_clip_cctv_fights(radice_dataset: str | Path, percorso_groundtruth: st
 CLASSE_PER_CARTELLA_SCVD = {"Normal": "normale", "Violence": "violenza", "Weaponized": "violenza_con_arma"}
 
 
-def elenca_clip_scvd(radice_dataset: str | Path) -> list[ClipAnnotata]:
+def elenca_clip_scvd(radice_dataset) -> list:
     clip = []
     for percorso in sorted(Path(radice_dataset).glob("**/SCVD_converted/*/*/*.avi")):
-        cartella_classe, cartella_split = percorso.parent.name, percorso.parent.parent.name
+        cartella_classe = percorso.parent.name
+        cartella_split = percorso.parent.parent.name
         if cartella_classe not in CLASSE_PER_CARTELLA_SCVD:
             continue
         clip.append(ClipAnnotata(
@@ -346,7 +414,7 @@ def elenca_clip_scvd(radice_dataset: str | Path) -> list[ClipAnnotata]:
 # Si estraggono solo i segmenti candidati (± MARGINE_SECONDI); le finestre fuori dagli eventi si scartano.
 # ==============================================================================================================
 
-CARTELLA_UCA = Path(__file__).resolve().parents[2] / "annotations" / "uca"
+CARTELLA_UCA = CARTELLA_ANNOTAZIONI / "uca"
 
 CATEGORIE_UCF_USATE = ("Abuse", "Arrest", "Assault", "Burglary", "Fighting", "Robbery", "Shooting", "Stealing")
 MARGINE_SECONDI = 2.0                    # PROVVISORIO: contesto prima e dopo ogni evento
@@ -381,7 +449,7 @@ def descrive_violenza(testo: str) -> bool:
     return bool(re.search(VIOLENZA_SU_PERSONA, testo) or re.search(NOMI_VIOLENZA, testo))
 
 
-def classe_da_frase(frase: str) -> str | None:
+def classe_da_frase(frase: str):
     """Classe di una frase UCA, oppure None se la frase non descrive un evento utile."""
     testo = frase.lower()
     arma = re.search(PAROLE_ARMA, testo)
@@ -396,7 +464,7 @@ def classe_da_frase(frase: str) -> str | None:
 # ------------------------------------------------------------------------------------------------------------
 
 
-def carica_uca(cartella_uca: Path = CARTELLA_UCA) -> dict[str, dict]:
+def carica_uca(cartella_uca: Path = CARTELLA_UCA) -> dict:
     annotazioni = {}
     for file_uca in sorted(Path(cartella_uca).glob("UCFCrime_*.json")):
         annotazioni.update(json.loads(file_uca.read_text()))
@@ -404,21 +472,28 @@ def carica_uca(cartella_uca: Path = CARTELLA_UCA) -> dict[str, dict]:
 
 
 def categoria_ucf(id_video: str) -> str:
-    return "Normal" if id_video.startswith("Normal") else re.match(r"[A-Za-z]+", id_video).group(0)
+    if id_video.startswith("Normal"):
+        return "Normal"
+    # la categoria sono le lettere iniziali del nome: "Robbery048_x264" -> "Robbery"
+    return re.match(r"[A-Za-z]+", id_video).group(0)
 
 
-def unisci_intervalli(intervalli: list[tuple[float, float]]) -> list[tuple[float, float]]:
+def unisci_intervalli(intervalli: list) -> list:
+    """Unisce gli intervalli (inizio, fine) che si sovrappongono."""
     uniti = []
     for inizio, fine in sorted(intervalli):
-        if uniti and inizio <= uniti[-1][1]:
-            uniti[-1] = (uniti[-1][0], max(uniti[-1][1], fine))
+        if len(uniti) > 0 and inizio <= uniti[-1][1]:
+            inizio_precedente, fine_precedente = uniti[-1]
+            uniti[-1] = (inizio_precedente, max(fine_precedente, fine))
         else:
             uniti.append((inizio, fine))
     return uniti
 
 
-def elenca_clip_ucf_uca(radice_dataset: str | Path, cartella_uca: Path = CARTELLA_UCA, seme: int = 0) -> list[ClipAnnotata]:
-    percorso_per_id = {percorso.stem: percorso for percorso in Path(radice_dataset).glob("**/*.mp4")}
+def elenca_clip_ucf_uca(radice_dataset, cartella_uca: Path = CARTELLA_UCA, seme: int = 0) -> list:
+    percorso_per_id = {}
+    for percorso in Path(radice_dataset).glob("**/*.mp4"):
+        percorso_per_id[percorso.stem] = percorso
     annotazioni = carica_uca(cartella_uca)
     clip = []
     for id_video, dati in sorted(annotazioni.items()):
@@ -426,14 +501,30 @@ def elenca_clip_ucf_uca(radice_dataset: str | Path, cartella_uca: Path = CARTELL
         if categoria not in CATEGORIE_UCF_USATE or id_video not in percorso_per_id:
             continue
         durata = float(dati["duration"])
-        eventi = [(float(inizio), float(fine), classe) for (inizio, fine), frase
-                  in zip(dati["timestamps"], dati["sentences"]) if (classe := classe_da_frase(frase))]
-        segmenti = unisci_intervalli([(max(0.0, inizio - MARGINE_SECONDI), min(durata, fine + MARGINE_SECONDI))
-                                      for inizio, fine, _ in eventi])
+
+        # ogni frase di UCA ha i suoi tempi: si tengono solo le frasi che descrivono un evento utile
+        eventi = []
+        for tempi, frase in zip(dati["timestamps"], dati["sentences"]):
+            classe = classe_da_frase(frase)
+            if classe is None:
+                continue
+            inizio, fine = tempi
+            eventi.append((float(inizio), float(fine), classe))
+
+        # attorno a ogni evento un po' di contesto; gli eventi vicini finiscono nello stesso segmento
+        intervalli = []
+        for inizio, fine, classe in eventi:
+            intervalli.append((max(0.0, inizio - MARGINE_SECONDI), min(durata, fine + MARGINE_SECONDI)))
+        segmenti = unisci_intervalli(intervalli)
+
         for inizio_segmento, fine_segmento in segmenti:
-            eventi_nel_segmento = [(max(inizio, inizio_segmento) - inizio_segmento,
-                                    min(fine, fine_segmento) - inizio_segmento, classe)
-                                   for inizio, fine, classe in eventi if inizio < fine_segmento and fine > inizio_segmento]
+            # gli eventi del segmento, con i tempi contati dall'inizio del segmento
+            eventi_nel_segmento = []
+            for inizio, fine, classe in eventi:
+                if inizio < fine_segmento and fine > inizio_segmento:
+                    inizio_relativo = max(inizio, inizio_segmento) - inizio_segmento
+                    fine_relativa = min(fine, fine_segmento) - inizio_segmento
+                    eventi_nel_segmento.append((inizio_relativo, fine_relativa, classe))
             clip.append(ClipAnnotata(
                 id_clip=f"ucf/{id_video}@{inizio_segmento:.1f}-{fine_segmento:.1f}", sorgente="ucf_uca",
                 gruppo=f"ucf/{id_video}", percorso_video=str(percorso_per_id[id_video]),
@@ -442,8 +533,11 @@ def elenca_clip_ucf_uca(radice_dataset: str | Path, cartella_uca: Path = CARTELL
 
     # campione PROVVISORIO di video normali: un pezzo da ogni video, posizione casuale ma riproducibile
     generatore = random.Random(seme)
-    normali = sorted(id_video for id_video in annotazioni
-                     if categoria_ucf(id_video) == "Normal" and id_video in percorso_per_id)
+    normali = []
+    for id_video in annotazioni:
+        if categoria_ucf(id_video) == "Normal" and id_video in percorso_per_id:
+            normali.append(id_video)
+    normali.sort()
     for id_video in generatore.sample(normali, min(NUMERO_VIDEO_NORMALI, len(normali))):
         durata = float(annotazioni[id_video]["duration"])
         inizio = generatore.uniform(0.0, max(0.0, durata - SECONDI_PER_VIDEO_NORMALE))
@@ -465,37 +559,41 @@ def elenca_clip_ucf_uca(radice_dataset: str | Path, cartella_uca: Path = CARTELL
 # nell'elenco di estrazione, così l'estrazione non deve aspettare la fine dell'annotazione.
 # ==============================================================================================================
 
-FILE_TEMPI_SCIPPO = Path(__file__).resolve().parents[2] / "annotations" / "chain_snatching" / "tempi_scippo.json"
+FILE_TEMPI_SCIPPO = CARTELLA_ANNOTAZIONI / "chain_snatching" / "tempi_scippo.json"
 
 
-def elenca_clip_chain_snatching(radice_dataset: str | Path, file_tempi: Path = FILE_TEMPI_SCIPPO) -> list[ClipAnnotata]:
-    return clip_da_tempi_annotati(sorted(Path(radice_dataset).glob("**/Chain_Snatching_Videos/*.mp4")), file_tempi,
-                                  "chain_snatching")
+def elenca_clip_chain_snatching(radice_dataset, file_tempi: Path = FILE_TEMPI_SCIPPO) -> list:
+    percorsi_video = sorted(Path(radice_dataset).glob("**/Chain_Snatching_Videos/*.mp4"))
+    return clip_da_tempi_annotati(percorsi_video, file_tempi, "chain_snatching")
 
 
 # D40: scippi di telefono da video YouTube con licenza CC BY (`strumenti scarica-video-cc`), annotati da Marco con
 # `strumenti annota-scippi --video data/phone_snatching --uscita annotations/phone_snatching/tempi_scippo.json`.
-FILE_TEMPI_SCIPPO_TELEFONO = Path(__file__).resolve().parents[2] / "annotations" / "phone_snatching" / "tempi_scippo.json"
+FILE_TEMPI_SCIPPO_TELEFONO = CARTELLA_ANNOTAZIONI / "phone_snatching" / "tempi_scippo.json"
 
 
-def elenca_clip_phone_snatching(radice_dataset: str | Path,
-                                file_tempi: Path = FILE_TEMPI_SCIPPO_TELEFONO) -> list[ClipAnnotata]:
-    return clip_da_tempi_annotati(sorted(Path(radice_dataset).glob("**/phone_snatching/*.mp4")), file_tempi,
-                                  "phone_snatching")
+def elenca_clip_phone_snatching(radice_dataset, file_tempi: Path = FILE_TEMPI_SCIPPO_TELEFONO) -> list:
+    percorsi_video = sorted(Path(radice_dataset).glob("**/phone_snatching/*.mp4"))
+    return clip_da_tempi_annotati(percorsi_video, file_tempi, "phone_snatching")
 
 
-def clip_da_tempi_annotati(percorsi_video: list[Path], file_tempi: Path, sorgente: str) -> list[ClipAnnotata]:
+def clip_da_tempi_annotati(percorsi_video: list, file_tempi: Path, sorgente: str) -> list:
     """Video annotati con lo strumento degli scippi: si usano solo i tratti segnati (D15, D22)."""
-    tempi = json.loads(Path(file_tempi).read_text()) if Path(file_tempi).exists() else {}
+    tempi = {}
+    if Path(file_tempi).exists():
+        tempi = json.loads(Path(file_tempi).read_text())
     clip = []
     for percorso in percorsi_video:
         annotazione = tempi.get(percorso.name)
+        eventi = []
         if annotazione is None:
-            eventi, nota = [], "non ancora annotato: nessuna finestra"
+            nota = "non ancora annotato: nessuna finestra"
         elif annotazione["nessuno_scippo"]:
-            eventi, nota = [], "nessuno scippo visibile: nessuna finestra"
+            nota = "nessuno scippo visibile: nessuna finestra"
         else:
-            eventi, nota = [(float(inizio), float(fine), "scippo") for inizio, fine in annotazione["eventi"]], ""
+            nota = ""
+            for inizio, fine in annotazione["eventi"]:
+                eventi.append((float(inizio), float(fine), "scippo"))
         clip.append(ClipAnnotata(
             id_clip=f"{sorgente}/{percorso.stem}", sorgente=sorgente,
             gruppo=f"{sorgente}/{percorso.stem}", percorso_video=str(percorso), eventi_secondi=eventi,
@@ -538,16 +636,29 @@ def fps_della_sequenza(cartella_sequenza: Path, fonte: str) -> int:
     return FPS_SEQUENZE_PREDEFINITI[fonte]
 
 
+def collega_video(video: Path, cartella: Path) -> None:
+    """Mette in `cartella` un collegamento (symlink) al video, senza copiarlo."""
+    destinazione = cartella / video.name
+    destinazione.parent.mkdir(parents=True, exist_ok=True)
+    if not destinazione.exists():
+        destinazione.symlink_to(video.resolve())
+
+
+def e_da_escludere_hieve(nome_file: str) -> bool:
+    """Le scene HiEve con risse, rapine, incidenti... non sono normali."""
+    if Path(nome_file).suffix.lower() not in ESTENSIONI_VIDEO:
+        return True
+    nome = Path(nome_file).stem.lower()
+    for parola in PAROLE_HIEVE_DA_ESCLUDERE:
+        if parola in nome:
+            return True
+    return False
+
+
 def prepara_normali(cartella_input: Path, cartella_uscita: Path, scarica_hieve: bool = False) -> Counter:
+    """Ritorna quanti video ci sono per fonte (un Counter: le fonti senza video valgono 0)."""
     radice = cartella_uscita / "normali_folla"
     conteggio = Counter()
-
-    def collega(sorgente: Path, fonte: str, nome: str | None = None):
-        destinazione = radice / fonte / (nome or sorgente.name)
-        destinazione.parent.mkdir(parents=True, exist_ok=True)
-        if not destinazione.exists():
-            destinazione.symlink_to(sorgente.resolve())
-        conteggio[fonte] += 1
 
     for fonte, scelte in SEQUENZE_SCELTE.items():
         for immagini in sorted(cartella_input.glob(f"**/{fonte}/*/{fonte}-*/img1")):
@@ -559,37 +670,42 @@ def prepara_normali(cartella_input: Path, cartella_uscita: Path, scarica_hieve: 
             if not destinazione.exists():
                 # pad a lati pari (MOT20-04 è 1545×1080 e libx264/yuv420p li vuole pari): 1 px nero a destra/sotto,
                 # le coordinate dei pixel restano le stesse
-                subprocess.run(["ffmpeg", "-v", "error", "-y", "-framerate", str(fps_della_sequenza(sequenza, fonte)),
+                fps = fps_della_sequenza(sequenza, fonte)
+                subprocess.run(["ffmpeg", "-v", "error", "-y", "-framerate", str(fps),
                                 "-i", str(immagini / "%06d.jpg"), "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
-                                "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", str(destinazione)], check=True)
+                                "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", str(destinazione)],
+                               check=True)
             conteggio[fonte.lower()] += 1
 
     # ShanghaiTech: i video normali del training originale hanno il nome a 3 cifre (01_001.avi)
-    per_scena = defaultdict(list)
+    per_scena = {}
     for video in sorted(cartella_input.glob("**/*.avi")):
         if re.fullmatch(r"\d\d_\d{3}", video.stem) and "shanghai" in str(video).lower():
-            per_scena[video.stem[:2]].append(video)
+            scena = video.stem[:2]
+            if scena not in per_scena:
+                per_scena[scena] = []
+            per_scena[scena].append(video)
     for scena in sorted(per_scena):
         for video in per_scena[scena][:VIDEO_SHANGHAITECH_PER_SCENA]:
-            collega(video, "shanghaitech")
+            collega_video(video, radice / "shanghaitech")
+            conteggio["shanghaitech"] += 1
 
     # UBI-Fights: solo i normali (N_*), presi a passo regolare finché si arriva ai minuti voluti
     normali_ubi = sorted(cartella_input.glob("**/UBI_FIGHTS/normal/N_*.mp4"))
     secondi = 0.0
-    for video in normali_ubi[::6]:
+    for video in normali_ubi[::6]:   # uno ogni 6
         if secondi >= MINUTI_UBI_FIGHTS_NORMALI * 60:
             break
         secondi += leggi_info_video(str(video)).durata_secondi
-        collega(video, "ubi_fights")
+        collega_video(video, radice / "ubi_fights")
+        conteggio["ubi_fights"] += 1
 
     # Avenue: solo i video di training (tutti normali)
     for video in sorted(cartella_input.glob("**/training_videos/*.avi")):
-        collega(video, "avenue")
+        collega_video(video, radice / "avenue")
+        conteggio["avenue"] += 1
 
     if scarica_hieve:
-        import socket
-        import urllib.request
-        import zipfile
         socket.setdefaulttimeout(120)   # server unico in HTTP: se si blocca non deve appendere il kernel
         for url in URL_HIEVE:
             archivio = cartella_uscita / Path(url).name
@@ -597,8 +713,7 @@ def prepara_normali(cartella_input: Path, cartella_uscita: Path, scarica_hieve: 
                 urllib.request.urlretrieve(url, archivio)
                 with zipfile.ZipFile(archivio) as zip_hieve:
                     for nome in zip_hieve.namelist():
-                        if Path(nome).suffix.lower() not in ESTENSIONI_VIDEO or \
-                                any(parola in Path(nome).stem.lower() for parola in PAROLE_HIEVE_DA_ESCLUDERE):
+                        if e_da_escludere_hieve(nome):
                             continue
                         destinazione = radice / "hieve" / Path(nome).name
                         destinazione.parent.mkdir(parents=True, exist_ok=True)
@@ -610,7 +725,7 @@ def prepara_normali(cartella_input: Path, cartella_uscita: Path, scarica_hieve: 
     return conteggio
 
 
-def elenca_clip_normali_folla(radice_dataset: str | Path) -> list[ClipAnnotata]:
+def elenca_clip_normali_folla(radice_dataset) -> list:
     clip = []
     for video in sorted(Path(radice_dataset).glob("**/normali_folla/*/*")):
         if video.suffix.lower() not in ESTENSIONI_VIDEO:
@@ -618,19 +733,25 @@ def elenca_clip_normali_folla(radice_dataset: str | Path) -> list[ClipAnnotata]:
         fonte = video.parent.name
         # stessa scena = stesso gruppo (mai divisa tra train e test): ShanghaiTech per numero di scena, Avenue è
         # una sola telecamera, le altre fonti hanno una scena per video
-        gruppo = {"shanghaitech": video.stem[:2], "avenue": "unica"}.get(fonte, video.stem)
+        if fonte == "shanghaitech":
+            gruppo = video.stem[:2]
+        elif fonte == "avenue":
+            gruppo = "unica"
+        else:
+            gruppo = video.stem
         clip.append(ClipAnnotata(id_clip=f"normali_folla/{fonte}/{video.stem}", sorgente=f"folla_{fonte}",
                                  gruppo=f"folla_{fonte}/{gruppo}", percorso_video=str(video), classe_intera="normale"))
     return clip
 
 
-def comando_prepara_normali(argomenti: list[str] | None = None) -> None:
+def comando_prepara_normali(argomenti=None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", default="/kaggle/input")
     parser.add_argument("--uscita", required=True)
     parser.add_argument("--hieve", action="store_true", help="scarica anche HiEve (1,5 GB, senza registrazione)")
     argomenti = parser.parse_args(argomenti)
-    for fonte, numero in sorted(prepara_normali(Path(argomenti.input), Path(argomenti.uscita), argomenti.hieve).items()):
+    conteggio = prepara_normali(Path(argomenti.input), Path(argomenti.uscita), argomenti.hieve)
+    for fonte, numero in sorted(conteggio.items()):
         print(f"{fonte:14s} {numero} video")
 
 
@@ -662,23 +783,34 @@ def prepara(cartella_input: Path, cartella_uscita: Path, sorgenti=tuple(SORGENTI
         clip += clip_sorgente
     cartella_uscita.mkdir(parents=True, exist_ok=True)
     scrivi_annotazioni(clip, cartella_uscita / "annotazioni.jsonl")
-    # ordine alternato per sorgente: se la sessione si ferma a metà, ogni sorgente ha già una parte estratta
+    # ordine alternato per sorgente (1a clip di ogni sorgente, poi la 2a di ognuna, ...):
+    # se la sessione si ferma a metà, ogni sorgente ha già una parte estratta
     per_sorgente = {}
     for singola_clip in clip:
-        per_sorgente.setdefault(singola_clip.sorgente, []).append(singola_clip)
-    alternate = [gruppo[indice] for indice in range(max(map(len, per_sorgente.values()), default=0))
-                 for gruppo in per_sorgente.values() if indice < len(gruppo)]
-    scrivi_elenco([singola_clip.da_estrarre() for singola_clip in alternate], cartella_uscita / "elenco.jsonl")
+        if singola_clip.sorgente not in per_sorgente:
+            per_sorgente[singola_clip.sorgente] = []
+        per_sorgente[singola_clip.sorgente].append(singola_clip)
+    clip_piu_lunga = 0
+    for clip_della_sorgente in per_sorgente.values():
+        clip_piu_lunga = max(clip_piu_lunga, len(clip_della_sorgente))
+    elenco = []
+    for indice in range(clip_piu_lunga):
+        for clip_della_sorgente in per_sorgente.values():
+            if indice < len(clip_della_sorgente):
+                elenco.append(clip_della_sorgente[indice].da_estrarre())
+    scrivi_elenco(elenco, cartella_uscita / "elenco.jsonl")
+
     secondi = Counter()
     for singola_clip in clip:
         if singola_clip.fine_secondi is not None:
-            secondi[singola_clip.sorgente] += singola_clip.fine_secondi - (singola_clip.inizio_secondi or 0)
+            inizio = singola_clip.inizio_secondi or 0
+            secondi[singola_clip.sorgente] += singola_clip.fine_secondi - inizio
     for sorgente, totale in sorted(secondi.items()):
         print(f"  {sorgente}: {totale / 3600:.2f} ore note in anticipo (segmenti)")
     return clip
 
 
-def comando_prepara_elenchi(argomenti: list[str] | None = None) -> None:
+def comando_prepara_elenchi(argomenti=None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", default="/kaggle/input")
     parser.add_argument("--uscita", required=True)
@@ -699,34 +831,47 @@ NOMI_SPLIT = ("train", "val", "test")
 
 # D26: video di UCF-Crime da cui vengono le immagini di CCTV Weapon Detect (il detector armi li ha visti in
 # addestramento): nel classificatore stanno sempre in train, altrimenti il test sarebbe troppo ottimista.
-FILE_VIDEO_UCF_NEL_DETECTOR = Path(__file__).resolve().parents[2] / "annotations" / "armi" / "video_ucf_nel_detector.txt"
+FILE_VIDEO_UCF_NEL_DETECTOR = CARTELLA_ANNOTAZIONI / "armi" / "video_ucf_nel_detector.txt"
 
 
-def gruppi_visti_dal_detector(percorso: Path = FILE_VIDEO_UCF_NEL_DETECTOR) -> frozenset[str]:
+def gruppi_visti_dal_detector(percorso: Path = FILE_VIDEO_UCF_NEL_DETECTOR) -> set:
+    gruppi = set()
     if not Path(percorso).exists():
-        return frozenset()
-    return frozenset(f"ucf/{riga.strip()}" for riga in Path(percorso).read_text().splitlines() if riga.strip())
+        return gruppi
+    for riga in Path(percorso).read_text().splitlines():
+        if riga.strip():
+            gruppi.add(f"ucf/{riga.strip()}")
+    return gruppi
 
 
 def dividi_per_gruppi(gruppi: np.ndarray, etichette: np.ndarray, sorgenti: np.ndarray,
-                      quote=QUOTE_PREDEFINITE, seme: int = 0,
-                      gruppi_sempre_in_train: frozenset[str] = frozenset()) -> np.ndarray:
+                      quote=QUOTE_PREDEFINITE, seme: int = 0, gruppi_sempre_in_train=()) -> np.ndarray:
     """Ritorna per ogni finestra l'indice dello split (0 train, 1 val, 2 test).
     I `gruppi_sempre_in_train` (D26) vanno in train e non entrano nel bilanciamento degli altri."""
-    finestre_per_gruppo = Counter(g for g in gruppi.tolist() if g not in gruppi_sempre_in_train)
+    # quante finestre ha ogni gruppo da distribuire, e da quale sorgente viene
+    finestre_per_gruppo = Counter()
+    sorgente_gruppo = {}
+    for gruppo, sorgente in zip(gruppi.tolist(), sorgenti.tolist()):
+        sorgente_gruppo[gruppo] = sorgente
+        if gruppo not in gruppi_sempre_in_train:
+            finestre_per_gruppo[gruppo] += 1
+
     classe_prevalente = {}
-    for gruppo in finestre_per_gruppo:  # solo i gruppi da distribuire
+    for gruppo in finestre_per_gruppo:
         classi_gruppo = etichette[gruppi == gruppo]
         classe_prevalente[gruppo] = int(np.bincount(classi_gruppo).argmax())
-    sorgente_gruppo = dict(zip(gruppi.tolist(), sorgenti.tolist()))
 
-    strati = defaultdict(list)
+    # strato = (sorgente, classe prevalente): ogni strato si divide 70/15/15 per conto suo
+    strati = {}
     for gruppo in sorted(finestre_per_gruppo):
-        strati[(sorgente_gruppo[gruppo], classe_prevalente[gruppo])].append(gruppo)
+        chiave = (sorgente_gruppo[gruppo], classe_prevalente[gruppo])
+        if chiave not in strati:
+            strati[chiave] = []
+        strati[chiave].append(gruppo)
 
     generatore = np.random.default_rng(seme)
     split_del_gruppo = {}
-    soglie = np.cumsum(quote)
+    soglie = np.cumsum(quote)   # (0.70, 0.85, 1.0)
     for chiave in sorted(strati):
         gruppi_strato = strati[chiave]
         generatore.shuffle(gruppi_strato)
@@ -735,10 +880,16 @@ def dividi_per_gruppi(gruppi: np.ndarray, etichette: np.ndarray, sorgenti: np.nd
         for gruppo in gruppi_strato:
             # il gruppo va nello split in cui cade il suo punto centrale (in finestre cumulate)
             centro = (cumulate + finestre_per_gruppo[gruppo] / 2) / totale
+            # searchsorted dice in quale intervallo delle soglie cade il centro: 0 train, 1 val, 2 test
             split_del_gruppo[gruppo] = int(np.searchsorted(soglie, centro, side="right"))
             cumulate += finestre_per_gruppo[gruppo]
-    split_del_gruppo.update({gruppo: 0 for gruppo in gruppi_sempre_in_train})
-    return np.array([min(split_del_gruppo[gruppo], len(quote) - 1) for gruppo in gruppi.tolist()], np.int64)
+    for gruppo in gruppi_sempre_in_train:
+        split_del_gruppo[gruppo] = 0
+
+    split = []
+    for gruppo in gruppi.tolist():
+        split.append(min(split_del_gruppo[gruppo], len(quote) - 1))
+    return np.array(split, np.int64)
 
 # ==============================================================================================================
 # riga di comando: python -m sicurezza.dati <comando> [opzioni]
@@ -746,7 +897,7 @@ def dividi_per_gruppi(gruppi: np.ndarray, etichette: np.ndarray, sorgenti: np.nd
 COMANDI = {"prepara-elenchi": comando_prepara_elenchi, "prepara-normali": comando_prepara_normali}
 
 
-def main(argomenti: list[str] | None = None) -> None:
+def main(argomenti=None) -> None:
     argomenti = sys.argv[1:] if argomenti is None else argomenti
     if not argomenti or argomenti[0] not in COMANDI:
         print("uso: python -m sicurezza.dati {prepara-elenchi} [opzioni]  (--help dopo il comando)")
