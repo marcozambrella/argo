@@ -264,7 +264,7 @@ def comando_annota_scippi(argomenti=None) -> None:
 # D68: SCVD non dice che arma c'è nelle clip "Weaponized"; per misurare armi da fuoco e coltelli separati il tipo
 # lo segna Marco guardando le clip (convertite in mp4 dal kernel experiments_and_future_work/tipo_arma_scvd).
 # Stesso server di annota-scippi, pagina più semplice: un tasto per clip, salva e passa alla prossima.
-#     F  arma da fuoco    C  coltello    E  entrambi    X  non si capisce
+#     F  arma da fuoco    C  coltello    E  entrambi    X  non si capisce (la clip esce dall'addestramento)
 #     Spazio play/pausa   ← →  ±1 s   1 2 3 velocità   P S  clip precedente / successiva
 # Uso:
 #     uv run python -m sicurezza.strumenti annota-tipo-arma --video <cartella video/ del kernel>
@@ -286,7 +286,7 @@ PAGINA_TIPO_ARMA = """<!doctype html>
  <span id="stato"></span></div>
 <video id="video" controls loop autoplay muted></video>
 <div class="riga"><span><span class="tasto">F</span> arma da fuoco</span><span><span class="tasto">C</span> coltello</span>
- <span><span class="tasto">E</span> entrambi</span><span><span class="tasto">X</span> non si capisce</span>
+ <span><span class="tasto">E</span> entrambi</span><span><span class="tasto">X</span> non si capisce (esclusa)</span>
  <span><span class="tasto">Spazio</span> play/pausa</span><span><span class="tasto">← →</span> ±1 s</span>
  <span><span class="tasto">1 2 3</span> velocità</span><span><span class="tasto">P S</span> precedente / successiva</span></div>
 <script>

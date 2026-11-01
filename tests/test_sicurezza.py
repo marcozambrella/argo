@@ -158,8 +158,16 @@ def test_rwf2000_gruppo_per_video_originale(tmp_path):
 def test_scvd_solo_versione_video_interi(tmp_path):
     crea_file(tmp_path, "SCVD/SCVD_converted/Train/Weaponized/w1.avi",
               "SCVD/SCVD_converted_sec_split/Train/Weaponized/w1_0.avi")
-    clip = elenca_clip_scvd(tmp_path)
+    clip = elenca_clip_scvd(tmp_path, file_tipo_arma=tmp_path / "nessun_file.json")
     assert len(clip) == 1 and clip[0].classe_intera == "violenza_con_arma"
+
+
+def test_scvd_toglie_le_clip_dove_l_arma_non_si_capisce(tmp_path):
+    crea_file(tmp_path, "SCVD/SCVD_converted/Train/Weaponized/w1.avi", "SCVD/SCVD_converted/Train/Weaponized/w2.avi",
+              "SCVD/SCVD_converted/Train/Normal/n1.avi")
+    (tmp_path / "tipi.json").write_text(json.dumps({"Train__w1.mp4": [], "Train__w2.mp4": ["coltello"]}))
+    clip = elenca_clip_scvd(tmp_path, file_tipo_arma=tmp_path / "tipi.json")
+    assert [c.id_clip for c in clip] == ["scvd/Train/Normal/n1", "scvd/Train/Weaponized/w2"]
 
 
 def test_cctv_fights_eventi_e_fonti(tmp_path):

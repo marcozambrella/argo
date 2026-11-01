@@ -386,15 +386,24 @@ def elenca_clip_cctv_fights(radice_dataset, percorso_groundtruth=None, fonti_amm
 # ==============================================================================================================
 
 CLASSE_PER_CARTELLA_SCVD = {"Normal": "normale", "Violence": "violenza", "Weaponized": "violenza_con_arma"}
+# D68: Marco ha segnato il tipo d'arma delle clip "Weaponized" (`strumenti annota-tipo-arma`). Dove l'arma non si
+# capisce (lista vuota) la clip non è idonea all'addestramento e si toglie (Marco, 01/11).
+FILE_TIPO_ARMA_SCVD = CARTELLA_ANNOTAZIONI / "armi" / "tipo_arma_scvd.json"
 
 
-def elenca_clip_scvd(radice_dataset) -> list:
+def elenca_clip_scvd(radice_dataset, file_tipo_arma: Path = FILE_TIPO_ARMA_SCVD) -> list:
+    tipi_arma = {}
+    if Path(file_tipo_arma).exists():
+        tipi_arma = json.loads(Path(file_tipo_arma).read_text())
     clip = []
     for percorso in sorted(Path(radice_dataset).glob("**/SCVD_converted/*/*/*.avi")):
         cartella_classe = percorso.parent.name
         cartella_split = percorso.parent.parent.name
         if cartella_classe not in CLASSE_PER_CARTELLA_SCVD:
             continue
+        nome_annotato = f"{cartella_split}__{percorso.stem}.mp4"   # i nomi delle clip convertite in mp4
+        if cartella_classe == "Weaponized" and tipi_arma.get(nome_annotato) == []:
+            continue   # arma che non si capisce: non idonea
         clip.append(ClipAnnotata(
             id_clip=f"scvd/{cartella_split}/{cartella_classe}/{percorso.stem}", sorgente="scvd",
             gruppo=f"scvd/{percorso.stem}", percorso_video=str(percorso),
