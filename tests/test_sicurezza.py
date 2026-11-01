@@ -237,6 +237,15 @@ def test_phone_snatching_stessa_logica_del_chain_snatching(tmp_path):
     assert all(c.sorgente == "phone_snatching" and c.gruppo == c.id_clip for c in clip)
 
 
+def test_video_non_idonei_tolti_anche_dall_estrazione(tmp_path):
+    crea_file(tmp_path, "phone_snatching/a.mp4", "phone_snatching/b.mp4", "phone_snatching/c.mp4")
+    tempi = {"a.mp4": {"eventi": [], "nessuno_scippo": False, "non_idoneo": True},
+             "b.mp4": {"eventi": [], "nessuno_scippo": True}}
+    (tmp_path / "tempi.json").write_text(json.dumps(tempi))
+    clip = elenca_clip_phone_snatching(tmp_path, file_tempi=tmp_path / "tempi.json")
+    assert [c.id_clip for c in clip] == ["phone_snatching/b", "phone_snatching/c"]   # b e c senza finestre
+
+
 # ==============================================================================================================
 # test_prepara_elenchi
 # ==============================================================================================================

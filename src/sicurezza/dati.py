@@ -627,6 +627,8 @@ def clip_da_tempi_annotati(percorsi_video: list, file_tempi: Path, sorgente: str
     clip = []
     for percorso in percorsi_video:
         annotazione = tempi.get(percorso.name)
+        if annotazione is not None and annotazione.get("non_idoneo"):
+            continue   # Marco: non è una ripresa utilizzabile, non si estrae nemmeno
         eventi = []
         if annotazione is None:
             nota = "non ancora annotato: nessuna finestra"

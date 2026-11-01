@@ -29,6 +29,7 @@ import zipfile
 #     I       inizio scippo (istante corrente)
 #     F       fine scippo  → l'evento viene aggiunto alla lista (si possono segnare più scippi)
 #     N       nel video NON si vede uno scippo (verrà escluso)
+#     X       video NON IDONEO (non è una ripresa da telecamera fissa, montaggio, ...): tolto anche dall'estrazione
 #     Canc    cancella gli eventi di questo video
 #     Invio   salva e passa al prossimo video da annotare
 #     P S     video precedente / successivo (senza salvare: per rivedere o correggere quelli già fatti)
@@ -62,11 +63,12 @@ PAGINA = """<!doctype html>
  (<span class="tasto">Maiusc</span> ±1 s)</span><span><span class="tasto">, .</span> frame</span>
  <span><span class="tasto">1 2 3</span> velocità</span><span><span class="tasto">I</span> inizio</span>
  <span><span class="tasto">F</span> fine</span><span><span class="tasto">N</span> nessuno scippo</span>
+ <span><span class="tasto">X</span> video non idoneo</span>
  <span><span class="tasto">Canc</span> cancella</span><span><span class="tasto">Invio</span> salva e prossimo</span>
  <span><span class="tasto">P S</span> video precedente / successivo</span></div>
 <script>
 const video = document.getElementById("video");
-let elenco = [], annotazioni = {}, indice = 0, inizio = null, eventi = [], nessunoScippo = false;
+let elenco = [], annotazioni = {}, indice = 0, inizio = null, eventi = [], nessunoScippo = false, nonIdoneo = false;
 const testo = (id, valore) => document.getElementById(id).textContent = valore;
 
 async function carica() {
@@ -80,6 +82,7 @@ function apri(nuovoIndice) {
   indice = nuovoIndice;
   const nome = elenco[indice], gia = annotazioni[nome];
   eventi = gia ? gia.eventi.map((e) => [...e]) : []; nessunoScippo = gia ? gia.nessuno_scippo : false; inizio = null;
+  nonIdoneo = gia ? Boolean(gia.non_idoneo) : false;
   video.src = "/video/" + encodeURIComponent(nome); video.playbackRate = 1;
   video.onerror = () => testo("avviso", "Video non caricato: il disco esterno si è scollegato? Rimontalo e ricarica la pagina.");
   testo("nome", nome); testo("velocita", 1); testo("inizio", "—"); testo("avviso", "");
@@ -91,12 +94,16 @@ function disegnaEventi() {
   contenitore.replaceChildren(...eventi.map(([a, b]) => Object.assign(document.createElement("span"),
     { className: "evento", textContent: `scippo ${a.toFixed(2)}–${b.toFixed(2)} s` })));
   if (nessunoScippo) contenitore.append("NESSUNO SCIPPO VISIBILE");
+  if (nonIdoneo) contenitore.append("VIDEO NON IDONEO");
 }
 async function salvaEProssimo() {
-  if (!eventi.length && !nessunoScippo) { testo("avviso", "Segna almeno uno scippo (I poi F) oppure premi N."); return; }
+  if (!eventi.length && !nessunoScippo && !nonIdoneo) {
+    testo("avviso", "Segna almeno uno scippo (I poi F), oppure premi N o X."); return;
+  }
   const nome = elenco[indice];
-  await fetch("/salva", { method: "POST", body: JSON.stringify({ video: nome, eventi, nessuno_scippo: nessunoScippo }) });
-  annotazioni[nome] = { eventi, nessuno_scippo: nessunoScippo };
+  const valore = { eventi, nessuno_scippo: nessunoScippo, non_idoneo: nonIdoneo };
+  await fetch("/salva", { method: "POST", body: JSON.stringify({ video: nome, ...valore }) });
+  annotazioni[nome] = valore;
   testo("stato", "salvato " + nome);
   const prossimo = elenco.findIndex((n, i) => i > indice && !(n in annotazioni));
   const qualsiasi = elenco.findIndex((n) => !(n in annotazioni));
@@ -115,13 +122,14 @@ document.addEventListener("keydown", (evento) => {
     "1": () => { video.playbackRate = 0.25; testo("velocita", 0.25); },
     "2": () => { video.playbackRate = 0.5; testo("velocita", 0.5); },
     "3": () => { video.playbackRate = 1; testo("velocita", 1); },
-    "i": () => { inizio = video.currentTime; testo("inizio", inizio.toFixed(2)); nessunoScippo = false; },
+    "i": () => { inizio = video.currentTime; testo("inizio", inizio.toFixed(2)); nessunoScippo = false; nonIdoneo = false; },
     "f": () => {
       if (inizio === null || video.currentTime <= inizio) { testo("avviso", "Prima premi I su un istante precedente."); return; }
       eventi.push([inizio, video.currentTime]); inizio = null; testo("inizio", "—"); testo("avviso", ""); disegnaEventi();
     },
-    "n": () => { nessunoScippo = true; eventi = []; disegnaEventi(); },
-    "Delete": () => { eventi = []; nessunoScippo = false; disegnaEventi(); },
+    "n": () => { nessunoScippo = true; nonIdoneo = false; eventi = []; disegnaEventi(); },
+    "x": () => { nonIdoneo = true; nessunoScippo = false; eventi = []; disegnaEventi(); },
+    "Delete": () => { eventi = []; nessunoScippo = false; nonIdoneo = false; disegnaEventi(); },
     "Enter": salvaEProssimo,
     "p": () => { if (indice > 0) apri(indice - 1); },
     "s": () => { if (indice < elenco.length - 1) apri(indice + 1); },
@@ -214,7 +222,10 @@ class GestoreAnnotazioni(BaseHTTPRequestHandler):
             eventi.append([round(float(inizio), 2), round(float(fine), 2)])
         with self.blocco_scrittura:
             annotazioni = self.leggi_annotazioni()
-            annotazioni[Path(dati["video"]).name] = {"eventi": eventi, "nessuno_scippo": bool(dati["nessuno_scippo"])}
+            valore = {"eventi": eventi, "nessuno_scippo": bool(dati["nessuno_scippo"])}
+            if dati.get("non_idoneo"):   # i file vecchi (chain-snatching) non hanno questo campo
+                valore["non_idoneo"] = True
+            annotazioni[Path(dati["video"]).name] = valore
             self.file_annotazioni.parent.mkdir(parents=True, exist_ok=True)
             righe = []   # una riga per video: il file si legge bene anche a occhio
             for nome, valore in sorted(annotazioni.items()):
