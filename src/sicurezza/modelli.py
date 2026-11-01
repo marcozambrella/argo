@@ -1,6 +1,6 @@
 """Sicurezza NN — modelli. File unico (richiesta di Marco: massimo 5 file Python)."""
 
-from collections import Counter, defaultdict
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 import argparse
@@ -14,7 +14,10 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from .dati import gruppi_visti_dal_detector, CENTRO_SCHELETRO, CLASSI, ClipAnnotata, FRAME_PER_FINESTRA, NOMI_SPLIT, NUMERO_KEYPOINT, OSSA, POLSI, SPECCHIO_KEYPOINT, dividi_per_gruppi, etichetta_finestra, inizi_finestre, leggi_annotazioni, nome_file_estratto
+from .dati import CENTRO_SCHELETRO, CLASSI, FRAME_PER_FINESTRA, NOMI_SPLIT, NUMERO_KEYPOINT, OSSA, POLSI
+from .dati import SPECCHIO_KEYPOINT
+from .dati import dividi_per_gruppi, etichetta_finestra, gruppi_visti_dal_detector, inizi_finestre
+from .dati import leggi_annotazioni, nome_file_estratto
 
 
 # ==============================================================================================================
@@ -40,34 +43,57 @@ class TimelineVideo:
     numero_frame: int
     larghezza: int
     altezza: int
-    keypoint_per_traccia: dict[int, np.ndarray]   # id traccia → (numero_frame, 17, 3), NaN dove la persona manca
-    box_per_traccia: dict[int, np.ndarray]        # id traccia → (numero_frame, 4), NaN dove la persona manca
+    keypoint_per_traccia: dict    # id traccia → array (numero_frame, 17, 3), NaN dove la persona manca
+    box_per_traccia: dict         # id traccia → array (numero_frame, 4), NaN dove la persona manca
     armi_frame: np.ndarray
     armi_box: np.ndarray
     armi_classe: np.ndarray
     armi_confidenza: np.ndarray
-    mani_per_frame: np.ndarray | None = None      # (numero_frame, 3): ingrandimento sulle mani (D44), max sulle persone
+    # (numero_frame, 3): ingrandimento sulle mani (D44), massimo sulle persone; None se il .npz non le ha
+    mani_per_frame: np.ndarray = None
 
 
 def carica_timeline(percorso_npz, ricuci: bool = True) -> TimelineVideo:
     return timeline_da_dati(np.load(percorso_npz), ricuci)
 
 
+# I box sono [x1, y1, x2, y2]. Queste due funzioni vanno bene per un box solo o per un array di box:
+# box[..., 0] vuol dire "la coordinata x1 di ogni box", qualunque sia la forma dell'array.
+def area_box(box):
+    larghezza = box[..., 2] - box[..., 0]
+    altezza = box[..., 3] - box[..., 1]
+    return larghezza * altezza
+
+
+def centro_box(box):
+    x = (box[..., 0] + box[..., 2]) / 2
+    y = (box[..., 1] + box[..., 3]) / 2
+    return np.stack([x, y], -1)
+
+
 def armi_non_piu_grandi_della_persona(dati) -> np.ndarray:
     """D38: un'arma vera non è più grande di chi la impugna. Per ogni arma rilevata si prende la persona più vicina
     (centro dei box) nello stesso frame: se il riquadro dell'arma ha area maggiore, l'arma si scarta (riquadri su
     mezza scena: reti, barche, porte). Senza persone nel frame l'arma resta: non c'è niente con cui confrontarla."""
-    area = lambda box: (box[..., 2] - box[..., 0]) * (box[..., 3] - box[..., 1])
-    centro = lambda box: np.stack([(box[..., 0] + box[..., 2]) / 2, (box[..., 1] + box[..., 3]) / 2], -1)
-    armi_frame, armi_box = np.asarray(dati["armi_frame"]), np.asarray(dati["armi_box"])  # un .npz rilegge a ogni accesso
+    # np.asarray una volta sola: un .npz rilegge (e decomprime) l'array a ogni accesso
+    armi_frame = np.asarray(dati["armi_frame"])
+    armi_box = np.asarray(dati["armi_box"])
+    # persone ordinate per frame: così quelle di un frame stanno in righe consecutive
     ordine = np.argsort(dati["persone_frame"], kind="stable")
-    persone_frame, persone_box = np.asarray(dati["persone_frame"])[ordine], np.asarray(dati["persone_box"])[ordine]
-    inizi, fini = np.searchsorted(persone_frame, armi_frame, "left"), np.searchsorted(persone_frame, armi_frame, "right")
+    persone_frame = np.asarray(dati["persone_frame"])[ordine]
+    persone_box = np.asarray(dati["persone_box"])[ordine]
+    # per ogni arma, le righe [inizi, fini) delle persone nel suo stesso frame
+    inizi = np.searchsorted(persone_frame, armi_frame, "left")
+    fini = np.searchsorted(persone_frame, armi_frame, "right")
+
     da_tenere = np.ones(len(armi_frame), bool)
-    for indice in np.flatnonzero(fini > inizi):
+    for indice in range(len(armi_frame)):
+        if fini[indice] == inizi[indice]:
+            continue   # nessuna persona nel frame: l'arma resta
         box_persone = persone_box[inizi[indice]:fini[indice]]
-        distanze = np.linalg.norm(centro(box_persone) - centro(armi_box[indice]), axis=-1)
-        da_tenere[indice] = area(armi_box[indice]) <= area(box_persone[np.argmin(distanze)])
+        distanze = np.linalg.norm(centro_box(box_persone) - centro_box(armi_box[indice]), axis=-1)
+        persona_vicina = box_persone[np.argmin(distanze)]
+        da_tenere[indice] = area_box(armi_box[indice]) <= area_box(persona_vicina)
     return da_tenere
 
 
@@ -76,12 +102,17 @@ def timeline_da_dati(dati, ricuci: bool = True, filtra_armi_grandi: bool = True)
     numero_frame = int(dati["numero_frame"])
     # ogni array si legge UNA volta: un .npz lo decomprime a ogni accesso (con migliaia di tracce, nelle scene di
     # folla, voleva dire ore per una clip); le righe di ogni traccia si prendono già raggruppate (argsort stabile)
-    id_tracce, frame_persone = np.asarray(dati["persone_id_traccia"]), np.asarray(dati["persone_frame"])
-    keypoint_persone, box_persone = np.asarray(dati["persone_keypoint"]), np.asarray(dati["persone_box"])
+    id_tracce = np.asarray(dati["persone_id_traccia"])
+    frame_persone = np.asarray(dati["persone_frame"])
+    keypoint_persone = np.asarray(dati["persone_keypoint"])
+    box_persone = np.asarray(dati["persone_box"])
     ordine = np.argsort(id_tracce, kind="stable")
+    # id_distinti: gli id delle tracce; inizi: dove comincia ognuna nelle righe ordinate
     id_distinti, inizi = np.unique(id_tracce[ordine], return_index=True)
-    keypoint_per_traccia, box_per_traccia = {}, {}
-    for id_traccia, righe in zip(id_distinti, np.split(ordine, inizi[1:])):
+    righe_per_traccia = np.split(ordine, inizi[1:])
+    keypoint_per_traccia = {}
+    box_per_traccia = {}
+    for id_traccia, righe in zip(id_distinti, righe_per_traccia):
         frame_traccia = frame_persone[righe]
         keypoint = np.full((numero_frame, NUMERO_KEYPOINT, 3), np.nan, np.float32)
         box = np.full((numero_frame, 4), np.nan, np.float32)
@@ -91,15 +122,26 @@ def timeline_da_dati(dati, ricuci: bool = True, filtra_armi_grandi: bool = True)
         box_per_traccia[int(id_traccia)] = box
     if ricuci:
         keypoint_per_traccia, box_per_traccia = ricuci_tracce(keypoint_per_traccia, box_per_traccia)
-    armi = armi_non_piu_grandi_della_persona(dati) if filtra_armi_grandi else slice(None)
+
+    if filtra_armi_grandi:
+        armi = armi_non_piu_grandi_della_persona(dati)   # True per le armi da tenere
+    else:
+        armi = np.ones(len(dati["armi_frame"]), bool)
+
     mani_per_frame = None
     if "persone_mani" in dati:   # solo se il .npz è passato da `aggiungi-armi --modello-mani`
-        mani_per_frame = np.zeros((numero_frame, np.asarray(dati["persone_mani"]).shape[1]), np.float32)
-        np.maximum.at(mani_per_frame, np.asarray(dati["persone_frame"]), np.asarray(dati["persone_mani"], np.float32))
-    return TimelineVideo(numero_frame, int(dati["larghezza"]), int(dati["altezza"]), keypoint_per_traccia,
-                         box_per_traccia, np.asarray(dati["armi_frame"])[armi], np.asarray(dati["armi_box"])[armi],
-                         np.asarray(dati["armi_classe"])[armi], np.asarray(dati["armi_confidenza"])[armi].astype(np.float32),
-                         mani_per_frame)
+        mani_persone = np.asarray(dati["persone_mani"], np.float32)
+        mani_per_frame = np.zeros((numero_frame, mani_persone.shape[1]), np.float32)
+        # per ogni frame il massimo tra le persone: np.maximum.at lo fa anche quando un frame ha più righe
+        np.maximum.at(mani_per_frame, frame_persone, mani_persone)
+
+    return TimelineVideo(
+        numero_frame=numero_frame, larghezza=int(dati["larghezza"]), altezza=int(dati["altezza"]),
+        keypoint_per_traccia=keypoint_per_traccia, box_per_traccia=box_per_traccia,
+        armi_frame=np.asarray(dati["armi_frame"])[armi], armi_box=np.asarray(dati["armi_box"])[armi],
+        armi_classe=np.asarray(dati["armi_classe"])[armi],
+        armi_confidenza=np.asarray(dati["armi_confidenza"])[armi].astype(np.float32),
+        mani_per_frame=mani_per_frame)
 
 
 BUCO_MASSIMO_FRAME = 15            # PROVVISORIO: 0,6 s senza la persona al massimo
@@ -118,33 +160,64 @@ def ricuci_tracce(keypoint_per_traccia: dict, box_per_traccia: dict, buco_massim
     guarda solo quelle finite nei `buco_massimo` frame prima (il confronto tutte-con-tutte era quadratico: ore sulle
     scene di folla con migliaia di tracce).
     """
-    def centro_e_altezza(riga_box):
-        return np.array([(riga_box[0] + riga_box[2]) / 2, (riga_box[1] + riga_box[3]) / 2]), riga_box[3] - riga_box[1]
-
+    # copie: i dizionari e i box di chi chiama non vengono modificati
     keypoint_per_traccia = dict(keypoint_per_traccia)
-    box_per_traccia = {id_traccia: box.copy() for id_traccia, box in box_per_traccia.items()}
-    posizione = {id_traccia: indice for indice, id_traccia in enumerate(box_per_traccia)}
+    copia_box = {}
+    for id_traccia, box in box_per_traccia.items():
+        copia_box[id_traccia] = box.copy()
+    box_per_traccia = copia_box
+
+    # posizione di ogni traccia nell'ordine originale (serve per scegliere a parità di distanza)
+    posizione = {}
+    for indice, id_traccia in enumerate(box_per_traccia):
+        posizione[id_traccia] = indice
+
+    # estremi[id] = (primo frame, ultimo frame) in cui la traccia c'è
     estremi = {}
     for id_traccia, box in box_per_traccia.items():
         presenti = np.flatnonzero(~np.isnan(box[:, 0]))
         estremi[id_traccia] = (int(presenti[0]), int(presenti[-1]))
-    finite_al_frame = defaultdict(set)
-    for id_traccia, (_, fine) in estremi.items():
+
+    # finite_al_frame[f] = insieme delle tracce che finiscono al frame f
+    finite_al_frame = {}
+    for id_traccia, (inizio, fine) in estremi.items():
+        if fine not in finite_al_frame:
+            finite_al_frame[fine] = set()
         finite_al_frame[fine].add(id_traccia)
 
-    for id_nuova in sorted(box_per_traccia, key=lambda id_traccia: estremi[id_traccia][0]):
+    def primo_frame(id_traccia):
+        return estremi[id_traccia][0]
+
+    # le tracce in ordine di inizio: ognuna può diventare il seguito di una traccia finita poco prima
+    for id_nuova in sorted(box_per_traccia, key=primo_frame):
         inizio_nuova = estremi[id_nuova][0]
-        centro_nuova, altezza_nuova = centro_e_altezza(box_per_traccia[id_nuova][inizio_nuova])
-        candidate = sorted((id_vecchia for frame in range(inizio_nuova - buco_massimo, inizio_nuova)
-                            for id_vecchia in finite_al_frame.get(frame, ())), key=posizione.get)
-        migliore, distanza_migliore = None, np.inf
+        box_inizio_nuova = box_per_traccia[id_nuova][inizio_nuova]
+        centro_nuova = centro_box(box_inizio_nuova)
+        altezza_nuova = box_inizio_nuova[3] - box_inizio_nuova[1]
+
+        # candidate: le tracce finite nei `buco_massimo` frame prima che questa cominci
+        candidate = []
+        for frame in range(inizio_nuova - buco_massimo, inizio_nuova):
+            for id_vecchia in finite_al_frame.get(frame, ()):
+                candidate.append(id_vecchia)
+        candidate.sort(key=posizione.get)
+
+        migliore = None
+        distanza_migliore = np.inf
         for id_vecchia in candidate:
-            centro_vecchia, altezza_vecchia = centro_e_altezza(box_per_traccia[id_vecchia][estremi[id_vecchia][1]])
-            if max(altezza_vecchia, altezza_nuova) > rapporto_altezze_massimo * max(min(altezza_vecchia, altezza_nuova), 1):
+            box_fine_vecchia = box_per_traccia[id_vecchia][estremi[id_vecchia][1]]
+            centro_vecchia = centro_box(box_fine_vecchia)
+            altezza_vecchia = box_fine_vecchia[3] - box_fine_vecchia[1]
+            # altezze troppo diverse: non è la stessa persona
+            altezza_maggiore = max(altezza_vecchia, altezza_nuova)
+            altezza_minore = max(min(altezza_vecchia, altezza_nuova), 1)
+            if altezza_maggiore > rapporto_altezze_massimo * altezza_minore:
                 continue
             distanza = np.linalg.norm(centro_nuova - centro_vecchia) / max(altezza_vecchia, 1)
             if distanza <= distanza_massima and distanza < distanza_migliore:
-                migliore, distanza_migliore = id_vecchia, distanza
+                migliore = id_vecchia
+                distanza_migliore = distanza
+
         if migliore is not None:  # la traccia nuova diventa il seguito di quella vecchia (che ora finisce dove lei)
             presenti = ~np.isnan(box_per_traccia[id_nuova][:, 0])
             box_per_traccia[migliore][presenti] = box_per_traccia[id_nuova][presenti]
@@ -155,7 +228,9 @@ def ricuci_tracce(keypoint_per_traccia: dict, box_per_traccia: dict, buco_massim
             finite_al_frame[estremi[id_nuova][1]].discard(id_nuova)
             estremi[migliore] = (estremi[migliore][0], estremi[id_nuova][1])
             finite_al_frame[estremi[migliore][1]].add(migliore)
-            del box_per_traccia[id_nuova], keypoint_per_traccia[id_nuova], estremi[id_nuova]
+            del box_per_traccia[id_nuova]
+            del keypoint_per_traccia[id_nuova]
+            del estremi[id_nuova]
     return keypoint_per_traccia, box_per_traccia
 
 
@@ -167,7 +242,10 @@ def punteggio_presenza_e_movimento(keypoint: np.ndarray, box: np.ndarray) -> flo
         return float(presente.sum())
     altezza_corpo = np.nanmedian(box[:, 3] - box[:, 1]) + 1e-6
     spostamenti = np.linalg.norm(np.diff(keypoint[:, :, :2], axis=0), axis=-1) / altezza_corpo
-    movimento_medio = float(np.nanmean(spostamenti)) if np.isfinite(spostamenti).any() else 0.0
+    if np.isfinite(spostamenti).any():
+        movimento_medio = float(np.nanmean(spostamenti))
+    else:
+        movimento_medio = 0.0
     return float(presente.sum()) * (1.0 + movimento_medio)
 
 
@@ -181,37 +259,50 @@ def costruisci_finestra(timeline: TimelineVideo, inizio_finestra: int,
     fine_finestra = inizio_finestra + frame_per_finestra
     punteggio = CRITERI_SCELTA_PERSONE[criterio_scelta_persone]
 
+    # le persone presenti nella finestra, ognuna come (punteggio, keypoint, box)
     tracce_in_finestra = []
     for id_traccia, box in timeline.box_per_traccia.items():
         box_finestra = box[inizio_finestra:fine_finestra]
         if not np.isnan(box_finestra[:, 0]).all():
             keypoint_finestra = timeline.keypoint_per_traccia[id_traccia][inizio_finestra:fine_finestra]
             tracce_in_finestra.append((punteggio(keypoint_finestra, box_finestra), keypoint_finestra, box_finestra))
-    tracce_scelte = sorted(tracce_in_finestra, key=lambda traccia: -traccia[0])[:NUMERO_PERSONE]
+
+    # si tengono le 4 persone con il punteggio più alto
+    def punteggio_della_traccia(traccia):
+        return traccia[0]
+    tracce_in_finestra.sort(key=punteggio_della_traccia, reverse=True)
+    tracce_scelte = tracce_in_finestra[:NUMERO_PERSONE]
 
     # scala e centro della scena: altezza mediana delle persone scelte, centro medio dei loro box
-    if tracce_scelte:
-        tutti_i_box = np.concatenate([box for _, _, box in tracce_scelte])
+    if len(tracce_scelte) > 0:
+        box_scelti = []
+        for punteggio_traccia, keypoint_finestra, box_finestra in tracce_scelte:
+            box_scelti.append(box_finestra)
+        tutti_i_box = np.concatenate(box_scelti)
         altezza_riferimento = float(np.nanmedian(tutti_i_box[:, 3] - tutti_i_box[:, 1]))
-        centro_scena = np.array([np.nanmean((tutti_i_box[:, 0] + tutti_i_box[:, 2]) / 2),
-                                 np.nanmean((tutti_i_box[:, 1] + tutti_i_box[:, 3]) / 2)], np.float32)
+        centro_x = np.nanmean((tutti_i_box[:, 0] + tutti_i_box[:, 2]) / 2)
+        centro_y = np.nanmean((tutti_i_box[:, 1] + tutti_i_box[:, 3]) / 2)
+        centro_scena = np.array([centro_x, centro_y], np.float32)
     else:
-        altezza_riferimento, centro_scena = 0.0, np.array([timeline.larghezza / 2, timeline.altezza / 2], np.float32)
+        altezza_riferimento = 0.0
+        centro_scena = np.array([timeline.larghezza / 2, timeline.altezza / 2], np.float32)
     if not np.isfinite(altezza_riferimento) or altezza_riferimento < 1:
         altezza_riferimento = 0.3 * timeline.altezza
 
-    def normalizza(coordinate):
-        return (coordinate - centro_scena) / altezza_riferimento
-
+    # le coordinate dei nodi si scrivono come (punto - centro_scena) / altezza_riferimento
     nodi = np.zeros((frame_per_finestra, NODI_PER_FRAME, CARATTERISTICHE_PER_NODO), np.float32)
     maschera = np.zeros((frame_per_finestra, NODI_PER_FRAME), bool)
-    for posto_persona, (_, keypoint_finestra, _) in enumerate(tracce_scelte):
+    for posto_persona in range(len(tracce_scelte)):
+        keypoint_finestra = tracce_scelte[posto_persona][1]
+        # i 17 nodi di questa persona: da posto*17 a (posto+1)*17
         nodi_persona = slice(posto_persona * NUMERO_KEYPOINT, (posto_persona + 1) * NUMERO_KEYPOINT)
-        presente = ~np.isnan(keypoint_finestra[:, 0, 0])
-        visibile = presente[:, None] & (np.nan_to_num(keypoint_finestra[:, :, 2]) >= SOGLIA_VISIBILITA_KEYPOINT)
-        posizione = np.where(visibile[..., None], normalizza(np.nan_to_num(keypoint_finestra[:, :, :2])), 0.0)
+        presente = ~np.isnan(keypoint_finestra[:, 0, 0])                       # [frame]
+        confidenza = np.nan_to_num(keypoint_finestra[:, :, 2])                 # [frame, 17]
+        visibile = presente[:, None] & (confidenza >= SOGLIA_VISIBILITA_KEYPOINT)
+        coordinate = (np.nan_to_num(keypoint_finestra[:, :, :2]) - centro_scena) / altezza_riferimento
+        posizione = np.where(visibile[..., None], coordinate, 0.0)
         nodi[:, nodi_persona, 0:2] = posizione
-        nodi[:, nodi_persona, 2] = np.where(visibile, np.nan_to_num(keypoint_finestra[:, :, 2]), 0.0)
+        nodi[:, nodi_persona, 2] = np.where(visibile, confidenza, 0.0)
         maschera[:, nodi_persona] = presente[:, None]
         # velocità solo dove il keypoint è visibile sia in questo frame sia nel precedente
         visibile_anche_prima = visibile[1:] & visibile[:-1]
@@ -232,7 +323,8 @@ def costruisci_finestra(timeline: TimelineVideo, inizio_finestra: int,
                 continue
         box = timeline.armi_box[indice_arma]
         nodo = NODI_PERSONE + posto
-        nodi[frame_relativo, nodo, 0:2] = normalizza(np.array([(box[0] + box[2]) / 2, (box[1] + box[3]) / 2]))
+        centro_arma = np.array([(box[0] + box[2]) / 2, (box[1] + box[3]) / 2])
+        nodi[frame_relativo, nodo, 0:2] = (centro_arma - centro_scena) / altezza_riferimento
         nodi[frame_relativo, nodo, 2] = confidenza
         maschera[frame_relativo, nodo] = True
         classe_arma[frame_relativo, posto] = timeline.armi_classe[indice_arma] + 1
@@ -247,25 +339,34 @@ def costruisci_finestra(timeline: TimelineVideo, inizio_finestra: int,
 #     python -m sicurezza.modelli dataset-finestre --annotazioni annotazioni.jsonl --estratti estratti/ --uscita finestre.npz
 # ==============================================================================================================
 
-def finestre_di_una_clip(clip: ClipAnnotata, percorso_npz: Path):
-    timeline = carica_timeline(percorso_npz)
-    eventi = clip.eventi_in_frame(timeline.numero_frame)
-    for inizio in inizi_finestre(timeline.numero_frame):
-        classe = etichetta_finestra(int(inizio), eventi, clip.indice_classe_sfondo())
-        if classe is not None:
-            yield int(inizio), classe, costruisci_finestra(timeline, int(inizio))
+def costruisci_dataset(clip: list, cartelle_estratti: list) -> dict:
+    percorso_per_nome = {}
+    for cartella in cartelle_estratti:
+        for file in Path(cartella).glob("*.npz"):
+            percorso_per_nome[file.name] = file
 
-
-def costruisci_dataset(clip: list[ClipAnnotata], cartelle_estratti: list[Path]) -> dict[str, np.ndarray]:
-    percorso_per_nome = {file.name: file for cartella in cartelle_estratti for file in Path(cartella).glob("*.npz")}
-    nodi, maschere, classi_arma, etichette, gruppi, sorgenti, id_clip, inizi = [], [], [], [], [], [], [], []
+    nodi = []
+    maschere = []
+    classi_arma = []
+    etichette = []
+    gruppi = []
+    sorgenti = []
+    id_clip = []
+    inizi = []
     clip_mancanti = 0
     for singola_clip in clip:
         percorso_npz = percorso_per_nome.get(nome_file_estratto(singola_clip.id_clip))
         if percorso_npz is None:
             clip_mancanti += 1
             continue
-        for inizio, classe, (nodi_finestra, maschera, classe_arma) in finestre_di_una_clip(singola_clip, percorso_npz):
+        timeline = carica_timeline(percorso_npz)
+        eventi = singola_clip.eventi_in_frame(timeline.numero_frame)
+        for inizio in inizi_finestre(timeline.numero_frame):
+            inizio = int(inizio)
+            classe = etichetta_finestra(inizio, eventi, singola_clip.indice_classe_sfondo())
+            if classe is None:
+                continue   # finestra ambigua: scartata
+            nodi_finestra, maschera, classe_arma = costruisci_finestra(timeline, inizio)
             nodi.append(nodi_finestra.astype(np.float16))
             maschere.append(maschera)
             classi_arma.append(classe_arma)
@@ -281,22 +382,24 @@ def costruisci_dataset(clip: list[ClipAnnotata], cartelle_estratti: list[Path]) 
             "id_clip": np.array(id_clip), "inizio_finestra": np.array(inizi, np.int32)}
 
 
-def riepilogo(dataset: dict[str, np.ndarray]) -> str:
+def riepilogo(dataset: dict) -> str:
     righe = [f"{len(dataset['etichetta'])} finestre"]
-    conteggio = Counter(zip(dataset["sorgente"].tolist(), dataset["etichetta"].tolist()))
+    conteggio = Counter()
+    for sorgente, classe in zip(dataset["sorgente"].tolist(), dataset["etichetta"].tolist()):
+        conteggio[(sorgente, classe)] += 1
     for (sorgente, classe), numero in sorted(conteggio.items()):
         righe.append(f"  {sorgente:16s} {CLASSI[classe]:18s} {numero}")
     return "\n".join(righe)
 
 
-def comando_dataset_finestre(argomenti: list[str] | None = None) -> None:
+def comando_dataset_finestre(argomenti=None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--annotazioni", required=True)
     parser.add_argument("--estratti", nargs="+", required=True)
     parser.add_argument("--uscita", required=True)
     argomenti = parser.parse_args(argomenti)
-    dataset = costruisci_dataset(leggi_annotazioni(argomenti.annotazioni), [Path(c) for c in argomenti.estratti])
-    np.savez(argomenti.uscita, **dataset)
+    dataset = costruisci_dataset(leggi_annotazioni(argomenti.annotazioni), argomenti.estratti)
+    np.savez(argomenti.uscita, **dataset)   # ogni chiave del dizionario diventa un array del .npz
     print(riepilogo(dataset))
 
 
@@ -329,7 +432,8 @@ def aumenta_lotto(nodi: torch.Tensor, maschera: torch.Tensor, classe_arma: torch
         visibile = nodi[..., 2] > 0
 
     # 2. scala e traslazione (solo sui nodi visibili: quelli invisibili restano a zero)
-    scala = torch.empty(lotto, 1, 1, 1, device=dispositivo).uniform_(*INTERVALLO_SCALA)
+    scala_minima, scala_massima = INTERVALLO_SCALA
+    scala = torch.empty(lotto, 1, 1, 1, device=dispositivo).uniform_(scala_minima, scala_massima)
     traslazione = torch.empty(lotto, 1, 1, 2, device=dispositivo).uniform_(-TRASLAZIONE_MASSIMA, TRASLAZIONE_MASSIMA)
     posizioni = nodi[..., 0:2] * scala + traslazione
     nodi[..., 0:2] = torch.where(visibile[..., None], posizioni, nodi[..., 0:2])
@@ -363,31 +467,52 @@ def aumenta_lotto(nodi: torch.Tensor, maschera: torch.Tensor, classe_arma: torch
 # ==============================================================================================================
 
 # tipi di arco tra due nodi dello stesso frame
-ARCO_SE_STESSO, ARCO_OSSO, ARCO_STESSA_PERSONA, ARCO_PERSONE_DIVERSE, ARCO_ARMA_POLSO, ARCO_ARMA_CORPO, \
-    ARCO_ARMA_ARMA = range(7)
+ARCO_SE_STESSO = 0
+ARCO_OSSO = 1
+ARCO_STESSA_PERSONA = 2
+ARCO_PERSONE_DIVERSE = 3
+ARCO_ARMA_POLSO = 4
+ARCO_ARMA_CORPO = 5
+ARCO_ARMA_ARMA = 6
 NUMERO_TIPI_ARCO = 7
 ARCHI_TRA_ENTITA_DIVERSE = (ARCO_PERSONE_DIVERSE, ARCO_ARMA_POLSO, ARCO_ARMA_CORPO, ARCO_ARMA_ARMA)
 
 
 def matrice_tipi_arco() -> torch.Tensor:
     """[70, 70] con il tipo di arco tra ogni coppia di nodi."""
-    persona_del_nodo = [nodo // NUMERO_KEYPOINT for nodo in range(NODI_PERSONE)] + [-1] * NUMERO_ARMI
-    keypoint_del_nodo = [nodo % NUMERO_KEYPOINT for nodo in range(NODI_PERSONE)] + [-1] * NUMERO_ARMI
-    ossa = {frozenset(osso) for osso in OSSA}
+    # per ogni nodo: di quale persona è e quale keypoint è (-1 per i 2 nodi arma)
+    persona_del_nodo = []
+    keypoint_del_nodo = []
+    for nodo in range(NODI_PERSONE):
+        persona_del_nodo.append(nodo // NUMERO_KEYPOINT)
+        keypoint_del_nodo.append(nodo % NUMERO_KEYPOINT)
+    for arma in range(NUMERO_ARMI):
+        persona_del_nodo.append(-1)
+        keypoint_del_nodo.append(-1)
+
     tipi = torch.empty(NODI_PER_FRAME, NODI_PER_FRAME, dtype=torch.long)
     for i in range(NODI_PER_FRAME):
         for j in range(NODI_PER_FRAME):
-            arma_i, arma_j = persona_del_nodo[i] < 0, persona_del_nodo[j] < 0
+            arma_i = persona_del_nodo[i] < 0
+            arma_j = persona_del_nodo[j] < 0
+            coppia = (keypoint_del_nodo[i], keypoint_del_nodo[j])
+            coppia_al_contrario = (keypoint_del_nodo[j], keypoint_del_nodo[i])
             if i == j:
                 tipo = ARCO_SE_STESSO
             elif arma_i and arma_j:
                 tipo = ARCO_ARMA_ARMA
             elif arma_i or arma_j:
-                keypoint_persona = keypoint_del_nodo[j] if arma_i else keypoint_del_nodo[i]
-                tipo = ARCO_ARMA_POLSO if keypoint_persona in POLSI else ARCO_ARMA_CORPO
+                if arma_i:
+                    keypoint_persona = keypoint_del_nodo[j]
+                else:
+                    keypoint_persona = keypoint_del_nodo[i]
+                if keypoint_persona in POLSI:
+                    tipo = ARCO_ARMA_POLSO
+                else:
+                    tipo = ARCO_ARMA_CORPO
             elif persona_del_nodo[i] != persona_del_nodo[j]:
                 tipo = ARCO_PERSONE_DIVERSE
-            elif frozenset((keypoint_del_nodo[i], keypoint_del_nodo[j])) in ossa:
+            elif coppia in OSSA or coppia_al_contrario in OSSA:
                 tipo = ARCO_OSSO
             else:
                 tipo = ARCO_STESSA_PERSONA
@@ -423,8 +548,11 @@ class BloccoSpazioTempo(nn.Module):
     def attenzione(self, x, qkv, uscita, bias):
         gruppi, lunghezza, dimensione = x.shape
         q, k, v = qkv(x).view(gruppi, lunghezza, 3, self.teste, -1).permute(2, 0, 3, 1, 4)
-        risultato = F.scaled_dot_product_attention(q, k, v, attn_mask=bias,
-                                                   dropout_p=self.dropout.p if self.training else 0.0)
+        if self.training:
+            probabilita_dropout = self.dropout.p
+        else:
+            probabilita_dropout = 0.0
+        risultato = F.scaled_dot_product_attention(q, k, v, attn_mask=bias, dropout_p=probabilita_dropout)
         return uscita(risultato.transpose(1, 2).reshape(gruppi, lunghezza, dimensione))
 
     def forward(self, x, maschera, tipi_arco, distanze):
@@ -464,7 +592,10 @@ class GraphTransformer(nn.Module):
         for parametro in (self.posizione_temporale, self.tipo_nodo.weight, self.posto_nodo.weight,
                           self.classe_arma.weight):
             nn.init.normal_(parametro, std=0.02)
-        self.blocchi = nn.ModuleList(BloccoSpazioTempo(dimensione, teste, dropout) for _ in range(blocchi))
+        lista_blocchi = []
+        for numero in range(blocchi):
+            lista_blocchi.append(BloccoSpazioTempo(dimensione, teste, dropout))
+        self.blocchi = nn.ModuleList(lista_blocchi)
         self.norma_finale = nn.LayerNorm(dimensione)
         self.testa = nn.Sequential(nn.Linear(2 * dimensione, dimensione), nn.GELU(), nn.Dropout(dropout),
                                    nn.Linear(dimensione, numero_classi))
@@ -555,18 +686,26 @@ class BloccoStGcn(nn.Module):
             nn.Conv2d(canali_uscita, canali_uscita, (kernel_temporale, 1), (passo, 1),
                       ((kernel_temporale - 1) // 2, 0)),
             nn.BatchNorm2d(canali_uscita), nn.Dropout(dropout, inplace=True))
+        # il residuo è ciò che si somma all'uscita del blocco: niente, l'ingresso così com'è, oppure l'ingresso
+        # passato da una convoluzione 1×1 quando cambiano i canali o il passo
         if not residuo:
-            self.residuo = lambda x: 0
+            self.tipo_residuo = "nessuno"
         elif canali_ingresso == canali_uscita and passo == 1:
-            self.residuo = lambda x: x
+            self.tipo_residuo = "identita"
         else:
+            self.tipo_residuo = "convoluzione"
             self.residuo = nn.Sequential(nn.Conv2d(canali_ingresso, canali_uscita, 1, (passo, 1)),
                                          nn.BatchNorm2d(canali_uscita))
         self.attivazione = nn.ReLU(inplace=True)
 
     def forward(self, x, adiacenza):
         """x [N, C, T, V], adiacenza [K, V, V]."""
-        residuo = self.residuo(x)
+        if self.tipo_residuo == "nessuno":
+            residuo = 0
+        elif self.tipo_residuo == "identita":
+            residuo = x
+        else:
+            residuo = self.residuo(x)
         y = self.convoluzione_grafo(x)
         lotto, _, frame, nodi = y.shape
         y = y.view(lotto, self.numero_partizioni, -1, frame, nodi)
@@ -584,11 +723,17 @@ class StGcn(nn.Module):
         configurazione = [(CARATTERISTICHE_PER_NODO, 64, 1, False), (64, 64, 1, True), (64, 64, 1, True),
                           (64, 64, 1, True), (64, 128, 2, True), (128, 128, 1, True), (128, 128, 1, True),
                           (128, 256, 2, True), (256, 256, 1, True), (256, 256, 1, True)]
-        self.blocchi = nn.ModuleList(
-            BloccoStGcn(ingresso, uscita, partizioni, passo, dropout if numero else 0.0, residuo)
-            for numero, (ingresso, uscita, passo, residuo) in enumerate(configurazione))
-        self.importanza_archi = nn.ParameterList(nn.Parameter(torch.ones_like(self.adiacenza))
-                                                 for _ in self.blocchi)
+        lista_blocchi = []
+        lista_importanze = []
+        for numero, (ingresso, uscita, passo, residuo) in enumerate(configurazione):
+            if numero == 0:
+                dropout_blocco = 0.0   # niente dropout sul primo blocco
+            else:
+                dropout_blocco = dropout
+            lista_blocchi.append(BloccoStGcn(ingresso, uscita, partizioni, passo, dropout_blocco, residuo))
+            lista_importanze.append(nn.Parameter(torch.ones_like(self.adiacenza)))
+        self.blocchi = nn.ModuleList(lista_blocchi)
+        self.importanza_archi = nn.ParameterList(lista_importanze)
 
         self.classe_arma = nn.Embedding(numero_classi_arma + 1, 16)
         self.ramo_armi = nn.Sequential(nn.Linear(CARATTERISTICHE_PER_NODO + 16, dimensione_ramo_armi), nn.ReLU(),
@@ -629,7 +774,11 @@ def crea_modello(nome: str, **iperparametri):
 
 
 def conta_parametri(modello) -> int:
-    return sum(parametro.numel() for parametro in modello.parameters() if parametro.requires_grad)
+    totale = 0
+    for parametro in modello.parameters():
+        if parametro.requires_grad:
+            totale += parametro.numel()
+    return totale
 
 
 # ==============================================================================================================
@@ -650,9 +799,13 @@ def metriche(vere: np.ndarray, predette: np.ndarray) -> dict:
     precisione = veri_positivi / np.maximum(matrice.sum(0), 1)
     f1 = 2 * precisione * recall / np.maximum(precisione + recall, 1e-12)
     presenti = matrice.sum(1) > 0  # macro-F1 solo sulle classi che compaiono davvero
+    if presenti.any():
+        macro_f1 = float(f1[presenti].mean())
+    else:
+        macro_f1 = 0.0
     return {
         "accuratezza": float(veri_positivi.sum() / max(matrice.sum(), 1)),
-        "macro_f1": float(f1[presenti].mean()) if presenti.any() else 0.0,
+        "macro_f1": macro_f1,
         "recall": dict(zip(CLASSI, recall.round(4).tolist())),
         "precisione": dict(zip(CLASSI, precisione.round(4).tolist())),
         "f1": dict(zip(CLASSI, f1.round(4).tolist())),
@@ -684,56 +837,78 @@ def latenza_cpu_millisecondi(modello: torch.nn.Module, ripetizioni: int = 20) ->
 # Tutti gli iperparametri predefiniti sono PROVVISORI (DA DECIDERE con Marco dopo i primi esperimenti).
 # ==============================================================================================================
 
-def carica_finestre(percorso: str | Path) -> dict[str, np.ndarray]:
+def carica_finestre(percorso) -> dict:
+    finestre = {}
     with np.load(percorso, allow_pickle=False) as dati:
-        return {chiave: dati[chiave] for chiave in dati.files}
+        for chiave in dati.files:
+            finestre[chiave] = dati[chiave]
+    return finestre
 
 
-def lotti(indici: np.ndarray, dimensione_lotto: int, mescola: bool, generatore: np.random.Generator):
-    ordine = generatore.permutation(indici) if mescola else indici
+def lotti(indici: np.ndarray, dimensione_lotto: int, mescola: bool, generatore) -> list:
+    """Divide gli indici in pezzi da `dimensione_lotto` (l'ultimo può essere più corto)."""
+    if mescola:
+        ordine = generatore.permutation(indici)
+    else:
+        ordine = indici
+    elenco_lotti = []
     for partenza in range(0, len(ordine), dimensione_lotto):
-        yield ordine[partenza:partenza + dimensione_lotto]
+        elenco_lotti.append(ordine[partenza:partenza + dimensione_lotto])
+    return elenco_lotti
 
 
 def tensori_lotto(finestre, indici, dispositivo):
-    return (torch.from_numpy(finestre["nodi"][indici].astype(np.float32)).to(dispositivo),
-            torch.from_numpy(finestre["maschera"][indici]).to(dispositivo),
-            torch.from_numpy(finestre["classe_arma"][indici].astype(np.int64)).to(dispositivo),
-            torch.from_numpy(finestre["etichetta"][indici]).to(dispositivo))
+    nodi = torch.from_numpy(finestre["nodi"][indici].astype(np.float32)).to(dispositivo)
+    maschera = torch.from_numpy(finestre["maschera"][indici]).to(dispositivo)
+    classe_arma = torch.from_numpy(finestre["classe_arma"][indici].astype(np.int64)).to(dispositivo)
+    etichetta = torch.from_numpy(finestre["etichetta"][indici]).to(dispositivo)
+    return nodi, maschera, classe_arma, etichetta
 
 
 @torch.no_grad()
-def predici(modello, finestre, indici, dispositivo, dimensione_lotto=256) -> tuple[np.ndarray, np.ndarray]:
+def predici(modello, finestre, indici, dispositivo, dimensione_lotto=256):
+    """Ritorna (probabilità [finestre, classi], etichette vere)."""
     modello.eval()
     probabilita = []
     for indici_lotto in lotti(indici, dimensione_lotto, False, None):
         nodi, maschera, classe_arma, _ = tensori_lotto(finestre, indici_lotto, dispositivo)
         with torch.autocast(dispositivo.type, enabled=dispositivo.type == "cuda"):
-            probabilita.append(torch.softmax(modello(nodi, maschera, classe_arma).float(), -1).cpu().numpy())
-    probabilita = np.concatenate(probabilita) if probabilita else np.empty((0, len(CLASSI)))
+            logit = modello(nodi, maschera, classe_arma).float()
+        probabilita.append(torch.softmax(logit, -1).cpu().numpy())
+    if len(probabilita) > 0:
+        probabilita = np.concatenate(probabilita)
+    else:
+        probabilita = np.empty((0, len(CLASSI)))
     return probabilita, finestre["etichetta"][indici]
 
 
-def indici_degli_split(finestre: dict, seme: int = 0) -> dict[str, np.ndarray]:
+def indici_degli_split(finestre: dict, seme: int = 0) -> dict:
     """Split P4 per video (D33) + D26. Deterministico: rifatto sulle stesse finestre dà gli stessi indici."""
     split = dividi_per_gruppi(finestre["gruppo"], finestre["etichetta"], finestre["sorgente"], seme=seme,
                               gruppi_sempre_in_train=gruppi_visti_dal_detector())
-    return {nome: np.flatnonzero(split == numero) for numero, nome in enumerate(NOMI_SPLIT)}
+    indici_split = {}
+    for numero, nome in enumerate(NOMI_SPLIT):   # 0 train, 1 val, 2 test
+        indici_split[nome] = np.flatnonzero(split == numero)
+    return indici_split
 
 
-def salva_split(finestre: dict, percorso_uscita: Path, seme: int = 0) -> dict[str, np.ndarray]:
+def salva_split(finestre: dict, percorso_uscita: Path, seme: int = 0) -> dict:
     """split.npz: indici delle finestre per split + i video di ogni split (servono a scegliere i video della demo tra
     quelli MAI visti in addestramento, e a tarare il WARNING ARMA sul validation senza addestrare niente)."""
     indici_split = indici_degli_split(finestre, seme)
-    np.savez(percorso_uscita, **indici_split,
-             **{f"clip_{nome}": np.unique(finestre["id_clip"][indici]) for nome, indici in indici_split.items()})
+    da_salvare = {}
+    for nome, indici in indici_split.items():
+        da_salvare[nome] = indici
+    for nome, indici in indici_split.items():
+        da_salvare[f"clip_{nome}"] = np.unique(finestre["id_clip"][indici])
+    np.savez(percorso_uscita, **da_salvare)
     return indici_split
 
 
 def addestra(finestre: dict, nome_modello: str, cartella_uscita: Path, epoche: int = 50, dimensione_lotto: int = 64,
              tasso_apprendimento: float = 5e-4, decadimento_pesi: float = 0.05, pazienza: int = 10,
-             bilanciamento: str = "pesi", seme: int = 0, iperparametri_modello: dict | None = None,
-             ore_massime: float | None = None) -> dict:
+             bilanciamento: str = "pesi", seme: int = 0, iperparametri_modello=None,
+             ore_massime=None) -> dict:
     """ore_massime: tetto di tempo (quota GPU di Kaggle). Si controlla a fine epoca: poi si valuta il migliore."""
     torch.manual_seed(seme)
     inizio_addestramento = time.perf_counter()
@@ -743,27 +918,41 @@ def addestra(finestre: dict, nome_modello: str, cartella_uscita: Path, epoche: i
 
     indici_split = salva_split(finestre, cartella_uscita / "split.npz", seme)
 
-    iperparametri_modello = iperparametri_modello or {}
+    if iperparametri_modello is None:
+        iperparametri_modello = {}
     modello = crea_modello(nome_modello, **iperparametri_modello).to(dispositivo)
     conteggio_train = np.bincount(finestre["etichetta"][indici_split["train"]], minlength=len(CLASSI))
     if bilanciamento == "pesi":  # pesi inversamente proporzionali alla frequenza (classi assenti: peso 0)
-        pesi = np.where(conteggio_train > 0, conteggio_train.sum() / np.maximum(conteggio_train, 1) / len(CLASSI), 0)
+        pesi_classi = conteggio_train.sum() / np.maximum(conteggio_train, 1) / len(CLASSI)
+        pesi = np.where(conteggio_train > 0, pesi_classi, 0)
         funzione_perdita = nn.CrossEntropyLoss(weight=torch.tensor(pesi, dtype=torch.float32, device=dispositivo))
     else:
         funzione_perdita = nn.CrossEntropyLoss()
     ottimizzatore = torch.optim.AdamW(modello.parameters(), lr=tasso_apprendimento, weight_decay=decadimento_pesi)
     passi_totali = epoche * math.ceil(len(indici_split["train"]) / dimensione_lotto)
     passi_riscaldamento = max(1, passi_totali // 20)
-    pianificatore = torch.optim.lr_scheduler.LambdaLR(ottimizzatore, lambda passo: min(
-        (passo + 1) / passi_riscaldamento, 0.5 * (1 + math.cos(math.pi * min(passo / passi_totali, 1.0)))))
+
+    def fattore_tasso_apprendimento(passo):
+        """Il tasso sale piano nel primo 5% dei passi (riscaldamento), poi scende a coseno fino a 0."""
+        riscaldamento = (passo + 1) / passi_riscaldamento
+        coseno = 0.5 * (1 + math.cos(math.pi * min(passo / passi_totali, 1.0)))
+        return min(riscaldamento, coseno)
+
+    pianificatore = torch.optim.lr_scheduler.LambdaLR(ottimizzatore, fattore_tasso_apprendimento)
     scalatore = torch.amp.GradScaler(enabled=dispositivo.type == "cuda")
 
+    numeri_finestre = []
+    for nome, indici in indici_split.items():
+        numeri_finestre.append(f"{nome}={len(indici)}")
     print(f"{nome_modello}: {conta_parametri(modello):,} parametri, dispositivo {dispositivo}, finestre "
-          + ", ".join(f"{nome}={len(indici)}" for nome, indici in indici_split.items()), flush=True)
-    storia, miglior_f1, epoche_senza_miglioramento = [], -1.0, 0
+          + ", ".join(numeri_finestre), flush=True)
+    storia = []
+    miglior_f1 = -1.0
+    epoche_senza_miglioramento = 0
     for epoca in range(1, epoche + 1):
         modello.train()
-        inizio, perdita_totale = time.perf_counter(), 0.0
+        inizio = time.perf_counter()
+        perdita_totale = 0.0
         indici_train = indici_split["train"]
         if bilanciamento == "campionamento":  # ogni classe estratta con la stessa probabilità
             peso_finestra = 1.0 / conteggio_train[finestre["etichetta"][indici_train]]
@@ -789,7 +978,8 @@ def addestra(finestre: dict, nome_modello: str, cartella_uscita: Path, epoche: i
         print(f"epoca {epoca}: perdita {storia[-1]['perdita_train']:.4f}, macro-F1 val {metriche_val['macro_f1']:.4f}"
               f" ({storia[-1]['secondi']:.0f} s)", flush=True)
         if metriche_val["macro_f1"] > miglior_f1:
-            miglior_f1, epoche_senza_miglioramento = metriche_val["macro_f1"], 0
+            miglior_f1 = metriche_val["macro_f1"]
+            epoche_senza_miglioramento = 0
             torch.save({"nome_modello": nome_modello, "iperparametri_modello": iperparametri_modello,
                         "classi": CLASSI, "stato": modello.state_dict(), "epoca": epoca}, cartella_uscita / "migliore.pt")
         else:
@@ -803,14 +993,18 @@ def addestra(finestre: dict, nome_modello: str, cartella_uscita: Path, epoche: i
 
     salvato = torch.load(cartella_uscita / "migliore.pt", map_location=dispositivo)
     modello.load_state_dict(salvato["stato"])
+    impostazioni = {"epoche": epoche, "dimensione_lotto": dimensione_lotto,
+                    "tasso_apprendimento": tasso_apprendimento, "decadimento_pesi": decadimento_pesi,
+                    "bilanciamento": bilanciamento, "seme": seme}
+    impostazioni.update(iperparametri_modello)
     risultati = {"modello": nome_modello, "parametri": conta_parametri(modello), "epoca_migliore": salvato["epoca"],
-                 "storia": storia,
-                 "impostazioni": {"epoche": epoche, "dimensione_lotto": dimensione_lotto,
-                                  "tasso_apprendimento": tasso_apprendimento, "decadimento_pesi": decadimento_pesi,
-                                  "bilanciamento": bilanciamento, "seme": seme, **iperparametri_modello}}
+                 "storia": storia, "impostazioni": impostazioni}
     for nome in ("val", "test"):
         probabilita, vere = predici(modello, finestre, indici_split[nome], dispositivo)
-        risultati[nome] = metriche(vere, probabilita.argmax(1)) if len(vere) else None
+        if len(vere) > 0:
+            risultati[nome] = metriche(vere, probabilita.argmax(1))
+        else:
+            risultati[nome] = None
         np.save(cartella_uscita / f"probabilita_{nome}.npy", probabilita)
         # per analizzare gli errori per sorgente e per video senza il file delle finestre (resta su Kaggle)
         indici = indici_split[nome]
@@ -822,7 +1016,7 @@ def addestra(finestre: dict, nome_modello: str, cartella_uscita: Path, epoche: i
     return risultati
 
 
-def comando_addestra(argomenti: list[str] | None = None) -> None:
+def comando_addestra(argomenti=None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--finestre", required=True)
     parser.add_argument("--modello", choices=["graph_transformer", "stgcn"], required=True)
@@ -837,14 +1031,17 @@ def comando_addestra(argomenti: list[str] | None = None) -> None:
     parser.add_argument("--dropout", type=float, default=None, help="se omesso, quello predefinito del modello")
     parser.add_argument("--ore-massime", type=float, default=None, help="tetto di tempo (quota GPU)")
     argomenti = parser.parse_args(argomenti)
-    iperparametri_modello = {"dropout": argomenti.dropout} if argomenti.dropout is not None else {}
+    iperparametri_modello = {}
+    if argomenti.dropout is not None:
+        iperparametri_modello["dropout"] = argomenti.dropout
     risultati = addestra(carica_finestre(argomenti.finestre), argomenti.modello, Path(argomenti.uscita),
                          argomenti.epoche, argomenti.lotto, argomenti.tasso_apprendimento,
                          decadimento_pesi=argomenti.decadimento_pesi, pazienza=argomenti.pazienza,
                          bilanciamento=argomenti.bilanciamento, seme=argomenti.seme,
                          iperparametri_modello=iperparametri_modello, ore_massime=argomenti.ore_massime)
-    print(json.dumps({chiave: risultati[chiave] for chiave in ("val", "test", "latenza_cpu_ms_per_finestra")},
-                     indent=2, ensure_ascii=False))
+    da_mostrare = {"val": risultati["val"], "test": risultati["test"],
+                   "latenza_cpu_ms_per_finestra": risultati["latenza_cpu_ms_per_finestra"]}
+    print(json.dumps(da_mostrare, indent=2, ensure_ascii=False))
 
 # ==============================================================================================================
 # analisi_predizioni
@@ -857,10 +1054,21 @@ def comando_addestra(argomenti: list[str] | None = None) -> None:
 #         --probabilita stgcn=runs/.../probabilita_test.npy graph_transformer=... --uscita analisi_test.json
 # ==============================================================================================================
 
-def analizza_predizioni(finestre: dict, probabilita_per_modello: dict[str, np.ndarray], nome_split: str = "test",
+def conta_classi(indici_classe) -> dict:
+    """Quante finestre per classe, con i nomi delle classi: {"normale": 12, "violenza": 3}."""
+    conteggio = {}
+    for indice in indici_classe:
+        nome = CLASSI[indice]
+        conteggio[nome] = conteggio.get(nome, 0) + 1
+    return conteggio
+
+
+def analizza_predizioni(finestre: dict, probabilita_per_modello: dict, nome_split: str = "test",
                         seme: int = 0) -> dict:
     indici = indici_degli_split(finestre, seme)[nome_split]
-    vere, sorgenti, id_clip = finestre["etichetta"][indici], finestre["sorgente"][indici], finestre["id_clip"][indici]
+    vere = finestre["etichetta"][indici]
+    sorgenti = finestre["sorgente"][indici]
+    id_clip = finestre["id_clip"][indici]
     analisi = {"split": nome_split, "finestre": len(indici), "modelli": {}}
     for nome_modello, probabilita in probabilita_per_modello.items():
         if len(probabilita) != len(indici):
@@ -878,21 +1086,24 @@ def analizza_predizioni(finestre: dict, probabilita_per_modello: dict[str, np.nd
         for clip in sorted(set(id_clip.tolist())):
             della_clip = id_clip == clip
             per_clip.append({"id_clip": clip, "finestre": int(della_clip.sum()),
-                             "classi_vere": dict(Counter(CLASSI[c] for c in vere[della_clip].tolist())),
-                             "classi_predette": dict(Counter(CLASSI[c] for c in predette[della_clip].tolist())),
+                             "classi_vere": conta_classi(vere[della_clip].tolist()),
+                             "classi_predette": conta_classi(predette[della_clip].tolist()),
                              "corrette": round(float((vere[della_clip] == predette[della_clip]).mean()), 3)})
         analisi["modelli"][nome_modello] = {"per_sorgente": per_sorgente, "per_clip": per_clip}
     return analisi
 
 
-def comando_analizza_predizioni(argomenti: list[str] | None = None) -> None:
+def comando_analizza_predizioni(argomenti=None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--finestre", required=True)
     parser.add_argument("--probabilita", nargs="+", required=True, help="nome_modello=probabilita_test.npy")
     parser.add_argument("--split", default="test", choices=NOMI_SPLIT)
     parser.add_argument("--uscita", required=True)
     argomenti = parser.parse_args(argomenti)
-    probabilita = {voce.split("=", 1)[0]: np.load(voce.split("=", 1)[1]) for voce in argomenti.probabilita}
+    probabilita = {}
+    for voce in argomenti.probabilita:   # "nome_modello=percorso.npy"
+        nome_modello, percorso = voce.split("=", 1)
+        probabilita[nome_modello] = np.load(percorso)
     analisi = analizza_predizioni(carica_finestre(argomenti.finestre), probabilita, argomenti.split)
     Path(argomenti.uscita).write_text(json.dumps(analisi, indent=1, ensure_ascii=False))
     for nome_modello, dati_modello in analisi["modelli"].items():
@@ -903,17 +1114,20 @@ def comando_analizza_predizioni(argomenti: list[str] | None = None) -> None:
 # ==============================================================================================================
 # riga di comando: python -m sicurezza.modelli <comando> [opzioni]
 # ==============================================================================================================
-def comando_salva_split(argomenti: list[str] | None = None) -> None:
+def comando_salva_split(argomenti=None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--finestre", required=True)
     parser.add_argument("--uscita", required=True, help="split.npz (lo stesso che scrive `addestra`)")
     parser.add_argument("--seme", type=int, default=0)
     argomenti = parser.parse_args(argomenti)
     indici_split = salva_split(carica_finestre(argomenti.finestre), Path(argomenti.uscita), argomenti.seme)
-    print({nome: len(indici) for nome, indici in indici_split.items()})
+    numeri = {}
+    for nome, indici in indici_split.items():
+        numeri[nome] = len(indici)
+    print(numeri)
 
 
-def comando_predici(argomenti: list[str] | None = None) -> None:
+def comando_predici(argomenti=None) -> None:
     """Probabilità di un classificatore salvato (migliore.pt) sulle finestre di uno split: serve a confrontare sulle
     STESSE finestre modelli addestrati su dati diversi (es. l'addestramento 1 sui dati dell'addestramento 2)."""
     parser = argparse.ArgumentParser()
@@ -937,7 +1151,7 @@ COMANDI = {"dataset-finestre": comando_dataset_finestre, "addestra": comando_add
            "predici": comando_predici}
 
 
-def main(argomenti: list[str] | None = None) -> None:
+def main(argomenti=None) -> None:
     argomenti = sys.argv[1:] if argomenti is None else argomenti
     if not argomenti or argomenti[0] not in COMANDI:
         print("uso: python -m sicurezza.modelli {dataset-finestre|addestra} [opzioni]  (--help dopo il comando)")
