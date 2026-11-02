@@ -438,9 +438,16 @@ function apri(nuovoIndice) {
   if (nome in annotazioni) testo("gia", "già segnato: " + annotazioni[nome]);
   else testo("gia", "");
 }
+let salvando = false;
 async function segna(tipo) {
+  if (salvando) return;   // un tasto alla volta: finché salva, gli altri tasti non contano
+  salvando = true;
   const nome = elenco[indice];
-  await fetch("/salva", { method: "POST", body: JSON.stringify({ video: nome, tipo }) });
+  try {
+    await fetch("/salva", { method: "POST", body: JSON.stringify({ video: nome, tipo }) });
+  } finally {
+    salvando = false;
+  }
   annotazioni[nome] = tipo;
   testo("stato", "salvato " + nome);
   const prossimo = elenco.findIndex((n, i) => i > indice && !(n in annotazioni));
@@ -449,6 +456,7 @@ async function segna(tipo) {
   else testo("stato", "Finito: tutti gli spezzoni sono segnati. Puoi chiudere la pagina.");
 }
 document.addEventListener("keydown", (evento) => {
+  if (evento.repeat) return;   // tasto tenuto premuto: la ripetizione segnava gli spezzoni dopo senza vederli
   const azioni = {
     "s": () => segna("scippo"),
     "f": () => segna("furto"),
