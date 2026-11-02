@@ -989,16 +989,15 @@ def accuratezza_bilanciata(punteggi: np.ndarray, positivi: np.ndarray, negativi:
 
 
 def scegli_soglia(punteggi: np.ndarray, positivi: np.ndarray, negativi: np.ndarray) -> float:
-    """La soglia con l'accuratezza bilanciata più alta tra i quantili dei punteggi."""
+    """La soglia con l'accuratezza bilanciata più alta tra i quantili dei punteggi. Se più soglie vanno bene uguale
+    si prende quella in mezzo: la più bassa starebbe appena sopra i negativi e su altri dati darebbe falsi allarmi."""
     candidate = np.unique(np.quantile(punteggi[positivi | negativi], np.linspace(0, 1, SOGLIE_DA_PROVARE_PEZZI)))
-    migliore = float(candidate[0])
-    valore_migliore = -1.0
+    valori = []
     for soglia in candidate:
-        valore = accuratezza_bilanciata(punteggi, positivi, negativi, float(soglia))["bilanciata"]
-        if valore > valore_migliore:
-            migliore = float(soglia)
-            valore_migliore = valore
-    return migliore
+        valori.append(accuratezza_bilanciata(punteggi, positivi, negativi, float(soglia))["bilanciata"])
+    valori = np.array(valori)
+    migliori = candidate[valori == valori.max()]
+    return float(migliori[len(migliori) // 2])
 
 
 def intervallo_bootstrap(punteggi: np.ndarray, positivi: np.ndarray, negativi: np.ndarray, clip: np.ndarray,
