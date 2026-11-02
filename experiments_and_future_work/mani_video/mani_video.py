@@ -26,7 +26,7 @@ strati convoluzionali in più, colori contro bianco e nero):
     a1: ResNet-18 → testa su ogni ritaglio
     a2: + 2 strati conv 1D nel tempo sulla sequenza di ogni mano
     a3: + 2 strati conv 2D in più sulle mappe della ResNet, poi i conv nel tempo
-ognuna a colori e in bianco e nero → 6 modelli, 3 di seguito su ogni GPU (un thread per GPU), EPOCHE fisse
+ognuna a colori (v1: anche in bianco e nero), un thread per GPU, varianti di seguito, EPOCHE fisse
 (niente early stop). Uscite:
 arma, fuoco, coltello (fuoco/coltello non addestrati sulle armi di tipo ignoto). Per ogni modello si salvano la
 migliore sul val e l'ultima, e i punteggi di val e test per `demo valuta-armi-scippi`.
@@ -49,7 +49,8 @@ EPOCHE = 12
 LOTTO = 32
 LATO_RETE = 112           # i ritagli da 56 px si ingrandiscono: la ResNet vede meglio
 USCITE = ("arma", "fuoco", "coltello")
-VARIANTI_PER_GPU = (("a1_colori", "a2_colori", "a3_colori"), ("a1_grigio", "a2_grigio", "a3_grigio"))
+# 02/11 Marco: per la quota rimasta solo a colori, 12 epoche (il grigio contro i colori si vede con la rete video b3)
+VARIANTI_PER_GPU = (("a1_colori", "a2_colori"), ("a3_colori",))
 MEDIA = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
 DEVIAZIONE = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
 ingresso = Path("/kaggle/input")
