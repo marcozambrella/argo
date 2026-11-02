@@ -1050,6 +1050,25 @@ def misura_un_tipo(val: dict, test: dict, tipo: str) -> dict:
     return risultato
 
 
+def misura_incrociata(val: dict, test: dict, tipo: str) -> dict:
+    """Più clip per i tipi rari (coltelli: poche clip per split): soglia scelta sul val e misurata sul test, e
+    soglia scelta sul test e misurata sul val; le due metà si uniscono. Ogni pezzo è giudicato con una soglia scelta
+    senza di lui. Punteggio meno soglia, così la soglia comune è 0."""
+    parti = []
+    for scelta, misura in ((val, test), (test, val)):
+        soglia = scegli_soglia(scelta[f"punteggio_{tipo}"], scelta[f"positivo_{tipo}"], scelta[f"negativo_{tipo}"])
+        parti.append((misura[f"punteggio_{tipo}"] - soglia, misura[f"positivo_{tipo}"], misura[f"negativo_{tipo}"],
+                      misura["clip"]))
+    punteggi = np.concatenate([parti[0][0], parti[1][0]])
+    positivi = np.concatenate([parti[0][1], parti[1][1]])
+    negativi = np.concatenate([parti[0][2], parti[1][2]])
+    clip = np.concatenate([parti[0][3], parti[1][3]])
+    risultato = accuratezza_bilanciata(punteggi, positivi, negativi, 0.0)
+    risultato["intervallo_95"] = intervallo_bootstrap(punteggi, positivi, negativi, clip, 0.0)
+    risultato["clip_positive"] = len(set(clip[positivi].tolist()))
+    return risultato
+
+
 def carica_punteggi(percorso) -> dict:
     with np.load(percorso) as file:
         punteggi = {}
@@ -1128,10 +1147,12 @@ def comando_valuta_armi_scippi(argomenti=None) -> None:
             if f"punteggio_{tipo}" not in test:
                 continue
             misura = misura_un_tipo(val, test, tipo)
+            misura["incrociata"] = misura_incrociata(val, test, tipo)
             risultato["modelli"][nome][tipo] = misura
-            print(f"{nome:28s} {tipo:9s} bilanciata {misura['bilanciata']:.3f} {misura['intervallo_95']}  "
-                  f"recall {misura['recall']:.2f}  specificità {misura['specificita']:.2f}  "
-                  f"({misura['clip_positive']} clip positive)")
+            incrociata = misura["incrociata"]
+            print(f"{nome:28s} {tipo:9s} test {misura['bilanciata']:.3f} {misura['intervallo_95']} "
+                  f"({misura['clip_positive']} clip) | incrociata {incrociata['bilanciata']:.3f} "
+                  f"{incrociata['intervallo_95']} ({incrociata['clip_positive']} clip)")
     Path(argomenti.uscita).write_text(json.dumps(risultato, indent=1, ensure_ascii=False))
 
 

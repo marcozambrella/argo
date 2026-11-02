@@ -12,7 +12,7 @@ import torch
 import yaml
 
 from sicurezza.dati import elenca_clip_snatch10, elenca_clip_snatch10_normali, elenca_clip_scippi_kaggle, elenca_clip_wvd, tipi_arma_wvd, tipi_arma_scvd, tipi_arma_da_frase, elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
-from sicurezza.demo import chiavi_finestre, tieni_finestre, punteggi_detector_finestra, pezzi_armi_scippi, accuratezza_bilanciata, scegli_soglia, intervallo_bootstrap, tipi_della_clip, Pannello, Telecamera, Videoregistratore, crea_server, ingresso_ffmpeg, leggi_telecamera, opzioni_dai_pesi, sorgente_senza_password, AllarmeViolenza, RamoPixel, classe_finale_con_pixel, fondi_con_pixel, riduci_per_pixel, pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
+from sicurezza.demo import misura_incrociata, chiavi_finestre, tieni_finestre, punteggi_detector_finestra, pezzi_armi_scippi, accuratezza_bilanciata, scegli_soglia, intervallo_bootstrap, tipi_della_clip, Pannello, Telecamera, Videoregistratore, crea_server, ingresso_ffmpeg, leggi_telecamera, opzioni_dai_pesi, sorgente_senza_password, AllarmeViolenza, RamoPixel, classe_finale_con_pixel, fondi_con_pixel, riduci_per_pixel, pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import tracce_scelte_della_finestra, indici_degli_split, analizza_predizioni, ricuci_tracce, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.strumenti import violenza_per_il_sito, risultati_per_il_sito, scarica_con_riprova, scegli_candidati_scippo_telefono, scegli_immagini_coco
 from sicurezza.visione import ritagli_della_finestra, mani_di_una_persona, precisione_media, probabilita_armi_in_mano, ritaglio_quadrato, ritagli_per_addestramento, prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
@@ -1665,3 +1665,12 @@ def test_tieni_solo_le_finestre_comuni():
     assert chiavi_finestre(punteggi).tolist() == ["a|0", "a|20", "b|0"]
     tenuti = tieni_finestre(punteggi, {"a|20", "b|0"})
     assert tenuti["arma"].tolist() == [0.2, 0.3]
+
+
+def test_misura_incrociata_usa_entrambi_gli_split():
+    val = {"punteggio_arma": np.array([0.9, 0.1, 0.8, 0.2]), "positivo_arma": np.array([True, False, True, False]),
+           "negativo_arma": np.array([False, True, False, True]), "clip": np.array(["a", "b", "c", "d"])}
+    test = {"punteggio_arma": np.array([0.7, 0.05]), "positivo_arma": np.array([True, False]),
+            "negativo_arma": np.array([False, True]), "clip": np.array(["e", "f"])}
+    misura = misura_incrociata(val, test, "arma")
+    assert misura["bilanciata"] == 1.0 and misura["clip_positive"] == 3
