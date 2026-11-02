@@ -26,7 +26,10 @@ da fuoco, coltello, scippo) invece della sola violenza di training/finetune_rgb.
 lancia_variante.sh): b1 = 112 px a colori come oggi; b2 = 224 px a colori; b3 = 224 px in bianco e nero.
 Marco: niente early stop → tutte le epoche; si salvano la migliore sul val e l'ultima. Alla fine: punteggi su una
 finestra ogni due di val e test (punteggi_val.npz, punteggi_test.npz per `demo valuta-armi-scippi`), per la
-migliore e per l'ultima."""
+migliore e per l'ultima.
+D69: b1a = b1 con una sesta uscita "anomalia" (violenza, arma, scippo o un'altra anomalia rilevante) e le finestre
+del dataset argo-anomalie (NWPU Campus, CHAD, ATMA-V: tipo segnato da Marco, normali delle stesse telecamere; le
+uscite che lo spezzone non dice restano mascherate)."""
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -35,21 +38,29 @@ import numpy as np
 import torch
 import torchvision
 from sicurezza.dati import INDICE_CLASSE, FILE_TIPO_ARMA_SCVD, prepara_video_esperimenti, tipi_arma_scvd, tipi_arma_ucf
+from sicurezza.dati import ClipAnnotata, categoria_ucf
 from sicurezza.demo import tipi_della_clip, salva_punteggi
 
 VARIANTE = "b1"
-LATI = {"b1": 112, "b2": 224, "b3": 224}
+LATI = {"b1": 112, "b2": 224, "b3": 224, "b1a": 112}
 LATO = LATI[VARIANTE]
 GRIGIO = VARIANTE == "b3"
-EPOCHE = {"b1": 8, "b2": 5, "b3": 5}[VARIANTE]
+EPOCHE = {"b1": 8, "b2": 5, "b3": 5, "b1a": 8}[VARIANTE]
 ALTEZZA = LATO * 8 // 7          # 128 per 112, 256 per 224: margine per il ritaglio a caso
 LARGHEZZA = ALTEZZA * 4 // 3 + (ALTEZZA * 4 // 3) % 2   # 4:3 come la maggior parte delle CCTV (171 → 170 per 112)
 ORE_MASSIME = 11.0
-FINESTRE_PER_GRUPPO = {"arma": 4000, "scippo": 4000, "violenza": 3000, "normale": 3000}
+FINESTRE_PER_GRUPPO = {"arma": 4000, "scippo": 4000, "violenza": 3000, "normale": 3000,
+                       "anomalie_nuove": 4000, "normali_nuove": 3000}   # le ultime due solo in b1a
 FINESTRE_VAL = 2000
-LOTTO = {"b1": 32, "b2": 8, "b3": 8}[VARIANTE]   # a 224 px anche 16 va fuori memoria sulle T4 (02/11, b2 v1)
+LOTTO = {"b1": 32, "b2": 8, "b3": 8, "b1a": 32}[VARIANTE]   # a 224 px anche 16 va fuori memoria sulle T4 (02/11, b2 v1)
 FRAME_PER_BLOCCO = 600   # punteggi finali: le clip lunghe si decodificano a blocchi da 24 s
+CON_ANOMALIE = VARIANTE == "b1a"
 USCITE = ("violenza", "arma", "fuoco", "coltello", "scippo")
+if CON_ANOMALIE:
+    USCITE = ("violenza", "arma", "fuoco", "coltello", "scippo", "anomalia")
+ETICHETTA_DEL_TIPO = {"normale": INDICE_CLASSE["normale"], "violenza": INDICE_CLASSE["violenza"],
+                      "arma": INDICE_CLASSE["violenza_con_arma"], "scippo": INDICE_CLASSE["scippo"],
+                      "furto": -1, "altra": -1}   # furto e altra: anomalie senza una classe dei 4
 MEDIA = torch.tensor([0.43216, 0.394666, 0.37645]).view(1, 3, 1, 1, 1)
 DEVIAZIONE = torch.tensor([0.22803, 0.22145, 0.216989]).view(1, 3, 1, 1, 1)
 avvio = time.time()
@@ -191,7 +202,42 @@ if __name__ == "__main__":
         inizi = finestre["inizio_finestra"]
         etichette = finestre["etichetta"]
         sorgenti = finestre["sorgente"]
-    split = np.load(percorso_finestre.parent / "split.npz")
+    split = {}
+    with np.load(percorso_finestre.parent / "split.npz") as file_split:
+        for nome_split in file_split.files:
+            split[nome_split] = file_split[nome_split]
+    tipo_nuovo = np.full(len(etichette), "", dtype=object)   # tipo di Marco per le finestre di argo-anomalie
+
+    if CON_ANOMALIE:
+        # finestre di argo-anomalie in coda a quelle di finestre v3, con i loro video e il loro split
+        percorso_anomalie = next(ingresso.glob("**/anomalie.json"))
+        nuovi_id = []
+        nuovi_inizi = []
+        nuove_etichette = []
+        nuove_sorgenti = []
+        nuovi_tipi = []
+        nuovi_split = {"train": [], "val": [], "test": []}
+        for voce in json.loads(percorso_anomalie.read_text()):
+            id_video = "anomalie/" + voce["chiave"]
+            sorgente = "anomalie_" + voce["chiave"].split("__")[0]
+            clip_annotate[id_video] = ClipAnnotata(id_clip=id_video, sorgente=sorgente, gruppo=id_video,
+                                                   percorso_video=str(percorso_anomalie.parent / voce["video"]))
+            for inizio_secondi, tipo in voce["finestre"]:
+                nuovi_split[voce["split"]].append(len(etichette) + len(nuovi_id))
+                nuovi_id.append(id_video)
+                nuovi_inizi.append(int(round(inizio_secondi * 25)))
+                nuove_etichette.append(ETICHETTA_DEL_TIPO[tipo])
+                nuove_sorgenti.append(sorgente)
+                nuovi_tipi.append(tipo)
+        id_clip = np.concatenate([id_clip.astype(str), np.array(nuovi_id, dtype=str)])   # stringhe: npz senza pickle
+        inizi = np.concatenate([inizi, np.array(nuovi_inizi, inizi.dtype)])
+        etichette = np.concatenate([etichette, np.array(nuove_etichette, etichette.dtype)])
+        sorgenti = np.concatenate([sorgenti.astype(str), np.array(nuove_sorgenti, dtype=str)])
+        tipo_nuovo = np.concatenate([tipo_nuovo, np.array(nuovi_tipi, dtype=object)])
+        for nome_split in ("train", "val", "test"):
+            split[nome_split] = np.concatenate([split[nome_split], np.array(nuovi_split[nome_split], np.int64)])
+        print(f"argo-anomalie: {len(nuovi_id)} finestre", flush=True)
+    nuova = tipo_nuovo != ""
 
     # bersagli e maschere per ogni finestra
     tipi_ucf = tipi_arma_ucf()
@@ -202,6 +248,13 @@ if __name__ == "__main__":
     bersagli[:, 0] = np.isin(etichette, [INDICE_CLASSE["violenza"], INDICE_CLASSE["violenza_con_arma"]])
     bersagli[:, 1] = armata
     bersagli[:, 4] = etichette == INDICE_CLASSE["scippo"]
+    if CON_ANOMALIE:
+        bersagli[:, 5] = (etichette != INDICE_CLASSE["normale"]) | (nuova & (tipo_nuovo != "normale"))
+        # UCF: le finestre "normali" dei video di rapine, furti, incendi... non sono normali per l'uscita anomalia
+        for riga in np.where((sorgenti == "ucf_uca") & (etichette == INDICE_CLASSE["normale"]))[0]:
+            id_video = str(id_clip[riga])[len("ucf/"):].split("@")[0]
+            if categoria_ucf(id_video) != "Normal":
+                maschere[riga, 5] = 0
     for riga in np.where(armata)[0]:
         tipi = tipi_della_clip(str(id_clip[riga]), tipi_ucf, tipi_scvd)
         if len(tipi) == 0:
@@ -218,10 +271,15 @@ if __name__ == "__main__":
     utilizzabile = np.array(clip_note)
     # train: tutte (fino a un tetto) le finestre armate e di scippo, poi violenza e normali
     train = np.where(np.isin(np.arange(len(etichette)), split["train"]) & utilizzabile)[0]
-    gruppo_finestra = {"arma": train[armata[train]],
-                       "scippo": train[etichette[train] == INDICE_CLASSE["scippo"]],
-                       "violenza": train[etichette[train] == INDICE_CLASSE["violenza"]],
-                       "normale": train[etichette[train] == INDICE_CLASSE["normale"]]}
+    vecchie = train[~nuova[train]]
+    gruppo_finestra = {"arma": vecchie[armata[vecchie]],
+                       "scippo": vecchie[etichette[vecchie] == INDICE_CLASSE["scippo"]],
+                       "violenza": vecchie[etichette[vecchie] == INDICE_CLASSE["violenza"]],
+                       "normale": vecchie[etichette[vecchie] == INDICE_CLASSE["normale"]]}
+    if CON_ANOMALIE:
+        nuove = train[nuova[train]]
+        gruppo_finestra["anomalie_nuove"] = nuove[tipo_nuovo[nuove] != "normale"]
+        gruppo_finestra["normali_nuove"] = nuove[tipo_nuovo[nuove] == "normale"]
     scelti = []
     for nome, indici in gruppo_finestra.items():
         quante = min(FINESTRE_PER_GRUPPO[nome], len(indici))
@@ -230,7 +288,8 @@ if __name__ == "__main__":
     scelti_train = np.concatenate(scelti)
     val = np.where(np.isin(np.arange(len(etichette)), split["val"]) & utilizzabile)[0]
     # val per scegliere l'epoca: tutte le armate e gli scippi, il resto a caso
-    val_rari = val[armata[val] | (etichette[val] == INDICE_CLASSE["scippo"])]
+    anomala_nuova = nuova & (tipo_nuovo != "normale")
+    val_rari = val[armata[val] | (etichette[val] == INDICE_CLASSE["scippo"]) | anomala_nuova[val]]
     val_altri = generatore.choice(val[~np.isin(val, val_rari)], max(0, FINESTRE_VAL - len(val_rari)), replace=False)
     scelti_val = np.sort(np.concatenate([val_rari, val_altri]))
 

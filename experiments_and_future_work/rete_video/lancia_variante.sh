@@ -11,5 +11,8 @@ mkdir "$copia"
 cp "$cartella/rete_video.py" "$cartella/kernel-metadata.json" "$copia"/
 sed -i "s/^VARIANTE = \"b1\"/VARIANTE = \"$variante\"/" "$copia/rete_video.py"
 sed -i "s/VARIANTE/$variante/g" "$copia/kernel-metadata.json"
+if [ "$variante" = "b1a" ]; then   # D69: le finestre dell'uscita anomalia
+    sed -i 's#"dataset_sources": \[#"dataset_sources": [\n    "marcozambrella/argo-anomalie",#' "$copia/kernel-metadata.json"
+fi
 "$cartella/../../training/lancia.sh" "../experiments_and_future_work/rete_video_$variante"
 rm -rf "$copia"
