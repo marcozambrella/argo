@@ -385,6 +385,136 @@ def comando_annota_tipo_arma(argomenti=None) -> None:
 
 
 # ==============================================================================================================
+# annota_anomalie
+# D69: uscita "anomalia" della rete video. NWPU Campus, CHAD e ATMA-V dicono solo quali fotogrammi sono anomali,
+# non che cosa succede; molte anomalie sono innocue (corsa, bici, palla) e insegnerebbero falsi allarmi. Marco
+# guarda gli spezzoni anomali (ritagliati prima, con il margine) e dà un tasto per spezzone:
+#     S scippo   F furto senza strappo   V violenza/lite   R con arma   A altra anomalia rilevante
+#     I innocua (diventa normale)   X non idoneo (escluso)
+#     Spazio play/pausa   ← →  ±1 s   1 2 3 velocità   P N  spezzone precedente / successivo
+# Uso:
+#     uv run python -m sicurezza.strumenti annota-anomalie --video <cartella degli spezzoni> --uscita <file .json>
+#     (poi apri http://localhost:8774)
+# ==============================================================================================================
+
+TIPI_ANOMALIA = ("scippo", "furto", "violenza", "arma", "altra", "innocua", "non_idoneo")
+
+PAGINA_ANOMALIE = """<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><title>Anomalie</title>
+<style>
+ body { font: 15px system-ui, sans-serif; margin: 16px; background: #111; color: #eee; }
+ video { width: 100%; max-height: 75vh; background: #000; }
+ .riga { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+ .tasto { border: 1px solid #666; padding: 0 6px; border-radius: 3px; font-family: monospace; }
+ #stato { color: #9c9; } #gia { color: #fc6; }
+</style></head><body>
+<div class="riga"><strong id="nome">…</strong><span id="avanzamento"></span><span id="gia"></span>
+ <span id="stato"></span></div>
+<video id="video" controls loop autoplay muted></video>
+<div class="riga"><span><span class="tasto">S</span> scippo</span><span><span class="tasto">F</span> furto senza strappo</span>
+ <span><span class="tasto">V</span> violenza / lite</span><span><span class="tasto">R</span> con arma</span>
+ <span><span class="tasto">A</span> altra anomalia rilevante</span><span><span class="tasto">I</span> innocua (normale)</span>
+ <span><span class="tasto">X</span> non idoneo (escluso)</span></div>
+<div class="riga"><span><span class="tasto">Spazio</span> play/pausa</span><span><span class="tasto">← →</span> ±1 s</span>
+ <span><span class="tasto">1 2 3</span> velocità</span><span><span class="tasto">P N</span> precedente / successivo</span></div>
+<script>
+const video = document.getElementById("video");
+let elenco = [], annotazioni = {}, indice = 0;
+const testo = (id, valore) => document.getElementById(id).textContent = valore;
+
+async function carica() {
+  const risposta = await (await fetch("/elenco")).json();
+  elenco = risposta.video; annotazioni = risposta.annotazioni;
+  if (risposta.problema) { testo("stato", risposta.problema); return; }
+  const primoDaFare = elenco.findIndex((nome) => !(nome in annotazioni));
+  apri(primoDaFare >= 0 ? primoDaFare : 0);
+}
+function apri(nuovoIndice) {
+  indice = nuovoIndice;
+  const nome = elenco[indice];
+  video.src = "/video/" + encodeURIComponent(nome); video.playbackRate = 1;
+  testo("nome", nome);
+  testo("avanzamento", `${Object.keys(annotazioni).length}/${elenco.length} segnati · spezzone ${indice + 1}`);
+  if (nome in annotazioni) testo("gia", "già segnato: " + annotazioni[nome]);
+  else testo("gia", "");
+}
+async function segna(tipo) {
+  const nome = elenco[indice];
+  await fetch("/salva", { method: "POST", body: JSON.stringify({ video: nome, tipo }) });
+  annotazioni[nome] = tipo;
+  testo("stato", "salvato " + nome);
+  const prossimo = elenco.findIndex((n, i) => i > indice && !(n in annotazioni));
+  const qualsiasi = elenco.findIndex((n) => !(n in annotazioni));
+  if (prossimo >= 0) apri(prossimo); else if (qualsiasi >= 0) apri(qualsiasi);
+  else testo("stato", "Finito: tutti gli spezzoni sono segnati. Puoi chiudere la pagina.");
+}
+document.addEventListener("keydown", (evento) => {
+  const azioni = {
+    "s": () => segna("scippo"),
+    "f": () => segna("furto"),
+    "v": () => segna("violenza"),
+    "r": () => segna("arma"),
+    "a": () => segna("altra"),
+    "i": () => segna("innocua"),
+    "x": () => segna("non_idoneo"),
+    " ": () => (video.paused ? video.play() : video.pause()),
+    "ArrowLeft": () => (video.currentTime = Math.max(0, video.currentTime - 1)),
+    "ArrowRight": () => (video.currentTime += 1),
+    "1": () => { video.playbackRate = 0.25; },
+    "2": () => { video.playbackRate = 0.5; },
+    "3": () => { video.playbackRate = 1; },
+    "p": () => { if (indice > 0) apri(indice - 1); },
+    "n": () => { if (indice < elenco.length - 1) apri(indice + 1); },
+  };
+  const azione = azioni[evento.key] || azioni[evento.key.toLowerCase()];
+  if (azione) { evento.preventDefault(); azione(); }
+});
+carica();
+</script></body></html>
+"""
+
+
+class GestoreAnomalie(GestoreAnnotazioni):
+    """Come GestoreTipoArma, ma salva un solo tipo d'anomalia per spezzone."""
+
+    def do_GET(self):
+        if self.path == "/":
+            self.rispondi(200, PAGINA_ANOMALIE.encode(), "text/html; charset=utf-8")
+        else:
+            super().do_GET()
+
+    def do_POST(self):
+        if self.path != "/salva":
+            self.rispondi(404, b"", "text/plain")
+            return
+        dati = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        if dati["tipo"] not in TIPI_ANOMALIA:
+            self.rispondi(400, b"tipo sconosciuto", "text/plain")
+            return
+        with self.blocco_scrittura:
+            annotazioni = self.leggi_annotazioni()
+            annotazioni[Path(dati["video"]).name] = dati["tipo"]
+            self.file_annotazioni.parent.mkdir(parents=True, exist_ok=True)
+            righe = []   # una riga per spezzone
+            for nome, valore in sorted(annotazioni.items()):
+                righe.append(f"{json.dumps(nome)}: {json.dumps(valore)}")
+            self.file_annotazioni.write_text("{\n" + ",\n".join(righe) + "\n}\n")
+        self.rispondi(200, b"{}", "application/json")
+
+
+def comando_annota_anomalie(argomenti=None) -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--video", required=True, help="cartella degli spezzoni anomali (.mp4)")
+    parser.add_argument("--uscita", required=True)
+    parser.add_argument("--porta", type=int, default=8774)
+    argomenti = parser.parse_args(argomenti)
+    gestore = crea_gestore(Path(argomenti.video), Path(argomenti.uscita), GestoreAnomalie)
+    server = ThreadingHTTPServer(("127.0.0.1", argomenti.porta), gestore)
+    print(f"Apri http://localhost:{argomenti.porta} — anomalie in {argomenti.uscita} (Ctrl+C per chiudere)")
+    server.serve_forever()
+
+
+# ==============================================================================================================
 # scarica_campioni
 # Scarica pochi video veri dai dataset Kaggle per provare la catena in locale (senza login: API pubblica).
 #
@@ -849,6 +979,7 @@ def comando_monta_presentazione(argomenti=None) -> None:
 # riga di comando: python -m sicurezza.strumenti <comando> [opzioni]
 # ==============================================================================================================
 COMANDI = {"annota-scippi": comando_annota_scippi, "annota-tipo-arma": comando_annota_tipo_arma,
+           "annota-anomalie": comando_annota_anomalie,
            "scarica-campioni": comando_scarica_campioni,
            "scarica-negativi-coco": comando_scarica_negativi_coco, "scarica-video-cc": comando_scarica_video_cc,
            "esporta-risultati-sito": comando_esporta_risultati_sito,
