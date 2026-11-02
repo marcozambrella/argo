@@ -26,11 +26,15 @@ strati convoluzionali in più, colori contro bianco e nero):
     a1: ResNet-18 → testa su ogni ritaglio
     a2: + 2 strati conv 1D nel tempo sulla sequenza di ogni mano
     a3: + 2 strati conv 2D in più sulle mappe della ResNet, poi i conv nel tempo
-ognuna a colori e in bianco e nero → 6 modelli, 3 per GPU in parallelo, EPOCHE fisse (niente early stop). Uscite:
+ognuna a colori e in bianco e nero → 6 modelli, 3 di seguito su ogni GPU (un thread per GPU), EPOCHE fisse
+(niente early stop). Uscite:
 arma, fuoco, coltello (fuoco/coltello non addestrati sulle armi di tipo ignoto). Per ogni modello si salvano la
-migliore sul val e l'ultima, e i punteggi di val e test per `demo valuta-armi-scippi`."""
+migliore sul val e l'ultima, e i punteggi di val e test per `demo valuta-armi-scippi`.
+02/11: la v1 con multiprocessing (fork dopo la prova su CPU) non ha stampato nessuna epoca in 3,7 h: fork dopo che
+torch ha avviato i suoi thread della CPU può bloccare i figli. Ora un thread per GPU (niente fork) e una stampa ogni
+100 lotti."""
 import json
-import multiprocessing
+import threading
 import time
 from pathlib import Path
 import numpy as np
@@ -154,6 +158,8 @@ def carica_dati() -> dict:
         dati[nome] = {"righe": righe, "bersagli": bersagli, "maschere": maschere,
                       "ritagli": np.load(cartella / f"ritagli_{nome}.npy", mmap_mode="r"),
                       "presenti": np.load(cartella / f"presenti_{nome}.npy")}
+    # il train sta in memoria una volta sola (~8 GB), condiviso dai due thread
+    dati["train"]["ritagli"] = np.asarray(dati["train"]["ritagli"])
     return dati
 
 
@@ -165,7 +171,7 @@ def addestra_variante(nome: str, dati: dict, dispositivo) -> None:
     train = dati["train"]
     passi_per_epoca = len(train["righe"]) // LOTTO
     pianificatore = torch.optim.lr_scheduler.CosineAnnealingLR(ottimizzatore, EPOCHE * passi_per_epoca)
-    ritagli_train = np.asarray(train["ritagli"])   # il train sta in memoria (~4 GB)
+    ritagli_train = train["ritagli"]
     cartella = uscita / nome
     cartella.mkdir(exist_ok=True)
     storia = []
@@ -188,6 +194,9 @@ def addestra_variante(nome: str, dati: dict, dispositivo) -> None:
             ottimizzatore.step()
             pianificatore.step()
             perdite.append(perdita.item())
+            if passo % 100 == 0:
+                print(f"{nome} epoca {epoca}: lotto {passo}/{passi_per_epoca} ({time.time() - inizio:.0f} s)",
+                      flush=True)
         val = dati["val"]
         probabilita_val = probabilita(modello, val["ritagli"], val["presenti"], grigio, dispositivo)
         valore = bilanciata_media(probabilita_val, val["bersagli"], val["maschere"])
@@ -217,9 +226,8 @@ def addestra_variante(nome: str, dati: dict, dispositivo) -> None:
             salva_punteggi(cartella_punteggi / f"punteggi_{nome_split}.npz", finestre_scelte, punteggi)
 
 
-def lavora_su_una_gpu(numero_gpu: int) -> None:
+def lavora_su_una_gpu(numero_gpu: int, dati: dict) -> None:
     dispositivo = torch.device(f"cuda:{numero_gpu}")
-    dati = carica_dati()
     for nome in VARIANTI_PER_GPU[numero_gpu]:
         addestra_variante(nome, dati, dispositivo)
 
@@ -232,12 +240,14 @@ if __name__ == "__main__":
         presenti = torch.zeros(2, 6, 8, dtype=torch.bool)
         presenti[0, :, 1] = True
         print(tipo, "prova:", tuple(prova(finti, presenti).shape), flush=True)
-    # un processo per GPU (fork: CUDA non è ancora stata usata qui)
-    processi = []
+    dati_comuni = carica_dati()
+    print("dati caricati", flush=True)
+    # un thread per GPU: torch lascia libero il GIL durante i calcoli sulla GPU
+    lavori = []
     for numero_gpu in range(len(VARIANTI_PER_GPU)):
-        processo = multiprocessing.Process(target=lavora_su_una_gpu, args=(numero_gpu,))
-        processo.start()
-        processi.append(processo)
-    for processo in processi:
-        processo.join()
+        lavoro = threading.Thread(target=lavora_su_una_gpu, args=(numero_gpu, dati_comuni))
+        lavoro.start()
+        lavori.append(lavoro)
+    for lavoro in lavori:
+        lavoro.join()
     print("fatto", flush=True)
