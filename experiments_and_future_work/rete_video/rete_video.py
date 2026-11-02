@@ -18,6 +18,7 @@ if shutil.which("ffprobe") is None:  # il lettore video usa ffmpeg/ffprobe: buil
 ambiente = dict(os.environ)
 ambiente["PYTHONPATH"] = "/tmp/repo/src"
 # =====
+sys.stdout.reconfigure(line_buffering=True)   # anche le stampe senza flush arrivano subito nel log
 
 """D68 strada B, GPU: R(2+1)D-18 (Kinetics-400) fine-tunata con 5 uscite sì/no indipendenti (violenza, arma, arma
 da fuoco, coltello, scippo) invece della sola violenza di training/finetune_rgb. Le armi di tipo ignoto (UCF

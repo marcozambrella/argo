@@ -18,6 +18,7 @@ if shutil.which("ffprobe") is None:  # il lettore video usa ffmpeg/ffprobe: buil
 ambiente = dict(os.environ)
 ambiente["PYTHONPATH"] = "/tmp/repo/src"
 # =====
+sys.stdout.reconfigure(line_buffering=True)   # anche le stampe senza flush arrivano subito nel log
 
 """D68 strada A, solo CPU: i ritagli delle mani presi DAI VIDEO (D44 li prendeva da foto di armi e sui video non
 discriminava). Per ogni finestra scelta: le 4 persone che vede il classificatore, 6 frame su 40, 2 polsi →

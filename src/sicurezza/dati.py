@@ -752,7 +752,9 @@ def prepara_video_esperimenti(cartella_input: Path, cartella_dati: Path) -> dict
     (dataset argo-snatch10-ridotto, cartella pezzi_normali/). Ritorna id_clip → ClipAnnotata."""
     # niente collegamenti a /kaggle/input: con Python ≥ 3.13 il glob "**" non entra nelle cartelle collegate (01/11:
     # così l'estrazione dei dati nuovi aveva perso scippi Kaggle e WVD). Elenchi separati e poi uniti.
-    prepara_normali(cartella_input, cartella_dati, True)
+    # Niente HiEve: il suo server (02/11) va a ~9 KB/s, 1,5 GB = giorni, e il timeout non scatta perché i dati
+    # arrivano. Le clip HiEve restano senza video: i modelli dei pixel non le vedono e il confronto le salta.
+    prepara_normali(cartella_input, cartella_dati, False)
     sorgenti_input = []
     for nome in SORGENTI_ESPERIMENTI:
         if nome != "normali_folla":
