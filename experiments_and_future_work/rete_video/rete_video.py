@@ -331,6 +331,7 @@ if __name__ == "__main__":
     torch.save(stato_in_mezza_precisione(base), uscita / "ultima.pt")
     (uscita / "storia.json").write_text(json.dumps(storia, indent=1))
     os.remove(percorso_train)
+    os.remove(percorso_val)   # 8,4 GB a 224 px: b2 v2 è stata uccisa (RAM) nei punteggi finali
 
     # punteggi per il confronto: una finestra ogni due (inizio multiplo di 20 frame) di val e test, un flusso
     # ffmpeg per clip. Il confronto usa solo le finestre che hanno tutti i modelli.
