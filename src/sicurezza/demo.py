@@ -301,6 +301,65 @@ class RamoPixel:
         return float(1 / (1 + np.exp(-logit)))
 
 
+# Rete video a 5 uscite (D70; addestrata in D68, kernel experiments_and_future_work/rete_video del branch
+# esperimenti-armi-scippi): R(2+1)D-18 fine-tunata con violenza, arma, fuoco, coltello, scippo sì/no. Due copie:
+# b1 (112 px) decide lo SCIPPO, chiamata ogni 0,8 s; b2 (224 px) dà il WARNING ARMA al posto del detector, chiamata
+# ogni 4 s (sulle armi non perde niente rispetto a ogni 0,4 s; gli scippi durano 2-3 s e vogliono b1 spesso).
+# Pezzi da 10 s mai visti, misura incrociata: b2 arma 0,78 / fuoco 0,75 / coltello 0,84; b1 scippo 0,82.
+# Soglie scelte sul val alle stesse cadenze (runs/esperimenti_armi_scippi/diradate/confronto_b1.json e _b2.json).
+# Preparazione identica al kernel: frame a (lato·8/7) di altezza in 4:3, 16 dei 40, ritaglio centrale lato×lato.
+USCITE_RETE_VIDEO = ("violenza", "arma", "fuoco", "coltello", "scippo")
+PASSO_RETE_SCIPPI = 20     # frame: b1 ogni 0,8 s
+PASSO_RETE_ARMI = 100      # frame: b2 ogni 4 s
+SOGLIA_SCIPPO_B1 = 0.0715  # test 0,91, recall 0,94, falsi allarmi sulle folle 5% dei pezzi da 10 s
+SOGLIA_ARMA_B2 = 0.3467    # test 0,77, recall 0,64, falsi allarmi sulle folle 14%
+
+
+class ReteVideoArmiScippi:
+    def __init__(self, percorso_rete: str, lato: int, dispositivo: str = "cpu"):
+        import torchvision
+        self.rete = torchvision.models.video.r2plus1d_18(weights=None)
+        self.rete.fc = torch.nn.Linear(512, len(USCITE_RETE_VIDEO))
+        stato_float = {}
+        for chiave, valore in torch.load(percorso_rete, map_location="cpu").items():
+            stato_float[chiave] = valore.float()   # il kernel salva in mezza precisione
+        self.rete.load_state_dict(stato_float)
+        self.rete = self.rete.to(dispositivo).eval()
+        self.dispositivo = dispositivo
+        self.lato = lato
+        self.altezza = lato * 8 // 7                                 # 128 per 112, 256 per 224
+        self.larghezza = self.altezza * 4 // 3 + (self.altezza * 4 // 3) % 2   # 170 per 112, 342 per 224
+
+    def riduci(self, frame: np.ndarray) -> np.ndarray:
+        """Frame BGR del lettore → RGB alla misura del kernel (bicubico come `scale=` di ffmpeg)."""
+        ridotto = cv2.resize(frame, (self.larghezza, self.altezza), interpolation=cv2.INTER_CUBIC)
+        return cv2.cvtColor(ridotto, cv2.COLOR_BGR2RGB)
+
+    @torch.no_grad()
+    def probabilita(self, frame_ridotti: list) -> dict:
+        scelti = np.linspace(0, len(frame_ridotti) - 1, FRAME_PIXEL).round().astype(int)
+        frame_scelti = []
+        for indice in scelti:
+            frame_scelti.append(frame_ridotti[indice])
+        y = (self.altezza - self.lato) // 2
+        x = (self.larghezza - self.lato) // 2
+        ritagli = np.stack(frame_scelti)[:, y:y + self.lato, x:x + self.lato]
+        ingresso = (ritagli.astype(np.float32) / 255 - MEDIA_KINETICS) / DEVIAZIONE_KINETICS
+        ingresso = torch.from_numpy(ingresso).permute(3, 0, 1, 2)[None].to(self.dispositivo)
+        valori = torch.sigmoid(self.rete(ingresso))[0].cpu().numpy()
+        risultato = {}
+        for numero, nome in enumerate(USCITE_RETE_VIDEO):
+            risultato[nome] = float(valori[numero])
+        return risultato
+
+
+def classe_con_scippo(classe: str, allarme_scippo: bool) -> str:
+    """D70: lo scippo lo decide b1; la violenza con arma resta (è più grave)."""
+    if allarme_scippo and classe != "violenza_con_arma":
+        return "scippo"
+    return classe
+
+
 def fondi_con_pixel(probabilita: np.ndarray, probabilita_pixel: float) -> np.ndarray:
     """4 classi con la violenza = media tra pixel e scheletri; dentro i due gruppi (classi violente / non violente)
     restano le proporzioni degli scheletri."""
@@ -386,14 +445,17 @@ class AnalisiFlusso:
     del classificatore (D3). percorso_classificatore: un checkpoint, oppure una lista di checkpoint di cui fare la
     media (DA DECIDERE 22 d). percorso_testa_pixel: con la testa RGB, fusione pixel + scheletri sulla violenza (D48).
     finestre_di_fila, media_mobile_allarme: regola dell'ALLARME VIOLENZA (D52). solo_scheletri: disegno su fondo nero
-    (video pubblici dei dataset, D58). pannello_nel_frame: False nel pannello web, che mostra le classi per conto suo."""
+    (video pubblici dei dataset, D58). pannello_nel_frame: False nel pannello web, che mostra le classi per conto suo.
+    percorso_rete_scippi, percorso_rete_armi: le reti video b1 e b2 (D70): b1 decide lo scippo, b2 dà il WARNING
+    ARMA al posto del detector (che resta per i riquadri e per i nodi arma degli scheletri)."""
 
     def __init__(self, percorso_classificatore=None, percorso_modello_armi=None,
                  percorso_modello_pose: str = MODELLO_POSE_PREDEFINITO, dispositivo: str = "cpu",
                  taratura=None, percorso_modello_mani=None,
                  tracker: str = TRACKER_PREDEFINITO, percorso_testa_pixel=None,
                  finestre_di_fila: int = FINESTRE_DI_FILA_ALLARME, media_mobile_allarme: int = MEDIA_MOBILE_ALLARME,
-                 percorso_rete_pixel=None, solo_scheletri: bool = False, pannello_nel_frame: bool = True):
+                 percorso_rete_pixel=None, solo_scheletri: bool = False, pannello_nel_frame: bool = True,
+                 percorso_rete_scippi=None, percorso_rete_armi=None):
         # regola del WARNING ARMA: i valori provvisori del piano, sostituiti da quelli della taratura se c'è
         self.regola = {"soglia_confidenza": SOGLIA_CONFIDENZA_ARMA, "frame_minimi": FRAME_MINIMI_CON_ARMA,
                        "vicinanza": VICINANZA_PREDEFINITA}
@@ -421,6 +483,17 @@ class AnalisiFlusso:
             self.ramo_pixel = RamoPixel(percorso_testa_pixel, dispositivo, percorso_rete_pixel)
         self.allarme_violenza = AllarmeViolenza(finestre_di_fila, media_mobile_allarme,
                                                 con_pixel=self.ramo_pixel is not None)
+        # D70: le reti video b1 (scippi) e b2 (armi), con i loro ultimi 40 frame ridotti e l'ultimo risultato
+        self.rete_scippi = None
+        self.rete_armi = None
+        if percorso_rete_scippi and len(self.classificatori) > 0:
+            self.rete_scippi = ReteVideoArmiScippi(percorso_rete_scippi, 112, dispositivo)
+        if percorso_rete_armi and len(self.classificatori) > 0:
+            self.rete_armi = ReteVideoArmiScippi(percorso_rete_armi, 224, dispositivo)
+        self.ridotti_scippi = deque(maxlen=FRAME_PER_FINESTRA)
+        self.ridotti_armi = deque(maxlen=FRAME_PER_FINESTRA)
+        self.ultima_scippi = None
+        self.ultima_armi = None
         self.solo_scheletri = solo_scheletri
         self.pannello_nel_frame = pannello_nel_frame
         self.ultimi_frame = deque(maxlen=FRAME_PER_FINESTRA)   # (persone, armi) degli ultimi 40 frame
@@ -435,6 +508,10 @@ class AnalisiFlusso:
         self.ultimi_frame.append((persone, armi))
         if self.ramo_pixel:
             self.ultimi_ridotti.append(riduci_per_pixel(frame))
+        if self.rete_scippi:
+            self.ridotti_scippi.append(self.rete_scippi.riduci(frame))
+        if self.rete_armi:
+            self.ridotti_armi.append(self.rete_armi.riduci(frame))
         inizio_finestra = self.indice_frame - FRAME_PER_FINESTRA + 1
         evento = None
         if inizio_finestra >= 0 and inizio_finestra % PASSO_FINESTRE == 0:
@@ -474,12 +551,28 @@ class AnalisiFlusso:
             return evento
         nodi, maschera, classe_arma = costruisci_finestra(timeline, 0)
         probabilita = probabilita_media(self.classificatori, nodi, maschera, classe_arma, self.dispositivo)
+        # D70: b2 ogni 4 s e b1 ogni 0,8 s; tra una chiamata e l'altra vale l'ultimo risultato
+        if self.rete_armi and inizio_finestra % PASSO_RETE_ARMI == 0:
+            self.ultima_armi = self.rete_armi.probabilita(list(self.ridotti_armi))
+        if self.rete_scippi and inizio_finestra % PASSO_RETE_SCIPPI == 0:
+            self.ultima_scippi = self.rete_scippi.probabilita(list(self.ridotti_scippi))
+        if self.ultima_armi is not None:
+            warning = self.ultima_armi["arma"] >= SOGLIA_ARMA_B2
+        allarme_scippo = self.ultima_scippi is not None and self.ultima_scippi["scippo"] >= SOGLIA_SCIPPO_B1
         if self.ramo_pixel:
             probabilita_pixel = self.ramo_pixel.probabilita_violenza(list(self.ultimi_ridotti))
             probabilita = fondi_con_pixel(probabilita, probabilita_pixel)
-            classe = classe_finale_con_pixel(probabilita, warning)
+        # con b1 lo scippo dello ST-GCN non sceglie più la classe (le probabilità salvate restano quelle vere)
+        per_la_classe = probabilita
+        if self.rete_scippi:
+            per_la_classe = probabilita.copy()
+            per_la_classe[INDICE_CLASSE["scippo"]] = 0
+        if self.ramo_pixel:
+            classe = classe_finale_con_pixel(per_la_classe, warning)
         else:
-            classe = classe_finale(probabilita, warning)
+            classe = classe_finale(per_la_classe, warning)
+        if self.rete_scippi:
+            classe = classe_con_scippo(classe, allarme_scippo)
         allarme = self.allarme_violenza.aggiorna(probabilita)
         self.decisione = {"probabilita": probabilita, "classe": classe, "warning": warning, "allarme": allarme}
         arrotondate = np.round(probabilita, 4).tolist()
@@ -490,6 +583,12 @@ class AnalisiFlusso:
                        "probabilita": probabilita_per_classe})
         if self.ramo_pixel:
             evento["probabilita_violenza_pixel"] = round(probabilita_pixel, 4)
+        if self.ultima_armi is not None:
+            evento["probabilita_arma_video"] = round(self.ultima_armi["arma"], 4)
+        if self.rete_scippi:
+            evento["allarme_scippo"] = allarme_scippo
+            if self.ultima_scippi is not None:
+                evento["probabilita_scippo_video"] = round(self.ultima_scippi["scippo"], 4)
         return evento
 
 
@@ -530,14 +629,16 @@ def analizza_video(percorso_video: str, percorso_classificatore, cartella_uscita
                    percorso_modello_mani=None, tracker: str = TRACKER_PREDEFINITO,
                    percorso_testa_pixel=None, finestre_di_fila: int = FINESTRE_DI_FILA_ALLARME,
                    media_mobile_allarme: int = MEDIA_MOBILE_ALLARME, percorso_rete_pixel=None,
-                   solo_scheletri: bool = False, pannello_nel_frame: bool = True) -> list:
+                   solo_scheletri: bool = False, pannello_nel_frame: bool = True,
+                   percorso_rete_scippi=None, percorso_rete_armi=None) -> list:
     """Un video → video_annotato.mp4, eventi.json, probabilita.csv e keypoint.jsonl (opzioni come `AnalisiFlusso`)."""
     cartella_uscita = Path(cartella_uscita)
     cartella_uscita.mkdir(parents=True, exist_ok=True)
     info = leggi_info_video(percorso_video)
     analisi = AnalisiFlusso(percorso_classificatore, percorso_modello_armi, percorso_modello_pose, dispositivo, taratura,
                             percorso_modello_mani, tracker, percorso_testa_pixel, finestre_di_fila, media_mobile_allarme,
-                            percorso_rete_pixel, solo_scheletri, pannello_nel_frame)
+                            percorso_rete_pixel, solo_scheletri, pannello_nel_frame, percorso_rete_scippi,
+                            percorso_rete_armi)
     scrittore = ScrittoreVideo(cartella_uscita / "video_annotato.mp4", info.larghezza, info.altezza)
     eventi = []
     with open(cartella_uscita / "keypoint.jsonl", "w") as file_keypoint:
@@ -569,6 +670,8 @@ def comando_analizza_video(argomenti=None) -> None:
                              "fusione pixel + scheletri sulla violenza (D48)")
     parser.add_argument("--rete-pixel", default=None,
                         help="rete_violenza.pt fine-tunata (D53), da usare con la sua --testa-pixel testa_violenza.npz")
+    parser.add_argument("--rete-scippi", default=None, help="rete_scippi_b1.pt: decide lo scippo (D70)")
+    parser.add_argument("--rete-armi", default=None, help="rete_armi_b2.pt: WARNING ARMA al posto del detector (D70)")
     parser.add_argument("--finestre-di-fila", type=int, default=FINESTRE_DI_FILA_ALLARME,
                         help="ALLARME VIOLENZA dopo tante finestre violente di fila (D52)")
     parser.add_argument("--media-mobile", type=int, default=MEDIA_MOBILE_ALLARME,
@@ -585,7 +688,7 @@ def comando_analizza_video(argomenti=None) -> None:
                             argomenti.modello_pose, argomenti.dispositivo, taratura, argomenti.modello_mani,
                             argomenti.tracker, argomenti.testa_pixel, argomenti.finestre_di_fila,
                             argomenti.media_mobile, argomenti.rete_pixel, argomenti.solo_scheletri,
-                            not argomenti.senza_pannello)
+                            not argomenti.senza_pannello, argomenti.rete_scippi, argomenti.rete_armi)
     print(f"{len(eventi)} finestre analizzate → {argomenti.uscita}")
 
 # ==============================================================================================================
@@ -921,10 +1024,12 @@ FILE_PAGINA = {"/": ("index.html", "text/html; charset=utf-8"), "/pannello.css":
                "/pannello.js": ("pannello.js", "text/javascript"), "/logo.svg": ("logo.svg", "image/svg+xml")}
 FILE_ARCHIVIO = {"video_annotato.mp4": "video/mp4", "eventi.json": "application/json", "probabilita.csv": "text/csv"}
 SECONDI_SEGMENTO = 10
-# I pesi del sistema consegnato (D60): allegati alla Release v1.0 del repo, si scaricano con `argo scarica-pesi`.
+# I pesi del sistema consegnato (D60): allegati alla Release del repo, si scaricano con `argo scarica-pesi`.
+# D70: Release v1.1 = quelli della v1.0 + le reti video b1 (scippi) e b2 (armi).
 FILE_PESI = {"classificatore": "stgcn.pt", "modello_armi": "armi_v3.pt", "rete_pixel": "rete_violenza.pt",
-             "testa_pixel": "testa_violenza.npz", "taratura": "taratura_warning.json"}
-URL_PESI = "https://github.com/marcozambrella/argo/releases/download/v1.0/"
+             "testa_pixel": "testa_violenza.npz", "taratura": "taratura_warning.json",
+             "rete_scippi": "rete_scippi_b1.pt", "rete_armi": "rete_armi_b2.pt"}
+URL_PESI = "https://github.com/marcozambrella/argo/releases/download/v1.1/"
 
 
 def ingresso_ffmpeg(sorgente: str, come_telecamera: bool = False) -> list[str]:
@@ -958,6 +1063,10 @@ def opzioni_dai_pesi(cartella: Path) -> dict:
         if "rete_pixel" in presenti and "testa_pixel" in presenti:
             opzioni["percorso_rete_pixel"] = str(presenti["rete_pixel"])
             opzioni["percorso_testa_pixel"] = str(presenti["testa_pixel"])
+        if "rete_scippi" in presenti:
+            opzioni["percorso_rete_scippi"] = str(presenti["rete_scippi"])
+        if "rete_armi" in presenti:
+            opzioni["percorso_rete_armi"] = str(presenti["rete_armi"])
     if "modello_armi" in presenti:
         opzioni["percorso_modello_armi"] = str(presenti["modello_armi"])
     if "taratura" in presenti:
