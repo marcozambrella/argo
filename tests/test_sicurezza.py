@@ -13,7 +13,7 @@ import yaml
 
 from sicurezza.dati import tratti_anomali, spezzone_dal_nome, finestre_anomalie, elenca_clip_snatch10, elenca_clip_snatch10_normali, elenca_clip_scippi_kaggle, elenca_clip_wvd, tipi_arma_wvd, tipi_arma_scvd, tipi_arma_da_frase, elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
 from sicurezza.demo import misura_incrociata, chiavi_finestre, tieni_finestre, punteggi_detector_finestra, pezzi_armi_scippi, accuratezza_bilanciata, scegli_soglia, intervallo_bootstrap, tipi_della_clip, Pannello, Telecamera, Videoregistratore, crea_server, ingresso_ffmpeg, leggi_telecamera, opzioni_dai_pesi, sorgente_senza_password, AllarmeViolenza, RamoPixel, classe_finale_con_pixel, fondi_con_pixel, riduci_per_pixel, pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
-from sicurezza.modelli import tracce_scelte_della_finestra, indici_degli_split, analizza_predizioni, ricuci_tracce, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
+from sicurezza.modelli import senza_detector, pose_a_meta_frame, tracce_scelte_della_finestra, indici_degli_split, analizza_predizioni, ricuci_tracce, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.strumenti import violenza_per_il_sito, risultati_per_il_sito, scarica_con_riprova, scegli_candidati_scippo_telefono, scegli_immagini_coco
 from sicurezza.visione import ritagli_della_finestra, mani_di_una_persona, precisione_media, probabilita_armi_in_mano, ritaglio_quadrato, ritagli_per_addestramento, prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
 
@@ -1614,6 +1614,31 @@ def test_wvd_classi_gruppi_e_tipi(tmp_path):
     assert tipi_arma_wvd("wvd/Cold/cold-Knife-MorningSunny") == ["coltello"]
     assert tipi_arma_wvd("wvd/Cold/cold-Hammer-MorningSunny") == []
     assert tipi_della_clip("wvd/Cold/cold-Knife-MorningSunny", {}, {}) == ["coltello"]
+
+
+def test_senza_detector_svuota_solo_le_armi():
+    nodi = np.ones((2, 4, NODI_PER_FRAME, CARATTERISTICHE_PER_NODO), np.float32)
+    maschera = np.ones((2, 4, NODI_PER_FRAME), bool)
+    classe_arma = np.ones((2, 4, 2), np.int8)
+    nuovi, nuova_maschera, nuova_classe = senza_detector(nodi, maschera, classe_arma)
+    assert nuovi[:, :, NODI_PERSONE:].sum() == 0 and not nuova_maschera[:, :, NODI_PERSONE:].any()
+    assert (nuovi[:, :, :NODI_PERSONE] == 1).all() and nuova_classe.sum() == 0
+    assert nodi.sum() == nodi.size        # l'originale non cambia
+
+
+def test_pose_a_meta_frame_interpola_e_rifà_le_velocità():
+    nodi = np.zeros((1, 5, NODI_PER_FRAME, CARATTERISTICHE_PER_NODO), np.float32)
+    maschera = np.ones((1, 5, NODI_PER_FRAME), bool)
+    for frame in range(5):
+        nodi[0, frame, 0, 0:3] = (frame * 2.0, 0.0, 0.9)    # il nodo 0 si muove di 2 a frame
+    nodi[0, 1, 0, 0:3] = (99.0, 99.0, 0.9)                   # frame dispari rumoroso: viene rifatto
+    nodi[0, 2, 1, 0:3] = (5.0, 5.0, 0.8)                     # nodo 1 visibile solo nel frame 2
+    nodi[0, 1, NODI_PERSONE, 0:3] = (7.0, 7.0, 0.5)          # arma nel frame 1: diventa quella del frame 0 (vuota)
+    nuovi, nuova_maschera, _ = pose_a_meta_frame(nodi, maschera, np.zeros((1, 5, 2), np.int8))
+    assert nuovi[0, 1, 0, 0] == 2.0 and nuovi[0, 3, 0, 0] == 6.0      # media dei frame pari vicini
+    assert nuovi[0, 1, 1, 0] == 5.0 and nuovi[0, 3, 1, 0] == 5.0      # visibile da un solo lato: si copia
+    assert nuovi[0, 1, NODI_PERSONE].sum() == 0
+    assert nuovi[0, 2, 0, 3] == 2.0 and nuovi[0, 0, 0, 3] == 0        # velocità rifatte dalle nuove posizioni
 
 
 def test_wvd_sempre_in_train():
