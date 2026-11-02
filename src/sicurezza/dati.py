@@ -784,6 +784,74 @@ def tipi_arma_wvd(id_clip: str) -> list:
 
 
 # ==============================================================================================================
+# anomalie (D69)
+# NWPU Campus, CHAD e ATMA-V dicono solo quali fotogrammi sono anomali. Marco guarda ogni tratto anomalo (spezzone
+# con 3 s di margine, `strumenti annota-anomalie`) e dà il tipo; qui si fanno le finestre per la rete video: il centro
+# di ogni finestra da 1,6 s decide l'etichetta. Dentro uno spezzone e su un fotogramma anomalo → il tipo di Marco
+# ("innocua" → normale); dentro uno spezzone ma non anomalo (il margine) → scartata; anomalo ma non segnato →
+# scartata; il resto è normale delle stesse telecamere (una finestra ogni 2 s). Un video con uno spezzone
+# "non_idoneo" esce tutto. Nomi degli spezzoni: <dataset>__<video>@<inizio s>-<fine s>.mp4.
+# ==============================================================================================================
+
+SECONDI_FINESTRA = FRAME_PER_FINESTRA / FPS_ANALISI
+PASSO_ANOMALIE_SECONDI = 0.4
+FINESTRE_ANOMALE_PER_NORMALE = 5   # normali: una finestra ogni 5 passi (2 s)
+
+
+def tratti_anomali(anomalo: np.ndarray, fps: float) -> list:
+    """(primo, ultimo) fotogramma di ogni tratto anomalo; i tratti separati da meno di 2 s si uniscono."""
+    tratti = []
+    indici = np.where(anomalo > 0)[0]
+    if len(indici) == 0:
+        return tratti
+    primo = int(indici[0])
+    precedente = int(indici[0])
+    for indice in indici[1:]:
+        indice = int(indice)
+        if indice - precedente > 2.0 * fps:
+            tratti.append((primo, precedente))
+            primo = indice
+        precedente = indice
+    tratti.append((primo, precedente))
+    return tratti
+
+
+def spezzone_dal_nome(nome: str) -> tuple:
+    """"chad__1_001_1@4.0-19.5.mp4" → ("chad__1_001_1", 4.0, 19.5)."""
+    chiave_video, tempi = Path(nome).stem.rsplit("@", 1)
+    inizio, fine = tempi.split("-")
+    return chiave_video, float(inizio), float(fine)
+
+
+def finestre_anomalie(anomalo: np.ndarray, fps: float, spezzoni: list) -> list:
+    """anomalo: 0/1 per fotogramma del video; spezzoni: (inizio s, fine s, tipo) segnati da Marco per questo video.
+    Ritorna (inizio finestra in secondi, tipo) con tipo "normale" o uno di quelli di Marco."""
+    for inizio_spezzone, fine_spezzone, tipo in spezzoni:
+        if tipo == "non_idoneo":
+            return []
+    finestre = []
+    durata = len(anomalo) / fps
+    passi = int((durata - SECONDI_FINESTRA) / PASSO_ANOMALIE_SECONDI) + 1
+    for passo in range(max(0, passi)):
+        inizio = passo * PASSO_ANOMALIE_SECONDI
+        centro = inizio + SECONDI_FINESTRA / 2
+        fotogramma = min(int(round(centro * fps)), len(anomalo) - 1)
+        tipo_spezzone = None
+        for inizio_spezzone, fine_spezzone, tipo in spezzoni:
+            if inizio_spezzone <= centro <= fine_spezzone:
+                tipo_spezzone = tipo
+        if tipo_spezzone is not None:
+            if anomalo[fotogramma] > 0:
+                if tipo_spezzone == "innocua":
+                    finestre.append((round(inizio, 2), "normale"))
+                else:
+                    finestre.append((round(inizio, 2), tipo_spezzone))
+        elif anomalo[fotogramma] == 0 and passo % FINESTRE_ANOMALE_PER_NORMALE == 0:
+            finestre.append((round(inizio, 2), "normale"))
+    return finestre
+
+
+# ==============================================================================================================
 # normali_folla (D41, D46)
 # Scene NORMALI in luoghi affollati (stazioni, metro, incroci, campus, strade), tutte classe "normale": la
 # confusione più grande del modello è normale↔violenza. Fonti scelte dalla ricerca del sub-agente

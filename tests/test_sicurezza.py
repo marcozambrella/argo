@@ -11,7 +11,7 @@ import urllib.request
 import torch
 import yaml
 
-from sicurezza.dati import elenca_clip_snatch10, elenca_clip_snatch10_normali, elenca_clip_scippi_kaggle, elenca_clip_wvd, tipi_arma_wvd, tipi_arma_scvd, tipi_arma_da_frase, elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
+from sicurezza.dati import tratti_anomali, spezzone_dal_nome, finestre_anomalie, elenca_clip_snatch10, elenca_clip_snatch10_normali, elenca_clip_scippi_kaggle, elenca_clip_wvd, tipi_arma_wvd, tipi_arma_scvd, tipi_arma_da_frase, elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
 from sicurezza.demo import misura_incrociata, chiavi_finestre, tieni_finestre, punteggi_detector_finestra, pezzi_armi_scippi, accuratezza_bilanciata, scegli_soglia, intervallo_bootstrap, tipi_della_clip, Pannello, Telecamera, Videoregistratore, crea_server, ingresso_ffmpeg, leggi_telecamera, opzioni_dai_pesi, sorgente_senza_password, AllarmeViolenza, RamoPixel, classe_finale_con_pixel, fondi_con_pixel, riduci_per_pixel, pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import tracce_scelte_della_finestra, indici_degli_split, analizza_predizioni, ricuci_tracce, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.strumenti import violenza_per_il_sito, risultati_per_il_sito, scarica_con_riprova, scegli_candidati_scippo_telefono, scegli_immagini_coco
@@ -1629,6 +1629,39 @@ def test_wvd_sempre_in_train():
     for nome in ("val", "test"):
         assert len(split[nome]) > 0
         assert not np.any(finestre["sorgente"][split[nome]] == "wvd")
+
+
+def test_tratti_anomali_uniscono_i_buchi_corti():
+    anomalo = np.zeros(300)
+    anomalo[10:20] = 1
+    anomalo[50:60] = 1      # buco di 30 fotogrammi = 1,2 s a 25 fps: si unisce
+    anomalo[200:210] = 1    # buco lungo: tratto a parte
+    assert tratti_anomali(anomalo, 25) == [(10, 59), (200, 209)]
+    assert tratti_anomali(np.zeros(10), 25) == []
+
+
+def test_spezzone_dal_nome():
+    assert spezzone_dal_nome("chad__1_001_1@4.0-19.5.mp4") == ("chad__1_001_1", 4.0, 19.5)
+
+
+def test_finestre_anomalie_tipi_margine_e_normali():
+    anomalo = np.zeros(25 * 40)          # 40 s a 25 fps
+    anomalo[25 * 10: 25 * 14] = 1        # anomalo da 10 a 14 s, spezzone con margine 7-17 s
+    anomalo[25 * 30: 25 * 32] = 1        # anomalo non segnato da Marco
+    finestre = finestre_anomalie(anomalo, 25, [(7.0, 17.0, "scippo")])
+    for inizio, tipo in finestre:
+        centro = inizio + 0.8
+        if tipo == "scippo":
+            assert 10 <= centro < 14
+        else:
+            assert tipo == "normale"
+            assert centro < 7 or 17 < centro < 30 or centro > 32     # niente margine né anomalie non segnate
+    tipi = [tipo for inizio, tipo in finestre]
+    assert tipi.count("scippo") == 10    # 4 s di anomalia, una finestra ogni 0,4 s
+    assert tipi.count("normale") > 5
+    assert finestre_anomalie(anomalo, 25, [(7.0, 17.0, "non_idoneo")]) == []
+    innocue = finestre_anomalie(anomalo, 25, [(7.0, 17.0, "innocua")])
+    assert set(tipo for inizio, tipo in innocue) == {"normale"}
 
 
 def test_ritagli_della_finestra_mani_delle_persone_scelte():
