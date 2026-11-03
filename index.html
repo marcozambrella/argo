@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Megrim&family=Alegreya:ital,wght@0,400;0,700;1,400&family=Alegreya+Sans+SC:wght@500;700;800&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="stile.css?v=20261026171005">
+  <link rel="stylesheet" href="stile.css?v=20261103232018">
   <script type="importmap">{ "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
     "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }</script>
@@ -41,9 +41,9 @@
       <p class="sottotitolo-hero">ARGO reads live CCTV and flags violence, weapons and snatching within seconds, so the operator acts on the moment instead of reviewing it afterwards.</p>
     </div>
     <figure class="video-hero">
-            <video src="video/argo-vetrina.mp4" poster="immagini/argo-vetrina-locandina.jpg" autoplay muted loop playsinline
-        aria-label="ARGO on six real videos: a pistol detected in a hand, two shop robberies on real CCTV, a street fight with a violence alarm, a metro crowd and a Roman alley"></video>
-      <figcaption>Six real videos, normal ones last. Everything drawn on them is the real output of ARGO: skeletons, the weapon box, violence and the alarm. Public clips (CC BY, Pexels).</figcaption>
+      <video src="video/argo-vetrina.mp4" poster="immagini/argo-vetrina-locandina.jpg" autoplay muted loop playsinline
+        aria-label="ARGO on three real videos: a metro crowd stays normal, an armed robbery in a shop raises the violence alarm, a Roman alley stays normal"></video>
+      <figcaption>Three real videos. The skeletons and the line at the bottom are the real output of ARGO 1.2. Public clips (CC BY, Pexels).</figcaption>
     </figure>
   </header>
 
@@ -96,7 +96,7 @@
     <section class="sezione" id="armi" aria-labelledby="titolo-armi">
       <p class="numero-sezione sc">III</p>
       <h2 id="titolo-armi">Weapons</h2>
-      <p class="testo-sezione">Statistics count crimes, not the tools used to commit them. The Ministry of the Interior sorts Rome’s crimes into 34 categories, and none of them separates offences committed with a weapon: nobody can say how many robberies on the metro involved a knife. A camera can see it, if someone is watching. That is why ARGO treats weapons as a separate signal: a dedicated detector looks for pistols, knives and rifles in every frame, and a weapon only counts when it is in someone’s hand.</p>
+      <p class="testo-sezione">Statistics count crimes, not the tools used to commit them. The Ministry of the Interior sorts Rome’s crimes into 34 categories, and none of them separates offences committed with a weapon: nobody can say how many robberies on the metro involved a knife. A camera can see it, if someone is watching. That is why ARGO treats weapons as a separate signal: a video network looks for pistols, knives and rifles every few seconds and raises its own WEAPON WARNING, whatever the rest of the scene looks like.</p>
       <div class="voci-viminale">
         <p class="nota">The 34 categories the Italian Ministry of the Interior uses to count crimes in Rome (2024). None of them separates crimes committed with a weapon.</p>
         <ol id="voci-viminale"></ol>
@@ -109,12 +109,14 @@
       <div class="testa-modello">
         <p class="numero-sezione sc">IV</p>
         <h2 id="titolo-come">How it works</h2>
-        <p class="testo-sezione">ARGO does not watch pixels the way a person does. It turns every frame into skeletons, reads 1.6 seconds of movement at a time, and asks two networks and a weapon detector the same question: is someone in danger right now?</p>
+        <p class="testo-sezione">ARGO does not watch pixels the way a person does. It turns every frame into skeletons, reads 1.6 seconds of movement at a time, and asks a skeleton network and two video networks the same question: is someone in danger right now?</p>
       </div>
       <div class="racconto-modello">
-        <div class="scena-modello" aria-hidden="true">
-          <canvas id="modello-3d"></canvas>
-          <div class="comandi-scena" id="comandi-scena"></div>
+        <div class="scena-modello">
+          <div class="tela-scena">
+            <canvas id="modello-3d" aria-hidden="true"></canvas>
+            <div class="comandi-scena" id="comandi-scena"></div>
+          </div>
           <p class="didascalia-scena" id="didascalia-scena"></p>
         </div>
         <ol class="passi-modello" id="passi-modello"></ol>
@@ -137,7 +139,7 @@
       <h2 id="titolo-futuro">Who would use it</h2>
       <p class="testo-sezione">ARGO is built for law enforcement and for whoever sits in front of the camera wall: metro and station control rooms, local police, private security. Instead of searching dozens of feeds, the operator receives the event: which camera, what is happening, how confident the system is. The same alert can be pushed by software to officers in the field, so the patrol closest to the platform knows before anyone calls. ARGO does not decide and does not intervene: every alarm is checked by a person.</p>
       <h2 class="titolo-secondario">Limits and next steps</h2>
-      <p class="testo-sezione">Fights are ARGO’s strength: 90% accuracy on 30-second clips it has never seen. Armed violence and snatching are still weak (F1 0.10 and 0.13) because public footage of them is scarce, and the WEAPON WARNING catches only a small share of real weapons. On a laptop the panel runs with a delay. Next: real footage from a transport operator, a zoom on the hands for small weapons, a larger detector on GPU, and alerts delivered straight to officers’ devices.</p>
+      <p class="testo-sezione">Fights are ARGO’s strength: 90% accuracy on 30-second clips it has never seen. Weapons and snatching are measured on few public clips, so their numbers have wide margins: the WEAPON WARNING catches about two thirds of armed segments, and snatching is measured mostly on one dataset. On a laptop the panel runs with a delay. Next: real footage from a transport operator, more snatchings and anomalies annotated on real cameras, and alerts delivered straight to officers’ devices.</p>
       <div class="scheda-misura">
         <b class="sc">Measured during development</b>
         <p>On a frame of Largo Argentina filmed from above, the YOLO26s detector finds 22 people and the YOLO26s-pose model 0: with small, distant people the pipeline can lose them.</p>
@@ -145,8 +147,8 @@
       <h2 class="titolo-secondario">Tools and artificial intelligence</h2>
       <p class="testo-sezione">Trained on Kaggle’s free GPUs, on public datasets only. Built with Claude Code as programming assistant: every design choice was made, measured and logged by the author, and every number on this page comes from a test the code can repeat.</p>
       <ul class="elenco-strumenti">
-        <li><b>Vision</b>Ultralytics YOLO26s-pose, fine-tuned YOLO26s (weapons), TrackTrack tracker</li>
-        <li><b>Models</b>PyTorch: ST-GCN (chosen) and Graph-Transformer; torchvision R(2+1)D-18 (Kinetics-400) fine-tuned on violence, on the pixels</li>
+        <li><b>Vision</b>Ultralytics YOLO26s-pose, TrackTrack tracker</li>
+        <li><b>Models</b>PyTorch: ST-GCN (chosen) and Graph-Transformer; torchvision R(2+1)D-18 (Kinetics-400) fine-tuned on the pixels at 112 and 224 px; ONNX Runtime on CPU</li>
         <li><b>Compute</b>Kaggle, 2 T4 GPUs</li>
         <li><b>Maps</b>OpenStreetMap (ODbL)</li>
       </ul>
@@ -171,6 +173,6 @@
     </div>
     <p class="codice"><a href="https://github.com/marcozambrella/argo">Code on GitHub</a></p>
   </footer>
-  <script type="module" src="app.js?v=20261026171005"></script>
+  <script type="module" src="app.js?v=20261103232018"></script>
 </body>
 </html>

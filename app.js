@@ -1,7 +1,7 @@
 // Avvio del sito. Nessun dato inventato: mappa e risultati leggono i file in dati/.
-import { riempiSegnaposto, quandoVisibile, webglDisponibile } from "./js/comune.js?v=20261026171005";
-import { creaElencoPassi } from "./js/passi-modello.js?v=20261026171005";
-import { avviaPulviscolo } from "./js/lampione.js?v=20261026171005";
+import { riempiSegnaposto, quandoVisibile, webglDisponibile } from "./js/comune.js?v=20261103232018";
+import { creaElencoPassi } from "./js/passi-modello.js?v=20261103232018";
+import { avviaPulviscolo } from "./js/lampione.js?v=20261103232018";
 
 riempiSegnaposto();
 creaElencoPassi();
@@ -20,8 +20,8 @@ for (const voce of VOCI_VIMINALE) elencoVoci.appendChild(Object.assign(document.
 
 const tre = webglDisponibile();
 if (tre) {
-  quandoVisibile(document.getElementById("roma"), () => import("./js/mappa-roma.js?v=20261026171005").then((modulo) => modulo.avviaMappa()));
-  quandoVisibile(document.getElementById("come-funziona"), () => import("./js/modello-3d.js?v=20261026171005").then((modulo) => modulo.avviaModello()));
+  quandoVisibile(document.getElementById("roma"), () => import("./js/mappa-roma.js?v=20261103232018").then((modulo) => modulo.avviaMappa()));
+  quandoVisibile(document.getElementById("come-funziona"), () => import("./js/modello-3d.js?v=20261103232018").then((modulo) => modulo.avviaModello()));
 } else {
   for (const id of ["mappa-3d", "modello-3d"]) {
     const tela = document.getElementById(id);
@@ -31,9 +31,7 @@ if (tre) {
 
 // Risultati (Marco, 23/10: "più specifiche, ora sono vaghe e solo su due categorie"). Due file: dati/risultati.json
 // (esportato dal codice) e dati/risultati-aggiuntivi.json (dal DIARIO e da runs/argo_casi_uso). Nessun numero inventato.
-const NOMI_CLASSI = { normale: "Normal", violenza: "Violence", violenza_con_arma: "Armed violence", scippo: "Snatching" };
 const percento = (valore) => `${Math.round(valore * 100)}%`;
-const numero = (valore) => valore.toLocaleString("en-GB");
 const barra = (valore, testo = percento(valore)) =>   // barra orizzontale a un solo colore: la lunghezza è il valore
   `<span class="barretta" role="img" aria-label="${testo}"><span style="width:${Math.max(valore * 100, 0.5)}%"></span></span><span class="valore">${testo}</span>`;
 
@@ -44,49 +42,34 @@ const sezioneViolenza = (r, extra) => {
     <table class="tabella-dati compatta"><tbody>${fonti}</tbody></table>`;
 };
 
-const sezioneClassi = (st) => {
-  const totali = st.matrice_confusione.map((riga) => riga.reduce((a, b) => a + b, 0));
-  const righe = st.classi.map((classe) => `<tr><th scope="row">${NOMI_CLASSI[classe]}</th>
-    <td class="cella-barra">${barra(st.recall[classe])}</td><td class="cella-barra">${barra(st.f1[classe], st.f1[classe].toFixed(2))}</td></tr>`).join("");
-  return `<h3>2 · All four classes</h3>
-    <p class="spiega">For each window the skeleton network picks one of four classes.</p>
-    <div class="scorre"><table class="tabella-dati"><thead><tr><th scope="col">Class</th>
-      <th scope="col">Recall: how many it finds</th><th scope="col">F1</th></tr></thead><tbody>${righe}</tbody></table></div>
-    <p class="nota">Armed violence and snatching are still weak: public footage of them is scarce (${numero(totali[3])} snatching windows in the test, against ${numero(totali[0])} normal ones).</p>`;
-};
-
-const sezioneArmi = (w, a) => {
-  const prove = a.prove.map((p) => `<tr><th scope="row">${p.prova}</th><td class="cella-barra">${barra(p.map50, p.map50.toFixed(2))}</td></tr>`).join("");
-  return `<h3>3 · Weapons</h3>
+const sezioneArmi = (v) => {
+  const prove = v.prove.map((p) => `<tr><th scope="row">${p.prova}</th><td class="cella-barra">${barra(p.accuratezza)}</td></tr>`).join("");
+  return `<h3>2 · Weapons and snatching</h3>
     <div class="due-colonne">
-      <div><p class="spiega">A dedicated detector looks for pistols, knives and rifles (mAP50, 1 = perfect).</p>
+      <div><p class="spiega">Is there a weapon? Is it a snatching? ARGO answers from the pixels: yes or no on 10-second segments.</p>
         <table class="tabella-dati compatta"><tbody>${prove}</tbody></table></div>
       <div class="scheda-misura"><b class="sc">The WEAPON WARNING</b>
-        <p>Fires when a weapon is near a wrist in at least ${w.frame_minimi} of 40 frames. Tuned to avoid false alarms: when it fires it is right ${percento(w.precisione)} of the time, but it still misses most weapons.</p></div>
+        <p>Fires when ARGO sees a weapon, whatever else is happening. It catches ${percento(v.warning_recall_armati)} of the armed segments and fires on ${percento(v.warning_falsi_folle)} of calm crowd segments.</p></div>
     </div>`;
 };
 
-const sezioneVelocita = () => `<h3>4 · Fast enough to act</h3>
+const sezioneVelocita = () => `<h3>3 · Fast enough to act</h3>
     <div class="cifre">
-      <p><b>Every 0.4 s</b><span>a new decision: ARGO never stops looking</span></p>
+      <p><b>Every 0.4&nbsp;s</b><span>a new decision: ARGO never stops looking</span></p>
       <p><b>Seconds</b><span>from the first blows to the VIOLENCE ALARM, while the fight is still on</span></p>
     </div>
-    <p class="spiega">ARGO is built to raise the alarm while something is happening, not to find it in tomorrow's footage. On a GPU it runs live; on an ordinary laptop it still works, just a little behind real time.</p>`;
+    <p class="spiega">ARGO is built to raise the alarm while something is happening, not to find it in tomorrow's footage. On a GPU it runs live; on an ordinary laptop it still works, with a delay that version 1.2 cut in half.</p>`;
 
 const glossario = `<details class="glossario"><summary class="sc">How to read these numbers</summary><dl>
     <dt>Window</dt><dd>40 frames, 1.6 s of video. A new one starts every 10 frames.</dd>
-    <dt>Recall</dt><dd>Of the real cases, how many ARGO finds.</dd>
-    <dt>Precision</dt><dd>Of the times ARGO says "this class", how many are right.</dd>
-    <dt>F1</dt><dd>One number that balances recall and precision (0 to 1).</dd>
     <dt>False alarms</dt><dd>Of the calm segments, how many raise an alarm anyway.</dd>
     <dt>Test set</dt><dd>15% of the videos, kept apart from the start: no video is ever in both training and test.</dd>
   </dl></details>`;
 
-Promise.all([fetch("dati/risultati.json?v=20261026171005").then((r) => r.json()), fetch("dati/risultati-aggiuntivi.json?v=20261026171005").then((r) => r.json())])
+Promise.all([fetch("dati/risultati.json?v=20261103232018").then((r) => r.json()), fetch("dati/risultati-aggiuntivi.json?v=20261103232018").then((r) => r.json())])
   .then(([risultati, extra]) => {
-    const st = risultati.modelli?.find((m) => m.nome === "ST-GCN");
-    if (!st || !risultati.violenza) return;   // stato vuoto dichiarato nell'HTML
-    for (const m of risultati.modelli) m.classi = risultati.classi;
+    // Marco, 04/11: nei risultati solo e sempre ARGO intero, mai le reti da sole
+    if (!risultati.violenza) return;   // stato vuoto dichiarato nell'HTML
     const s30 = risultati.violenza.sistema.pezzi_30s;
     const contenitore = document.getElementById("tabella-risultati");
     contenitore.className = "risultati";
@@ -94,9 +77,9 @@ Promise.all([fetch("dati/risultati.json?v=20261026171005").then((r) => r.json())
         <p><b>${percento(s30.accuratezza)}</b><span>violence yes/no on 30 s segments of never-seen videos <small>(95% CI ${percento(s30.ic95[0])}–${percento(s30.ic95[1])})</small></span></p>
         <p><b>${percento(s30.recall)}</b><span>of the fights raise an alarm</span></p>
         <p><b>${percento(s30.falsi_allarmi)}</b><span>false alarms on calm segments</span></p>
-        <p><b>${st.macro_f1.toFixed(2)}</b><span>macro-F1 on the four classes: armed violence and snatching are still weak</span></p>
+        <p><b>${percento(extra.reti_video.prove[0].accuratezza)}</b><span>weapon yes/no on 10 s segments of never-seen videos</span></p>
       </div>
-      <p class="spiega">Measured on videos kept apart from training.</p>
-      ${sezioneViolenza(risultati.violenza, extra)}${sezioneClassi(st)}${sezioneArmi(risultati.warning_arma, extra.rilevatore_armi)}
+      <p class="spiega">Measured on videos kept apart from training, with version 1.1; version 1.2 is just as accurate on violence and takes half the time.</p>
+      ${sezioneViolenza(risultati.violenza, extra)}${sezioneArmi(extra.reti_video)}
       ${sezioneVelocita()}${glossario}`;
   }).catch(() => {});

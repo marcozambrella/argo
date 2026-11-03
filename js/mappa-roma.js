@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import { casualeConSeme, coloreCss, formattaNumero, movimentoRidotto } from "./comune.js?v=20261026171005";
+import { casualeConSeme, coloreCss, formattaNumero, movimentoRidotto } from "./comune.js?v=20261103232018";
 
 const LON0 = 12.49, LAT0 = 41.89, SCALA = 100, COS = Math.cos(LAT0 * Math.PI / 180);
 const proietta = ([lon, lat]) => new THREE.Vector2((lon - LON0) * COS * SCALA, (lat - LAT0) * SCALA);
@@ -22,7 +22,7 @@ function puntoNelPoligono(punto, anello) {
 }
 
 export async function avviaMappa() {
-  const [dati, geo] = await Promise.all([fetch("dati/roma.json?v=20261026171005").then((r) => r.json()), fetch("dati/mappa-roma.geojson?v=20261026171005").then((r) => r.json())]);
+  const [dati, geo] = await Promise.all([fetch("dati/roma.json?v=20261103232018").then((r) => r.json()), fetch("dati/mappa-roma.geojson?v=20261103232018").then((r) => r.json())]);
   riempiLegenda(dati);
 
   const tela = document.getElementById("mappa-3d");
@@ -234,26 +234,39 @@ export async function avviaMappa() {
   tela.addEventListener("pointermove", scegli);
   tela.addEventListener("pointerdown", scegli);
 
+  // sul telefono la camera si allontana (×1,25); prima valeva solo all'avvio, ora anche girando il telefono
+  let lontana = false;
   function ridimensiona() {
     const { width, height } = area.getBoundingClientRect();
     renderer.setSize(width, height, false);
     etichette.setSize(width, height);
     camera.aspect = width / height;
-    camera.position.multiplyScalar(width < 600 ? 1.25 : 1);
+    const vuoleLontana = width < 600;
+    if (vuoleLontana !== lontana) {
+      camera.position.multiplyScalar(vuoleLontana ? 1.25 : 1 / 1.25);
+      lontana = vuoleLontana;
+    }
     camera.updateProjectionMatrix();
   }
   ridimensiona();
-  new ResizeObserver(() => {
-    const { width, height } = area.getBoundingClientRect();
-    renderer.setSize(width, height, false); etichette.setSize(width, height);
-    camera.aspect = width / height; camera.updateProjectionMatrix();
-  }).observe(area);
+  new ResizeObserver(ridimensiona).observe(area);
 
   // cubetti che cadono la prima volta, poi seguono gli interruttori
   const matrice = new THREE.Matrix4();
   const inizio = performance.now();
+  // i cubetti finiscono di cadere dopo l'ultimo ritardo + 0,7 s: da lì si aggiornano solo quando cambia un interruttore
+  const fineCaduta = (Object.keys(categorie).length - 1) * 0.6 + 39 * 0.03 + 0.7;
+  let giaFermi = false;
   function aggiornaCubetti() {
     const tempo = (performance.now() - inizio) / 1000;
+    let fermi = tempo > fineCaduta;
+    for (const stato of Object.values(categorie)) {
+      const obiettivo = stato.visibile ? 1 : 0;
+      if (Math.abs(obiettivo - stato.comparsa) > 0.001) fermi = false;
+    }
+    // ci si ferma dopo un ultimo aggiornamento a cubetti fermi (se un frame arriva tardi non restano a mezz'aria)
+    if (fermi && giaFermi) return;
+    giaFermi = fermi;
     let indiceCategoria = 0;
     for (const stato of Object.values(categorie)) {
       const obiettivo = stato.visibile ? 1 : 0;
@@ -270,14 +283,20 @@ export async function avviaMappa() {
       indiceCategoria++;
     }
   }
+  // si disegna solo quando la mappa si vede (prima girava per tutta la vita della pagina)
+  let inVista = false, inCorso = false;
   function anima() {
+    if (!inVista) { inCorso = false; return; }
     aggiornaCubetti();
     controlli.update();
     renderer.render(scena, camera);
     etichette.render(scena, camera);
     requestAnimationFrame(anima);
   }
-  anima();
+  new IntersectionObserver((voci) => {
+    inVista = voci[0].isIntersecting;
+    if (inVista && !inCorso) { inCorso = true; anima(); }
+  }).observe(tela);
 }
 
 function riempiLegenda(dati) {

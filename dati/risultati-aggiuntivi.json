@@ -1,5 +1,5 @@
 {
- "_nota": "Numeri che non escono da `strumenti esporta-risultati-sito`: presi dal DIARIO (D37, D48-D54) e da runs/argo_casi_uso/*/eventi.json (23/10/2026). Nessun numero inventato.",
+ "_nota": "Numeri che non escono da `strumenti esporta-risultati-sito`: presi dal DIARIO (D37, D48-D54) e da runs/argo_casi_uso/*/eventi.json (23/10/2026). Nessun numero inventato. Reti video (04/11): dal README v1.2.",
  "test": {
   "quota_video": 0.15,
   "fonti": [
@@ -32,24 +32,6 @@
   "solo_scheletri": 0.78,
   "solo_rete_video": 0.84,
   "insieme": 0.9
- },
- "rilevatore_armi": {
-  "modello": "YOLO26s, fine-tuned, version 3",
-  "prove": [
-   {
-    "prova": "Hand-held weapons (Sohas test)",
-    "map50": 0.77
-   },
-   {
-    "prova": "Real CCTV (US Mock Attack)",
-    "map50": 0.2
-   }
-  ],
-  "falsi_allarmi": {
-   "allarmi": 2,
-   "foto": 326,
-   "cosa": "photos of kitchen knives, phones and scissors (COCO)"
-  }
  },
  "folle_mai_viste": {
   "minimo": 0.82,
@@ -166,5 +148,28 @@
    "allarme": false,
    "esito": "mancato"
   }
- ]
+ ],
+ "reti_video": {
+  "_nota": "Dal README (D70, rete video b1 e b2: pezzi da 10 s, misura incrociata val↔test) e dai limiti del README.",
+  "prove": [
+   {
+    "prova": "Weapon",
+    "accuratezza": 0.79
+   },
+   {
+    "prova": "Firearm",
+    "accuratezza": 0.71
+   },
+   {
+    "prova": "Knife (only 12 clips)",
+    "accuratezza": 0.86
+   },
+   {
+    "prova": "Snatching",
+    "accuratezza": 0.82
+   }
+  ],
+  "warning_recall_armati": 0.64,
+  "warning_falsi_folle": 0.14
+ }
 }

@@ -1,37 +1,46 @@
-// "Come funziona" in 3D: dal fotogramma vero al manichino, al grafo delle ossa (ST-GCN, il modello consegnato), alla
-// pila di 40 frame, alla convoluzione nel tempo e al WARNING ARMA. Gli archi tutti-con-tutti del Graph-Transformer
-// scartato restano come confronto, spenti all'inizio. I punti sono REALI (dati/esempio-finestra.json: YOLO26s-pose + TrackTrack su clip Pexels);
-// profondità del manichino, pesi dell'attenzione e arma sono ILLUSTRATIVI e lo dicono le didascalie.
+// "Come funziona" in 3D: dal fotogramma vero al manichino, alle reti video b1 e b2 (due cubi di 16 fette), al grafo
+// delle ossa (ST-GCN), alla pila di 40 frame, alla convoluzione nel tempo e al WARNING ARMA di b2 (v1.2, 04/11: niente
+// detector, quindi niente pistola). Gli archi tutti-con-tutti del Graph-Transformer scartato restano come confronto,
+// spenti all'inizio. I punti sono REALI (dati/esempio-finestra.json: YOLO26s-pose + TrackTrack su clip Pexels), come le
+// decisioni (dati/esempio-decisione.json); la profondità del manichino è ILLUSTRATIVA e lo dice la didascalia.
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { coloreCss, movimentoRidotto } from "./comune.js?v=20261026171005";
-import { PASSI } from "./passi-modello.js?v=20261026171005";
+import { coloreCss, movimentoRidotto } from "./comune.js?v=20261103232018";
+import { PASSI } from "./passi-modello.js?v=20261103232018";
 
 const OSSA = [[15,13],[13,11],[16,14],[14,12],[11,12],[5,11],[6,12],[5,6],[5,7],[6,8],[7,9],[8,10],[1,2],[0,1],[0,2],[1,3],[2,4],[3,5],[4,6]];
-const POLSI = [9, 10];
 const SOGLIA_VISIBILITA = 0.3;
 const LARGO = 38.4, ALTO = 21.6;                // piano del fotogramma (1280×720 a scala di scena)
 const FRAME_PER_FINESTRA = 40, PASSO = 10, FPS = 25;
 const PASSO_PILA = 0.12, PASSO_TEMPO = 0.45, RAGGIO_PUNTO = 0.13;
-
-
+// reti video (src/sicurezza/demo.py, ReteVideoArmiScippi): 16 dei 40 frame, schiacciati a 4:3 alti lato·8/7 (b1 170×128),
+// poi il quadrato centrale di lato×lato: sul fotogramma originale è il centro largo 0,66 e alto 0,875.
+const FRAME_RETE_VIDEO = 16, PASSO_FETTE = 0.22;
+const ORIGINE = new THREE.Vector3();
+const RETI_VIDEO = {
+  b1: { lato: 112, secondi: 0.8, misura: 3.2, centro: [-6.5, -1, 6] },
+  b2: { lato: 224, secondi: 4, misura: 6.4, centro: [5.5, 0, 6] },
+};
+const RITAGLIO = { larghezza: 112 / 170, altezza: 112 / 128 };
+const SOGLIA_ARMA_B2 = 0.35;   // SOGLIA_ARMA_B2 = 0.3467 in demo.py, scelta sul val (D70)
+const SMORZAMENTO = 4.4;       // al secondo: le opacità e la camera fanno il 63% della strada in ~0,23 s
 
 const STATI = {   // opacità dei livelli; camera = spostamento dal fuoco (centro delle persone), "intero" = tutta l'immagine
   fotogramma: { immagine: 1, punti2d: 1, intero: true, camera: [0, -2, 36] },
   punti: { immagine: .25, punti3d: 1, ossa: .5, camera: [4, -4, 12] },
   manichino: { immagine: .08, manichini: 1, punti3d: .6, camera: [11, -2.5, 8] },
-  armi: { manichini: .85, punti3d: .5, armi: 1, camera: [2, -6, 11] },
-  grafo: { punti3d: 1, archi: 1, armi: .7, camera: [0, -8, 11] },
+  pixel: { immagine: .3, ritaglio: 1, reti: 1, intero: true, camera: [12, -9, 25], guarda: [0, 0, 4] },
+  grafo: { punti3d: 1, archi: 1, camera: [0, -8, 11] },
   pila: { pila: 1, camera: [26, 4, 8], guarda: [0, 0, 0] },
   tempo: { scie: 1, punti3d: .4, camera: [20, -3, 6], guarda: [0, 0, 0] },
   classi: { punti3d: .5, ossa: .5, camera: [0, -3, 14] },
-  warning: { punti3d: .6, ossa: .6, armi: 1, camera: [3, -5, 11] },
+  warning: { immagine: .2, reti: 1, intero: true, camera: [13, -5, 17], guarda: [5.5, 0, 5] },
 };
 
 export async function avviaModello() {
-  const dati = await fetch("dati/esempio-finestra.json?v=20261026171005").then((r) => r.json());
+  const dati = await fetch("dati/esempio-finestra.json?v=20261103232018").then((r) => r.json());
   // probabilità VERE del sistema consegnato per le finestre di questa clip (argo analizza-video, D49 + D53)
-  const decisioni = await fetch("dati/esempio-decisione.json?v=20261026171005").then((r) => r.json()).catch(() => null);
+  const decisioni = await fetch("dati/esempio-decisione.json?v=20261103232018").then((r) => r.json()).catch(() => null);
   const tela = document.getElementById("modello-3d");
   const renderer = new THREE.WebGLRenderer({ canvas: tela, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -55,6 +64,23 @@ export async function avviaModello() {
   for (const p of persone) for (const k of p.keypoint) if (k[2] >= SOGLIA_VISIBILITA) { fuoco.add(posizione(k)); contati++; }
   fuoco.divideScalar(Math.max(1, contati));
   const livelli = {};
+  // etichetta sotto un cubo: canvas grande (nitida anche su schermi ad alta densità), sprite largo 3,6 unità
+  const etichetta = (testo, mezzaMisura) => {
+    const tela2d = Object.assign(document.createElement("canvas"), { width: 1024, height: 128 });
+    const pennello = tela2d.getContext("2d");
+    pennello.fillStyle = coloreCss("--testo");
+    pennello.font = "500 64px 'IBM Plex Mono', monospace";
+    pennello.textAlign = "center";
+    pennello.textBaseline = "middle";
+    pennello.fillText(testo, 512, 64);
+    const trama = new THREE.CanvasTexture(tela2d);
+    trama.colorSpace = THREE.SRGBColorSpace;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: trama, transparent: true, depthTest: false }));
+    sprite.scale.set(4.8, 0.6, 1);
+    sprite.position.set(0, -mezzaMisura - 0.6, 0);
+    sprite.renderOrder = 10;   // sopra le fette trasparenti
+    return sprite;
+  };
   const nuovoLivello = (nome) => { const gruppo = new THREE.Group(); gruppo.userData.opacita = 0; livelli[nome] = gruppo; scena.add(gruppo); return gruppo; };
   const materialiDi = (gruppo) => { const materiali = new Set(); gruppo.traverse((o) => o.material && materiali.add(o.material)); return [...materiali]; };
 
@@ -99,72 +125,46 @@ export async function avviaModello() {
     }
   });
 
-  // arma ILLUSTRATIVA (Marco, 26/10): in questa clip non ci sono armi, quindi per far capire cosa fa il detector si
-  // mette una pistola stilizzata nella mano di un manichino, lungo l'avambraccio, con il riquadro rosso del detector.
-  const armi = nuovoLivello("armi");
-  const manoArmata = (() => {   // il polso visibile della persona più vicina, con il suo gomito
-    const candidati = [];
-    persone.forEach((persona) => {
-      for (const [polso, gomito] of [[10, 8], [9, 7]]) {
-        const kp = persona.keypoint[polso], kg = persona.keypoint[gomito];
-        if (kp[2] >= SOGLIA_VISIBILITA && kg[2] >= SOGLIA_VISIBILITA) {
-          const z = 0.9 + profondita[persona.id];
-          const visibili = persona.keypoint.filter((k) => k[2] >= SOGLIA_VISIBILITA);
-          const centroX = visibili.reduce((s, k) => s + posizione(k).x, 0) / visibili.length;
-          candidati.push({ z, polso: posizione(kp, z), gomito: posizione(kg, z), centroX });
-        }
-      }
-    });
-    candidati.sort((a, b) => b.z - a.z);
-    return candidati[0] ?? { polso: fuoco.clone().add(new THREE.Vector3(1, 0, 2)), gomito: fuoco.clone().add(new THREE.Vector3(0.4, -0.6, 2)), centroX: fuoco.x };
-  })();
-  const pistola = new THREE.Group();
-  const metallo = new THREE.MeshStandardMaterial({ color: 0x3b3936, roughness: .35, metalness: .7, transparent: true });
-  const scuro = new THREE.MeshStandardMaterial({ color: 0x1f1d1b, roughness: .6, metalness: .3, transparent: true });
-  const carrello = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.22, 0.16), metallo); carrello.position.set(0.3, 0.26, 0);
-  const canna = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.14, 12), scuro);
-  canna.rotation.z = Math.PI / 2; canna.position.set(0.85, 0.27, 0);
-  const impugnatura = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.52, 0.15), scuro);
-  impugnatura.position.set(-0.08, -0.02, 0); impugnatura.rotation.z = 0.28;
-  const guardia = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.022, 6, 16, Math.PI), metallo);
-  guardia.rotation.z = Math.PI; guardia.position.set(0.16, 0.1, 0);
-  const mirino = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.05, 0.05), scuro); mirino.position.set(0.74, 0.39, 0);
-  pistola.add(carrello, canna, impugnatura, guardia, mirino);
-  // l'impugnatura nel polso, la canna orizzontale e puntata in fuori rispetto al corpo (si legge meglio di una
-  // pistola che segue l'avambraccio verso terra), appena sollevata come quando si mira
-  pistola.scale.setScalar(1.35);
-  pistola.position.copy(manoArmata.polso);
-  if (manoArmata.polso.x < manoArmata.centroX) pistola.rotation.y = Math.PI;   // verso sinistra: impugnatura sempre in basso
-  pistola.rotation.z = 0.12;
-  armi.add(pistola);
-  // il riquadro del detector: un rettangolo nel piano dell'immagine attorno alla pistola, più l'etichetta
-  pistola.updateMatrixWorld(true);
-  const ingombro = new THREE.Box3().setFromObject(pistola).expandByScalar(0.14);
-  const centroArma = ingombro.getCenter(new THREE.Vector3()), misure = ingombro.getSize(new THREE.Vector3());
-  const riquadro = new THREE.Group(); riquadro.position.copy(centroArma); riquadro.position.z = ingombro.max.z;
-  const materialeArma = new THREE.MeshBasicMaterial({ color: colore("--rosso"), transparent: true });
-  const mezzi = [misure.x / 2, misure.y / 2], spessore = 0.05;   // quattro listelli: il bordo si vede anche da lontano
-  for (const [x, y, larghezza, altezza] of [[0, mezzi[1], misure.x, spessore], [0, -mezzi[1], misure.x, spessore],
-    [mezzi[0], 0, spessore, misure.y], [-mezzi[0], 0, spessore, misure.y]]) {
-    const listello = new THREE.Mesh(new THREE.PlaneGeometry(larghezza + spessore, altezza + spessore), materialeArma);
-    listello.position.set(x, y, 0); riquadro.add(listello);
-  }
-  const tela2d = Object.assign(document.createElement("canvas"), { width: 256, height: 64 });
-  const pennello = tela2d.getContext("2d");
-  pennello.fillStyle = coloreCss("--rosso"); pennello.fillRect(0, 0, 256, 64);
-  pennello.fillStyle = "#fff"; pennello.font = "700 40px 'Alegreya Sans SC', sans-serif"; pennello.textBaseline = "middle";
-  pennello.fillText("PISTOL", 20, 34);
-  const tramaEtichetta = new THREE.CanvasTexture(tela2d); tramaEtichetta.colorSpace = THREE.SRGBColorSpace;
-  const etichetta = new THREE.Sprite(new THREE.SpriteMaterial({ map: tramaEtichetta, transparent: true, depthTest: false }));
-  etichetta.scale.set(1.2, 0.3, 1); etichetta.position.set(-mezzi[0] + 0.6 - spessore / 2, mezzi[1] + 0.15 + spessore, 0);
-  riquadro.add(etichetta);
-  armi.add(riquadro);
-  const posizioniArmi = [centroArma];
-  // la camera, nei passi delle armi, guarda la mano
-  const versoArma = centroArma.clone().sub(fuoco);
-  for (const chiave of ["armi", "warning"]) {
-    STATI[chiave].guarda = versoArma.toArray();
-    STATI[chiave].camera = versoArma.clone().add(new THREE.Vector3(chiave === "armi" ? 1.6 : -1.4, -1.8, 5.5)).toArray();
+  // le reti video: il ritaglio centrale sul fotogramma e, davanti, un cubo di 16 fette per rete. Le fette usano il
+  // fotogramma mostrato (l'unico che abbiamo come immagine) alla risoluzione vera della rete: b1 si vede a quadretti.
+  const ritaglio = nuovoLivello("ritaglio");
+  const bordoRitaglio = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.PlaneGeometry(RITAGLIO.larghezza * LARGO, RITAGLIO.altezza * ALTO)),
+    new THREE.LineBasicMaterial({ color: colore("--luce"), transparent: true }));
+  bordoRitaglio.position.z = 0.05;
+  ritaglio.add(bordoRitaglio);
+  const reti = nuovoLivello("reti");
+  const cornici = {};
+  const immagineFotogramma = new Image();
+  immagineFotogramma.src = "immagini/fotogramma-vicolo.jpg";
+  await immagineFotogramma.decode().catch(() => null);
+  for (const [nome, rete] of Object.entries(RETI_VIDEO)) {
+    const tela = Object.assign(document.createElement("canvas"), { width: rete.lato, height: rete.lato });
+    const larghezzaRitaglio = RITAGLIO.larghezza * immagineFotogramma.naturalWidth;
+    const altezzaRitaglio = RITAGLIO.altezza * immagineFotogramma.naturalHeight;
+    tela.getContext("2d").drawImage(immagineFotogramma, (immagineFotogramma.naturalWidth - larghezzaRitaglio) / 2,
+      (immagineFotogramma.naturalHeight - altezzaRitaglio) / 2, larghezzaRitaglio, altezzaRitaglio, 0, 0, rete.lato, rete.lato);
+    const trama = new THREE.CanvasTexture(tela);
+    trama.colorSpace = THREE.SRGBColorSpace;
+    trama.magFilter = THREE.NearestFilter;
+    const cubo = new THREE.Group();
+    cubo.position.set(...rete.centro);
+    const fetta = new THREE.PlaneGeometry(rete.misura, rete.misura);
+    for (let i = 0; i < FRAME_RETE_VIDEO; i++) {
+      const materiale = new THREE.MeshBasicMaterial({ map: trama, transparent: true, depthWrite: false });
+      materiale.userData.opacitaBase = i === FRAME_RETE_VIDEO - 1 ? 1 : 0.1 + 0.25 * i / FRAME_RETE_VIDEO;
+      const piano = new THREE.Mesh(fetta, materiale);
+      piano.position.z = (i - FRAME_RETE_VIDEO + 1) * PASSO_FETTE;
+      cubo.add(piano);
+    }
+    const profonditaCubo = FRAME_RETE_VIDEO * PASSO_FETTE;
+    const cornice = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(rete.misura, rete.misura, profonditaCubo)),
+      new THREE.LineBasicMaterial({ color: colore("--gesso"), transparent: true }));
+    cornice.position.z = -profonditaCubo / 2 + PASSO_FETTE / 2;
+    cubo.add(cornice);
+    cubo.add(etichetta(`${nome} · ${rete.lato} px · every ${rete.secondi} s`, rete.misura / 2));
+    cornici[nome] = cornice;
+    reti.add(cubo);
   }
 
   // archi per tipo (stesso frame)
@@ -173,8 +173,6 @@ export async function avviaModello() {
     ossa: { nome: "Bones", colore: colore("--gesso"), opacita: .9 },
     stessa: { nome: "Same person", colore: colore("--tenue"), opacita: .12 },
     diverse: { nome: "Different people", colore: colore("--aggressioni"), opacita: .07 },
-    arma_polso: { nome: "Weapon–wrist", colore: colore("--rosso"), opacita: .5 },
-    arma_corpo: { nome: "Weapon–body", colore: colore("--rosso"), opacita: .08 },
   };
   const segmenti = Object.fromEntries(Object.keys(TIPI_ARCO).map((tipo) => [tipo, []]));
   const ossaInsieme = new Set(OSSA.map(([a, b]) => `${Math.min(a, b)}-${Math.max(a, b)}`));
@@ -185,7 +183,6 @@ export async function avviaModello() {
       if (a.persona === b.persona) tipo = ossaInsieme.has(`${Math.min(a.keypoint, b.keypoint)}-${Math.max(a.keypoint, b.keypoint)}`) ? "ossa" : "stessa";
       segmenti[tipo].push(a.punto, b.punto);
     }
-    for (const posizioneArma of posizioniArmi) segmenti[POLSI.includes(posizioniNodi[i].keypoint) ? "arma_polso" : "arma_corpo"].push(posizioneArma, posizioniNodi[i].punto);
   }
   const lineeArco = {};
   for (const [tipo, punti] of Object.entries(segmenti)) {
@@ -258,10 +255,11 @@ export async function avviaModello() {
   const didascalia = document.getElementById("didascalia-scena");
   // due gruppi di archi: le ossa (il grafo della ST-GCN) e i collegamenti tutti-con-tutti del Graph-Transformer scartato
   const GRUPPI_ARCO = { ossa: { nome: "Bones: the ST-GCN graph", tipi: ["ossa"] },
-    scartato: { nome: "All-to-all links: Graph-Transformer (discarded)", tipi: ["stessa", "diverse", "arma_polso", "arma_corpo"] } };
+    scartato: { nome: "All-to-all links: Graph-Transformer (discarded)", tipi: ["stessa", "diverse"] } };
   const gruppoDi = Object.fromEntries(Object.entries(GRUPPI_ARCO).flatMap(([gruppo, { tipi }]) => tipi.map((tipo) => [tipo, gruppo])));
   const visibilitaArchi = { ossa: true, scartato: false };
-  let frameConArma = 0;
+  // WARNING ARMA: si parte dalla risposta vera di b2 nella finestra scelta, il cursore la simula
+  let armaB2 = decisioni?.finestre?.[finestraScelta]?.probabilita_arma_video ?? 0;
   function mostraComandi(tipo) {
     comandi.replaceChildren();
     comandi.hidden = !tipo;
@@ -297,18 +295,19 @@ export async function avviaModello() {
       }
       scriviClassi();
     } else if (tipo === "warning") {
+      armaB2 = decisioni?.finestre?.[finestraScelta]?.probabilita_arma_video ?? 0;
       const etichetta = document.createElement("label");
-      const cursore = Object.assign(document.createElement("input"), { type: "range", min: 0, max: FRAME_PER_FINESTRA, value: frameConArma });
-      cursore.setAttribute("aria-label", "Frames with a weapon near a person (simulation)");
+      const cursore = Object.assign(document.createElement("input"), { type: "range", min: 0, max: 100, value: Math.round(armaB2 * 100) });
+      cursore.setAttribute("aria-label", "b2 weapon probability (simulation)");
       const uscita = document.createElement("output");
       const scrivi = () => {
-        const scatta = frameConArma >= 5;
-        uscita.textContent = `${frameConArma}/40 frames with a weapon nearby → ${scatta ? "WEAPON WARNING" : "no alarm"}`;
-        uscita.style.color = scatta ? coloreCss("--rosso") : "";
+        const scatta = armaB2 >= SOGLIA_ARMA_B2;
+        uscita.textContent = `b2 weapon ${Math.round(armaB2 * 100)}% · threshold 35% → ${scatta ? "WEAPON WARNING" : "no warning"}`;
+        uscita.classList.toggle("allarme", scatta);
       };
-      cursore.addEventListener("input", () => { frameConArma = Number(cursore.value); scrivi(); });
+      cursore.addEventListener("input", () => { armaB2 = Number(cursore.value) / 100; scrivi(); });
       scrivi();
-      etichetta.append("Simulation", cursore, uscita);
+      etichetta.append("b2", cursore, uscita);
       comandi.appendChild(etichetta);
     }
   }
@@ -324,9 +323,12 @@ export async function avviaModello() {
     mostraComandi(passo.comandi);
     document.querySelectorAll(".passo-modello").forEach((voce) => voce.classList.toggle("attivo", voce.dataset.chiave === chiave));
   }
+  // il passo attivo è quello a metà schermo; sul telefono la scena occupa la metà alta, quindi quello che passa sotto
+  let fascia = "-45% 0px -45% 0px";
+  if (matchMedia("(max-width: 960px)").matches) fascia = "-62% 0px -18% 0px";
   const osservatore = new IntersectionObserver((voci) => {
     for (const voce of voci) if (voce.isIntersecting) vaiA(voce.target.dataset.chiave);
-  }, { rootMargin: "-45% 0px -45% 0px" });
+  }, { rootMargin: fascia });
   document.querySelectorAll(".passo-modello").forEach((voce) => osservatore.observe(voce));
   vaiA("fotogramma");
 
@@ -341,30 +343,51 @@ export async function avviaModello() {
   ridimensiona();
 
   const posizioneCamera = new THREE.Vector3(0, -2, 36), bersaglio = new THREE.Vector3();
+  const versoCamera = new THREE.Vector3(), versoBersaglio = new THREE.Vector3();
   camera.position.copy(posizioneCamera);
   let interazioneUtente = false;
   controlli.addEventListener("start", () => { interazioneUtente = true; });
+  // i materiali di ogni livello (fissi dopo la costruzione) e i colori: calcolati una volta, non a ogni frame
+  const materialiDeiLivelli = {};
+  for (const [nome, gruppo] of Object.entries(livelli)) {
+    const materiali = new Set();
+    gruppo.traverse((oggetto) => { if (oggetto.material) materiali.add(oggetto.material); });
+    materialiDeiLivelli[nome] = [...materiali];
+  }
+  const COLORE_CORNICE = colore("--gesso"), COLORE_CHIAMATA = colore("--luce"), COLORE_ALLARME = colore("--rosso");
   const orologio = new THREE.Clock();
+  let inVista = false, inCorso = false;
   function anima() {
-    const t = orologio.getElapsedTime();
-    const velocita = movimentoRidotto() ? 1 : 0.07;
+    if (!inVista) { inCorso = false; return; }
+    const intervallo = Math.min(orologio.getDelta(), 0.1);
+    const t = orologio.elapsedTime;
+    // smorzamento legato al tempo: la stessa velocità a 30, 60 o 120 Hz
+    const passo = movimentoRidotto() ? 1 : 1 - Math.exp(-SMORZAMENTO * intervallo);
     for (const [nome, gruppo] of Object.entries(livelli)) {
       const obiettivo = statoCorrente[nome] ?? 0;
-      gruppo.userData.opacita += (obiettivo - gruppo.userData.opacita) * velocita;
+      gruppo.userData.opacita += (obiettivo - gruppo.userData.opacita) * passo;
       gruppo.visible = gruppo.userData.opacita > 0.01;
-      for (const materiale of materialiDi(gruppo)) materiale.opacity = gruppo.userData.opacita * (materiale.userData.opacitaBase ?? 1);
+      if (!gruppo.visible) continue;
+      for (const materiale of materialiDeiLivelli[nome]) materiale.opacity = gruppo.userData.opacita * (materiale.userData.opacitaBase ?? 1);
     }
     for (const [tipo, linee] of Object.entries(lineeArco)) linee.visible = visibilitaArchi[gruppoDi[tipo]];
-    if (chiaveCorrente === "warning") {
-      const allarme = frameConArma >= 5;
-      materialeArma.color.set(allarme ? coloreCss("--rosso") : coloreCss("--tenue"));
-      riquadro.scale.setScalar(allarme && !movimentoRidotto() ? 1 + 0.08 * Math.sin(t * 8) : 1);
-    } else { materialeArma.color.set(coloreCss("--rosso")); riquadro.scale.setScalar(1); }
+    // le reti video "chiamate" alla loro cadenza: la cornice si accende e si spegne in 0,4 s
+    for (const [nome, rete] of Object.entries(RETI_VIDEO)) {
+      const materiale = cornici[nome].material;
+      if (chiaveCorrente === "warning" && nome === "b2") {
+        materiale.color.copy(armaB2 >= SOGLIA_ARMA_B2 ? COLORE_ALLARME : COLORE_CORNICE);
+        continue;
+      }
+      const accensione = movimentoRidotto() ? 0 : Math.max(0, 1 - (t % rete.secondi) / 0.4);
+      materiale.color.copy(COLORE_CORNICE).lerp(COLORE_CHIAMATA, accensione);
+    }
     if (!interazioneUtente) {
-      const centro = statoCorrente.intero ? new THREE.Vector3() : fuoco;
-      posizioneCamera.lerp(centro.clone().add(new THREE.Vector3(...statoCorrente.camera)), velocita);
+      const centro = statoCorrente.intero ? ORIGINE : fuoco;
+      versoCamera.set(...statoCorrente.camera).add(centro);
+      posizioneCamera.lerp(versoCamera, passo);
       camera.position.copy(posizioneCamera);
-      bersaglio.lerp(centro.clone().add(new THREE.Vector3(...(statoCorrente.guarda ?? [0, 0, 0]))), velocita);
+      versoBersaglio.set(...(statoCorrente.guarda ?? [0, 0, 0])).add(centro);
+      bersaglio.lerp(versoBersaglio, passo);
       controlli.target.copy(bersaglio);
     }
     controlli.update();
@@ -373,5 +396,9 @@ export async function avviaModello() {
   }
   // quando si cambia passo la camera torna a seguire il racconto
   new MutationObserver(() => { interazioneUtente = false; }).observe(didascalia, { childList: true, characterData: true, subtree: true });
-  anima();
+  // si disegna solo quando la scena si vede (prima girava per tutta la vita della pagina)
+  new IntersectionObserver((voci) => {
+    inVista = voci[0].isIntersecting;
+    if (inVista && !inCorso) { inCorso = true; orologio.getDelta(); anima(); }
+  }).observe(tela);
 }
