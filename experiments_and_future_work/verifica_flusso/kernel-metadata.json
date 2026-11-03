@@ -1,0 +1,24 @@
+{
+  "id": "KAGGLE_UTENTE/argo-verifica-flusso-VARIANTEPARTE",
+  "title": "argo verifica flusso VARIANTEPARTE",
+  "code_file": "verifica_flusso.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": true,
+  "dataset_sources": [
+    "vulamnguyen/rwf2000",
+    "mohamedtariki/vsd-cctv-fights",
+    "toluwaniaremu/smartcity-cctv-violence-detection-dataset-scvd",
+    "bypktt/ucf-crimes",
+    "aniketsahu09/chain-snatching-cctv-dataset",
+    "gauravsingh72509/snatching-datasets",
+    "manutejachindukuru/snatching"
+  ],
+  "kernel_sources": [
+    "marcozambrella/argo-finestre-v3"
+  ],
+  "competition_sources": [],
+  "model_sources": []
+}

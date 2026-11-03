@@ -12,7 +12,7 @@ import torch
 import yaml
 
 from sicurezza.dati import elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
-from sicurezza.demo import ReteVideoArmiScippi, classe_con_scippo, Pannello, Telecamera, Videoregistratore, crea_server, ingresso_ffmpeg, leggi_telecamera, opzioni_dai_pesi, sorgente_senza_password, AllarmeViolenza, RamoPixel, classe_finale_con_pixel, fondi_con_pixel, riduci_per_pixel, pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
+from sicurezza.demo import ReteVideoArmiScippi, classe_con_scippo, Pannello, Telecamera, Videoregistratore, crea_server, ingresso_ffmpeg, leggi_telecamera, opzioni_dai_pesi, descrivi_modalita, sorgente_senza_password, AllarmeViolenza, classe_finale_con_pixel, fondi_con_pixel, pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import analizza_predizioni, ricuci_tracce, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.strumenti import violenza_per_il_sito, risultati_per_il_sito, scarica_con_riprova, scegli_candidati_scippo_telefono, scegli_immagini_coco
 from sicurezza.visione import mani_di_una_persona, precisione_media, probabilita_armi_in_mano, ritaglio_quadrato, ritagli_per_addestramento, prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
@@ -1273,42 +1273,6 @@ def test_classe_finale_con_pixel():
     assert classe_finale_con_pixel(np.array([0.3, 0.2, 0.1, 0.4]), True) == "scippo"
 
 
-@pytest.mark.skipif(not PESI_KINETICS.exists(), reason="pesi R(2+1)D-18 Kinetics non scaricati da torchvision")
-def test_ramo_pixel_come_nei_kernel(tmp_path):
-    """Stessa preparazione dei kernel prova-rgb (16 frame dei 40, ritaglio 112, normalizzazione Kinetics)."""
-    generatore = np.random.default_rng(0)
-    np.savez(tmp_path / "testa.npz", media=generatore.normal(0, 1, 512), scala=generatore.uniform(0.5, 2, 512),
-             pesi=generatore.normal(0, 0.05, 512).astype(np.float32), bias=np.float32(0.1))
-    ramo = RamoPixel(str(tmp_path / "testa.npz"))
-    frame = [riduci_per_pixel(generatore.integers(0, 256, (240, 320, 3), dtype=np.uint8)) for _ in range(40)]
-    assert frame[0].shape == (128, 171, 3)
-    finestra = np.stack(frame)            # come `vettori_clip` di experiments_and_future_work/prova_rgb_clip
-    scelti = finestra[np.linspace(0, 39, 16).round().astype(int), 8:120, 29:141]
-    media = torch.tensor([0.43216, 0.394666, 0.37645]).view(1, 3, 1, 1, 1)
-    deviazione = torch.tensor([0.22803, 0.22145, 0.216989]).view(1, 3, 1, 1, 1)
-    with torch.no_grad():
-        atteso = ramo.rete((torch.from_numpy(scelti.copy()).permute(3, 0, 1, 2)[None].float() / 255 - media) / deviazione)[0]
-    vettore = ramo.vettore(frame)
-    np.testing.assert_allclose(vettore, atteso.numpy(), atol=1e-4)
-    logit = ((vettore - ramo.testa["media"]) / ramo.testa["scala"]) @ ramo.testa["pesi"] + 0.1
-    assert ramo.probabilita_violenza(frame) == pytest.approx(1 / (1 + np.exp(-logit)), abs=1e-5)
-
-
-@pytest.mark.skipif(not (PESI_POSE.exists() and PESI_KINETICS.exists()), reason="pesi pose o Kinetics mancanti")
-def test_demo_con_ramo_pixel(tmp_path):
-    iperparametri = {"dimensione": 32, "blocchi": 1}
-    torch.save({"nome_modello": "graph_transformer", "iperparametri_modello": iperparametri,
-                "stato": crea_modello("graph_transformer", **iperparametri).state_dict()}, tmp_path / "c.pt")
-    np.savez(tmp_path / "testa.npz", media=np.zeros(512), scala=np.ones(512), pesi=np.zeros(512, np.float32),
-             bias=np.float32(0))                                            # pixel = 0,5 sempre
-    eventi = analizza_video(str(VIDEO_PERSONE), str(tmp_path / "c.pt"), tmp_path / "demo",
-                            percorso_modello_pose=str(PESI_POSE), percorso_testa_pixel=str(tmp_path / "testa.npz"))
-    assert len(eventi) == 2 and all(evento["probabilita_violenza_pixel"] == 0.5 for evento in eventi)
-    assert not any(evento["allarme_violenza"] for evento in eventi)              # 2 finestre < 7 di fila
-    for evento in eventi:
-        assert abs(sum(evento["probabilita"].values()) - 1) < 1e-3
-
-
 def test_violenza_per_il_sito():
     """D48: il sito riceve solo le misure di violenza del sistema e dei soli scheletri, senza campi interni."""
     misure = lambda acc: {"per_finestra": {"accuratezza": acc, "recall": .7, "falsi_allarmi": .2},
@@ -1342,22 +1306,6 @@ def test_allarme_violenza_come_la_misura(con_pixel):
     assert ottenuti == attesi and any(attesi) and not all(attesi)
     regola = allarmi_per_video(probabilita, np.zeros(60, int), id_clip, inizi, 4, 3) if not con_pixel else None
     assert regola is None or regola["falsi_allarmi"] == float(any(attesi))   # un video normale: allarme sì/no
-
-
-@pytest.mark.skipif(not PESI_KINETICS.exists(), reason="pesi R(2+1)D-18 Kinetics non scaricati da torchvision")
-def test_ramo_pixel_con_rete_fine_tunata(tmp_path):
-    """D53: con --rete-pixel la rete usa i pesi salvati dal kernel (fp16, senza fc), non quelli di Kinetics."""
-    import torchvision
-    torch.manual_seed(0)
-    rete = torchvision.models.video.r2plus1d_18()
-    rete.fc = torch.nn.Identity()
-    torch.save({chiave: valore.half() for chiave, valore in rete.state_dict().items()}, tmp_path / "rete.pt")
-    np.savez(tmp_path / "testa.npz", media=np.zeros(512), scala=np.ones(512), pesi=np.zeros(512, np.float32),
-             bias=np.float32(0))
-    ramo = RamoPixel(str(tmp_path / "testa.npz"), percorso_rete=str(tmp_path / "rete.pt"))
-    for chiave, valore in rete.state_dict().items():
-        if valore.is_floating_point():   # num_batches_tracked è intero
-            torch.testing.assert_close(ramo.rete.state_dict()[chiave], valore.half().float())
 
 
 def salva_rete_video_finta(percorso):
@@ -1395,6 +1343,23 @@ def test_rete_video_armi_scippi_come_nel_kernel(tmp_path, lato, misura):
     np.testing.assert_allclose(list(probabilita.values()), attese, atol=1e-5)
 
 
+def test_rete_video_onnx_uguale_al_pt(tmp_path):
+    """D71: la stessa rete esportata in ONNX (come `argo esporta-onnx`) dà le stesse probabilità del .pt."""
+    salva_rete_video_finta(tmp_path / "rete.pt")
+    rete_pt = ReteVideoArmiScippi(str(tmp_path / "rete.pt"), 112)
+    torch.onnx.export(rete_pt.rete, torch.zeros(1, 3, 16, 112, 112), str(tmp_path / "rete.onnx"), input_names=["x"],
+                      output_names=["y"], dynamo=False)
+    rete_onnx = ReteVideoArmiScippi(str(tmp_path / "rete.onnx"), 112)
+    generatore = np.random.default_rng(0)
+    frame = []
+    for numero in range(40):
+        frame.append(rete_pt.riduci(generatore.integers(0, 256, (240, 320, 3), dtype=np.uint8)))
+    attese = rete_pt.probabilita(frame)
+    ottenute = rete_onnx.probabilita(frame)
+    assert list(ottenute) == list(attese)
+    np.testing.assert_allclose(list(ottenute.values()), list(attese.values()), atol=1e-5)
+
+
 def test_classe_con_scippo():
     """D70: lo scippo di b1 vince su normale e violenza, non sulla violenza con arma."""
     assert classe_con_scippo("normale", True) == "scippo"
@@ -1405,7 +1370,8 @@ def test_classe_con_scippo():
 
 @pytest.mark.skipif(not PESI_POSE.exists(), reason="pesi della pose mancanti")
 def test_demo_reti_video_ogni_quanto(tmp_path, monkeypatch):
-    """D70: b1 ogni 20 frame, b2 ogni 100; in mezzo vale l'ultimo valore; campi nuovi negli eventi."""
+    """D70: b1 ogni 20 frame, b2 ogni 100; in mezzo vale l'ultimo valore; campi nuovi negli eventi. D71: niente
+    detector, violenza degli scheletri fusa con quella di b1."""
     import sicurezza.demo as demo
     iperparametri = {"dimensione": 32, "blocchi": 1}
     torch.save({"nome_modello": "graph_transformer", "iperparametri_modello": iperparametri,
@@ -1421,15 +1387,26 @@ def test_demo_reti_video_ogni_quanto(tmp_path, monkeypatch):
     def scheletri_finti(classificatori, nodi, maschera, classe_arma, dispositivo):
         return np.array([0.7, 0.1, 0.1, 0.1], np.float32)   # lo ST-GCN dice "normale"
     monkeypatch.setattr(demo, "probabilita_media", scheletri_finti)
+    pose = []
+    analizza_frame_vera = demo.Estrattore.analizza_frame
+
+    def analizza_frame_contata(estrattore, frame, primo_frame_del_video):
+        pose.append(estrattore.modello_armi)
+        return analizza_frame_vera(estrattore, frame, primo_frame_del_video)
+    monkeypatch.setattr(demo.Estrattore, "analizza_frame", analizza_frame_contata)
     eventi = analizza_video(str(VIDEO_PERSONE), str(tmp_path / "c.pt"), tmp_path / "demo",
                             percorso_modello_pose=str(PESI_POSE), percorso_rete_scippi=str(tmp_path / "rete.pt"),
                             percorso_rete_armi=str(tmp_path / "rete.pt"))
     assert len(eventi) == 2                     # finestre che cominciano ai frame 0 e 10
     assert sorted(chiamate) == [112, 224]       # una chiamata ciascuna, alla finestra 0
+    assert pose == [None] * 50                  # la pose su tutti i 50 frame, senza detector
     for evento in eventi:
         assert not evento["warning_arma"] and evento["allarme_scippo"]   # il WARNING viene da b2, non dal detector
         assert evento["probabilita_arma_video"] == 0.2 and evento["probabilita_scippo_video"] == 0.9
         assert evento["classe"] == "scippo"
+        assert evento["probabilita_violenza_video"] == 0.1
+        violenza = evento["probabilita"]["violenza"] + evento["probabilita"]["violenza_con_arma"]
+        assert violenza == pytest.approx((0.2 + 0.1) / 2, abs=1e-3)   # media tra scheletri e b1, come fondi_con_pixel
 
 
 def test_confronta_detector_passa_il_lotto(tmp_path, monkeypatch):
@@ -1477,23 +1454,25 @@ def test_password_della_telecamera_mai_nel_pannello():
 
 def test_opzioni_dai_pesi_e_modalita_scheletri(tmp_path):
     assert opzioni_dai_pesi(tmp_path) == {}
-    for nome in ("stgcn.pt", "armi_v3.pt", "rete_violenza.pt", "testa_violenza.npz"):
-        (tmp_path / nome).write_bytes(b"x")
-    (tmp_path / "taratura_warning.json").write_text(json.dumps({"migliore": {"soglia_confidenza": 0.7, "frame_minimi": 5,
-                                                                             "vicinanza": "polso:0.35"}}))
-    opzioni = opzioni_dai_pesi(tmp_path)
-    assert opzioni["percorso_classificatore"].endswith("stgcn.pt") and opzioni["percorso_rete_pixel"].endswith("rete_violenza.pt")
-    assert opzioni["taratura"]["vicinanza"] == "polso:0.35"
-    assert "percorso_rete_scippi" not in opzioni
+    for nome in ("stgcn.pt", "armi_v3.pt", "rete_violenza.pt", "testa_violenza.npz", "taratura_warning.json"):
+        (tmp_path / nome).write_bytes(b"x")                    # i pesi della v1.1 che il flusso D71 non usa più
+    assert opzioni_dai_pesi(tmp_path) == {"percorso_classificatore": str(tmp_path / "stgcn.pt")}
+    assert descrivi_modalita(opzioni_dai_pesi(tmp_path)) == "skeletons + ST-GCN"
     for nome in ("rete_scippi_b1.pt", "rete_armi_b2.pt"):                    # D70: le reti video b1 e b2
         (tmp_path / nome).write_bytes(b"x")
     opzioni = opzioni_dai_pesi(tmp_path)
     assert opzioni["percorso_rete_scippi"].endswith("rete_scippi_b1.pt")
     assert opzioni["percorso_rete_armi"].endswith("rete_armi_b2.pt")
+    assert descrivi_modalita(opzioni) == "full system"
+    for nome in ("rete_scippi_b1.onnx", "rete_armi_b2.onnx"):                   # D71: su CPU gli ONNX
+        (tmp_path / nome).write_bytes(b"x")
+    opzioni = opzioni_dai_pesi(tmp_path)
+    assert opzioni["percorso_rete_scippi"].endswith("rete_scippi_b1.onnx")
+    assert opzioni["percorso_rete_armi"].endswith("rete_armi_b2.onnx")
+    opzioni = opzioni_dai_pesi(tmp_path, "cuda")                               # con la GPU i .pt
+    assert opzioni["percorso_rete_scippi"].endswith("rete_scippi_b1.pt")
     (tmp_path / "stgcn.pt").unlink()
-    assert "percorso_classificatore" not in opzioni_dai_pesi(tmp_path)   # senza classificatore niente ramo pixel
-    assert "percorso_rete_armi" not in opzioni_dai_pesi(tmp_path)
-    assert "percorso_rete_pixel" not in opzioni_dai_pesi(tmp_path)
+    assert opzioni_dai_pesi(tmp_path) == {}   # senza classificatore niente reti video
 
 
 def test_videoregistratore_segmenti_chiusi_in_ordine(tmp_path):

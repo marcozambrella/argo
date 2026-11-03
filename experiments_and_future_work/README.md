@@ -16,6 +16,7 @@ They stay here so every decision in the project can be checked.
 | `analisi/` | Metrics per source and per video of the test set, CPU only | Used to understand errors and to pick demo videos |
 | `gpu_esterna/addestra.sh` | Training 2 on a GPU outside Kaggle (RunPod, Vast, any NVIDIA PC) | Ready but never used: the longer training ran on Kaggle (`addestramento_lungo/`) |
 | `valutazione/` | CPU-only evaluation of the whole system after a training done outside Kaggle | Companion of `gpu_esterna/`, not needed |
+| `verifica_flusso/` | v1.2 check (D71): the real live analysis on 128 val/test clips with a lighter pose (480 px and/or 12.5 frames/s) or the full one, no weapon detector (`lancia_su_secondo.sh` runs it on a second Kaggle account) | 480 px and 12.5 frames/s lose violence (0.79 vs 0.85): v1.2 keeps the pose at 640 px and 25 frames/s (0.885) |
 
 ## Future work
 

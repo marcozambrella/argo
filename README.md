@@ -7,7 +7,6 @@ The name comes from Argus, the hundred-eyed giant of Greek myth who never slept 
 
 ARGO connects to cameras (RTSP, webcam, phone, video file) and shows on a web panel, on your own computer:
 - the **skeletons** of the people, with their tracking IDs;
-- the **weapons** it sees;
 - the **class of the scene**, with probabilities;
 - the **WEAPON WARNING** and the **VIOLENCE ALARM**;
 - an event log and an archive of the recordings.
@@ -24,26 +23,26 @@ Everything it sees is also saved to files that other programs can read: keypoint
 | **Snatching yes/no** (video network b1, every 0.8 s), 10 s segments | **0.82** (CI 0.76–0.89), partly by recognising the snatching dataset ([limits](#limits)) |
 | 4 classes from the skeletons alone (normal, violence, armed violence, snatching) | macro-F1 0.40 |
 
+**v1.2 is twice as fast on a CPU** (7.6 instead of 14.5 seconds of computing per second of video, same laptop, one right after the other) with the same accuracy: it drops the weapon detector and the separate violence network, and takes the violence from the video network b1, which was already running. On 128 never-seen clips (10 s segments) violence is 0.885 against 0.853 of v1.1; weapons and snatching do not change. v1.1 is kept in [`versioni_passate/v1.1`](versioni_passate/v1.1). The numbers above were measured with v1.1.
+
 ## How it works
 
 ```
-camera ─ffmpeg 25 fps─► YOLO26s-pose + tracking ─► skeletons (17 points per person) ──┐
-                     └► YOLO26s weapon detector ─► pistol / knife / rifle ────────────┤
-                                                                                       ▼
-          40-frame windows (1.6 s), one every 10 frames ─► ST-GCN on each skeleton + weapons ┐
-          the same 40 frames ─► R(2+1)D-18 video network fine-tuned on violence ─────────────┤
-                                                                                             ▼
+camera ─ffmpeg 25 fps─► YOLO26s-pose + tracking ─► skeletons (17 points per person)
+                                                              │
+          40-frame windows (1.6 s), one every 10 frames ─► ST-GCN on each skeleton ─┐
+          the same 40 frames, every 0.8 s ─► video network b1 (112 px) ─► violence ─┤
+                                                                                     ▼
               normal / violence / armed violence ─► VIOLENCE ALARM after 7 violent windows in a row
-          the same 40 frames, every 0.8 s ─► video network b1 (112 px) ─► SNATCHING
-          the same 40 frames, every 4 s   ─► video network b2 (224 px) ─► WEAPON WARNING
+                                     b1 (the same call) ─► SNATCHING
+          the same 40 frames, every 4 s ─► video network b2 (224 px) ─► WEAPON WARNING
 ```
 
 1. **Skeletons.** YOLO26s-pose finds people and their 17 keypoints: head, shoulders, elbows, wrists and so on. The tracker (TrackTrack) gives each person an ID that lasts over time.
-2. **Weapons.** A YOLO26s detector trained on CCTV weapon images (Roboflow, US Mock Attack, Sohas) looks for pistols, knives and rifles. A weapon only counts when it is near someone's wrist, so black shoes do not turn into pistols. Since v1.1 the detector only draws the weapons and feeds the skeletons; the WEAPON WARNING comes from the video network b2 (step 5), which is much better on real CCTV.
-3. **Movement over time.** Every 0.4 s the last 1.6 s of skeletons go to an **ST-GCN**: 10 blocks, each one a convolution on the graph of the bones (every joint gathers information from the joints it is linked to) and then a convolution over time (every joint looks at itself in 9 nearby frames). Each person goes through the same network and the most suspicious one counts; the weapons seen by the detector join through a small separate branch just before the decision. Out come the probabilities of the 4 classes. A Graph-Transformer that links every joint and weapon to all the others was tested too, and discarded (macro-F1 0.29 against 0.40).
-4. **Pixels.** An **R(2+1)D-18** video network, fine-tuned on violence, looks at the same 1.6 s. It only answers violence yes/no: its probability is averaged with the skeletons' one, and the skeletons then pick the class (violence or armed violence; normal or snatching). Together they go from 0.78 to 0.90 on 30 s segments.
-5. **Weapons and snatching from the video (v1.1).** Two more R(2+1)D-18 networks, trained with five yes/no answers (violence, weapon, firearm, knife, snatching): **b2** at 224 px looks for weapons every 4 s (calling it more often does not help: a weapon stays in the scene), **b1** at 112 px looks for snatching every 0.8 s (a snatching lasts 2–3 s). b2 gives the WEAPON WARNING; b1 decides the snatching class, unless the scene is armed violence.
-6. **Alarms.** The VIOLENCE ALARM fires after 7 violent windows in a row (they cover 4 s of video). That rule was chosen on the validation set, and it is the one the numbers above are measured with.
+2. **Movement over time.** Every 0.4 s the last 1.6 s of skeletons go to an **ST-GCN**: 10 blocks, each one a convolution on the graph of the bones (every joint gathers information from the joints it is linked to) and then a convolution over time (every joint looks at itself in 9 nearby frames). Each person goes through the same network and the most suspicious one counts. Out come the probabilities of the 4 classes. A Graph-Transformer that links every joint to all the others was tested too, and discarded (macro-F1 0.29 against 0.40).
+3. **Pixels.** Two **R(2+1)D-18** video networks, fine-tuned with five yes/no answers (violence, weapon, firearm, knife, snatching), look at the same 40 frames. **b1** at 112 px runs every 0.8 s (a snatching lasts 2–3 s): its violence is averaged with the skeletons' one, and the skeletons then pick the class (violence or armed violence; normal or snatching); its snatching decides the snatching class, unless the scene is armed violence. **b2** at 224 px runs every 4 s (calling it more often does not help: a weapon stays in the scene) and gives the WEAPON WARNING; violence plus WEAPON WARNING is armed violence. On a CPU both run with ONNX Runtime (20% faster, same outputs).
+4. **Up to v1.1** a YOLO26s weapon detector (trained on Roboflow, US Mock Attack and Sohas) drew the weapons and fed the skeletons, and a separate video network gave the violence. Without them the accuracy stays the same and the system takes half the time.
+5. **Alarms.** The VIOLENCE ALARM fires after 7 violent windows in a row (they cover 4 s of video). That rule was chosen on the validation set, and it is the one the numbers above are measured with.
 
 More details in the hackathon slides (*The project journey* and *The system in depth*).
 
@@ -55,7 +54,7 @@ You need **Python 3.12** with [uv](https://docs.astral.sh/uv/) and **ffmpeg**. T
 git clone https://github.com/marcozambrella/argo.git
 cd argo
 uv sync                   # environment and dependencies (CPU torch; with an NVIDIA GPU install torch with CUDA)
-uv run argo scarica-pesi  # ~220 MB into pesi/, from Release v1.1 (research only, see below)
+uv run argo scarica-pesi  # ~390 MB into pesi/, from Release v1.2 (research only, see below)
 ```
 
 Without the weights ARGO still starts, in **skeletons-only mode**: people, keypoints and tracking, with no classes or alarms. The pose model downloads itself the first time.
@@ -84,15 +83,16 @@ Camera passwords never appear in the panel. The panel only listens on this compu
 
 **Speed.**
 - **With an NVIDIA GPU** ARGO runs in **real time**: on a T4 the skeleton and weapon extraction runs at 83.6 frames/s.
-- **On a laptop without a GPU** it analyses about 2 frames/s. Cameras run at 25, so ARGO records everything in 10 s segments and analyses behind them, **delayed**. The delay is shown on the camera tile, and no frame is lost.
+- **On a laptop without a GPU** it analyses about 3 frames/s. Cameras run at 25, so ARGO records everything in 10 s segments and analyses behind them, **delayed**. The delay is shown on the camera tile, and no frame is lost.
 
 To analyse a single video, without the panel:
 
 ```bash
 uv run argo analizza-video --video video.mp4 --classificatore pesi/stgcn.pt \
-  --testa-pixel pesi/testa_violenza.npz --rete-pixel pesi/rete_violenza.pt \
-  --modello-armi pesi/armi_v3.pt --taratura pesi/taratura_warning.json --uscita output/
+  --rete-scippi pesi/rete_scippi_b1.onnx --rete-armi pesi/rete_armi_b2.onnx --uscita output/
 ```
+
+(With a GPU use the `.pt` files of b1 and b2 and `--dispositivo cuda`.)
 
 ## What comes out on your computer
 
@@ -100,9 +100,9 @@ Each camera saves a session in `sessioni/<camera>/<date-time>/`. `analizza-video
 
 | File | Content |
 |---|---|
-| `video_annotato.mp4` | the video with skeletons, IDs and weapons drawn on it |
-| `eventi.jsonl` / `eventi.json` | one line every 0.4 s: `inizio_secondi` (start), `fine_secondi` (end), `classe` (class), `probabilita` of the 4 classes, `warning_arma` (weapon warning), `allarme_violenza` (violence alarm); with the v1.1 weights also `probabilita_arma_video` (b2), `probabilita_scippo_video` (b1) and `allarme_scippo` (snatching) |
-| `keypoint.jsonl` | one line per frame: for each person `id`, `box` [x1, y1, x2, y2] and 17 `keypoint` [x, y, confidence] in pixels (COCO order); for each weapon `classe`, `confidenza`, `box` |
+| `video_annotato.mp4` | the video with skeletons, IDs and the class panel drawn on it |
+| `eventi.jsonl` / `eventi.json` | one line every 0.4 s: `inizio_secondi` (start), `fine_secondi` (end), `classe` (class), `probabilita` of the 4 classes, `warning_arma` (weapon warning), `allarme_violenza` (violence alarm); with the video networks also `probabilita_arma_video` (b2), `probabilita_violenza_video` and `probabilita_scippo_video` (b1) and `allarme_scippo` (snatching) |
+| `keypoint.jsonl` | one line per frame: for each person `id`, `box` [x1, y1, x2, y2] and 17 `keypoint` [x, y, confidence] in pixels (COCO order); `armi` (weapons) stays empty since v1.2, which has no weapon detector |
 | `probabilita.csv` | the events as a table |
 | `segmenti/` | the original camera recording, in 10 s pieces |
 
@@ -149,7 +149,7 @@ Skeletons only: 0.78. Video network only: 0.84. Together: 0.90.
 
 Macro-F1 0.40. For comparison, the Graph-Transformer reaches 0.29.
 
-**Weapon detector (v3)**, mAP50:
+**Weapon detector (v3, used up to v1.1)**, mAP50:
 - 0.77 on the hand-held weapons of Sohas;
 - 0.20 on the real CCTV of US Mock Attack (pistols 0.32, rifles 0.28, knives ~0);
 - 2 false alarms on 326 photos of kitchen knives, phones and scissors.
@@ -186,16 +186,18 @@ The heavy computing was done on **Kaggle** (2× T4). The notebooks that rebuild 
 2. skeleton and weapon extraction from all videos: `estrazione`, `aggiungi_armi`;
 3. windows: `finestre`;
 4. 4-class training: `addestramento`;
-5. video network fine-tuning: `finetune_rgb`.
+5. video network fine-tuning: `finetune_rgb` (the violence network of v1.1); b1 and b2 come from [`experiments_and_future_work/rete_video`](experiments_and_future_work/rete_video).
 
-Discarded tries and ideas not shipped (bigger detector, hand zoom, longer training…) are in [`experiments_and_future_work/`](experiments_and_future_work), each with its outcome.
+The weapon detector is still needed for the extraction (steps 2–3), because the ST-GCN was trained with the weapons as extra nodes; at analysis time v1.2 leaves them empty, which does not change its answers.
+
+Discarded tries and ideas not shipped (bigger detector, hand zoom, longer training…) are in [`experiments_and_future_work/`](experiments_and_future_work), each with its outcome. The previous version of the system (v1.1) is in [`versioni_passate/`](versioni_passate).
 
 The code is in [`src/sicurezza/`](src/sicurezza): `dati.py` (videos, labels, splits), `visione.py` (skeletons, tracking, weapons), `modelli.py` (windows, ST-GCN, training), `demo.py` (video analysis and the panel) and `strumenti.py` (annotation and download tools). It is written to be easy for a team to read: plain loops and `if`/`else`, one step per line, with comments that explain why. Run the tests with `uv run pytest`.
 
 ## Data, weights and licences
 
 - **Code**: [AGPL-3.0](LICENSE), like Ultralytics YOLO, on which it is built.
-- **Weights** (Release v1.1): **research and non-commercial use only**. They are also trained on datasets distributed for academic use only.
+- **Weights** (Release v1.2): **research and non-commercial use only**. They are also trained on datasets distributed for academic use only.
 - **Training datasets** (not included in the repo):
   - [RWF-2000](https://github.com/mchengny/RWF2000-Video-Database-for-Violence-Detection): academic use, the authors ask not to redistribute it;
   - CCTV-Fights (Kaggle copy [`mohamedtariki/vsd-cctv-fights`](https://www.kaggle.com/datasets/mohamedtariki/vsd-cctv-fights));
