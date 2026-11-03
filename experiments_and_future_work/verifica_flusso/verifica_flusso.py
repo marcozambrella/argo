@@ -31,9 +31,13 @@ import time
 from pathlib import Path
 import numpy as np
 from sicurezza.dati import FPS_ANALISI, INDICE_CLASSE, leggi_frame, prepara
+import sicurezza.demo as demo
 from sicurezza.demo import AnalisiFlusso
 
 PARTE = 0
+VARIANTE = "d71"
+# (lato della pose, un frame ogni quanti): d71 = il flusso del branch; le altre per capire cosa fa perdere la violenza
+VARIANTI = {"d71": (480, 2), "s480-25": (480, 1), "s640-25": (640, 1)}
 PARTI = 4
 CLIP_PER_CLASSE = 16
 FRAME_MASSIMI = 750   # 30 s a 25 fps
@@ -43,6 +47,15 @@ ingresso = Path("/kaggle/input")
 uscita = Path("/kaggle/working")
 
 subprocess.run(["curl", "-sL", "-o", "/tmp/stgcn.pt", URL_STGCN], check=True)
+demo.LATO_POSE, demo.PASSO_POSE = VARIANTI[VARIANTE]
+
+
+def nessuna_interpolazione(nodi, maschera, classe_arma):
+    return nodi, maschera, classe_arma
+
+
+if demo.PASSO_POSE == 1:   # con la pose su tutti i frame non c'è niente da interpolare
+    demo.pose_a_meta_frame = nessuna_interpolazione
 clip_annotate = {}
 for clip in prepara(ingresso, Path("/tmp/elenchi"), SORGENTI):
     clip_annotate[clip.id_clip] = clip
@@ -93,7 +106,7 @@ for nome_split in ("val", "test"):
         for clip in prese:
             scelte.append((nome_split, clip))
 mie = scelte[PARTE::PARTI]
-print(f"parte {PARTE}/{PARTI}: {len(mie)} clip delle {len(scelte)} scelte", flush=True)
+print(f"variante {VARIANTE}, parte {PARTE}/{PARTI}: {len(mie)} clip delle {len(scelte)} scelte", flush=True)
 
 campi = {"split": [], "id_clip": [], "inizio_finestra": [], "probabilita": []}
 secondi_calcolo = 0.0
@@ -117,11 +130,11 @@ for numero, (nome_split, clip) in enumerate(mie):
     secondi_video += frame_letti / FPS_ANALISI
     print(f"{numero + 1}/{len(mie)} {nome_split} {clip}: {frame_letti} frame", flush=True)
 
-np.savez_compressed(uscita / f"verifica_{PARTE}.npz", split=np.array(campi["split"]),
+np.savez_compressed(uscita / f"verifica_{VARIANTE}_{PARTE}.npz", split=np.array(campi["split"]),
                     id_clip=np.array(campi["id_clip"]), inizio_finestra=np.array(campi["inizio_finestra"]),
                     probabilita=np.stack(campi["probabilita"]).astype(np.float32))
-tempi = {"parte": PARTE, "clip": len(mie), "secondi_video": secondi_video, "secondi_calcolo": secondi_calcolo,
+tempi = {"variante": VARIANTE, "parte": PARTE, "clip": len(mie), "secondi_video": secondi_video, "secondi_calcolo": secondi_calcolo,
          "secondi_per_secondo_di_video": secondi_calcolo / max(1.0, secondi_video)}
-(uscita / f"tempi_{PARTE}.json").write_text(json.dumps(tempi, indent=1))
+(uscita / f"tempi_{VARIANTE}_{PARTE}.json").write_text(json.dumps(tempi, indent=1))
 print(tempi, flush=True)
 print("fatto", flush=True)
