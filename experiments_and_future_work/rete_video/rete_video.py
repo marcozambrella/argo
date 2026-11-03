@@ -6,7 +6,7 @@ import subprocess
 import sys
 URL_REPO = "https://github.com/marcozambrella/argo"
 # D68: gli esperimenti usano il branch esperimenti-armi-scippi, non main
-subprocess.run(["git", "clone", "--depth", "1", "--branch", "esperimenti-armi-scippi", URL_REPO, "/tmp/repo"], check=True)
+subprocess.run(["git", "clone", "--depth", "1", "--branch", "notte-tempi", URL_REPO, "/tmp/repo"], check=True)
 subprocess.run([sys.executable, "-m", "pip", "install", "-q", "ultralytics>=8.4", "lap"], check=True)
 sys.path.insert(0, "/tmp/repo/src")
 commit = subprocess.run(["git", "-C", "/tmp/repo", "rev-parse", "--short", "HEAD"], capture_output=True, text=True)
@@ -23,7 +23,8 @@ sys.stdout.reconfigure(line_buffering=True)   # anche le stampe senza flush arri
 """D68 strada B, GPU: R(2+1)D-18 (Kinetics-400) fine-tunata con 5 uscite sì/no indipendenti (violenza, arma, arma
 da fuoco, coltello, scippo) invece della sola violenza di training/finetune_rgb. Le armi di tipo ignoto (UCF
 "weapon", WVD mazze e martelli) non addestrano le uscite fuoco/coltello. Varianti (VARIANTE, la cambia
-lancia_variante.sh): b1 = 112 px a colori come oggi; b2 = 224 px a colori; b3 = 224 px in bianco e nero.
+lancia_variante.sh): b1 = 112 px a colori come oggi; b2 = 224 px a colori; b3 = 224 px in bianco e nero;
+b4 = 160 px a colori, 3 epoche (notte 03→04/11: compromesso di tempo su CPU tra b1 e b2).
 Marco: niente early stop → tutte le epoche; si salvano la migliore sul val e l'ultima. Alla fine: punteggi su una
 finestra ogni due di val e test (punteggi_val.npz, punteggi_test.npz per `demo valuta-armi-scippi`), per la
 migliore e per l'ultima.
@@ -42,17 +43,17 @@ from sicurezza.dati import ClipAnnotata, categoria_ucf
 from sicurezza.demo import tipi_della_clip, salva_punteggi
 
 VARIANTE = "b1"
-LATI = {"b1": 112, "b2": 224, "b3": 224, "b1a": 112}
+LATI = {"b1": 112, "b2": 224, "b3": 224, "b1a": 112, "b4": 160}
 LATO = LATI[VARIANTE]
 GRIGIO = VARIANTE == "b3"
-EPOCHE = {"b1": 8, "b2": 5, "b3": 5, "b1a": 8}[VARIANTE]
+EPOCHE = {"b1": 8, "b2": 5, "b3": 5, "b1a": 8, "b4": 3}[VARIANTE]
 ALTEZZA = LATO * 8 // 7          # 128 per 112, 256 per 224: margine per il ritaglio a caso
 LARGHEZZA = ALTEZZA * 4 // 3 + (ALTEZZA * 4 // 3) % 2   # 4:3 come la maggior parte delle CCTV (171 → 170 per 112)
 ORE_MASSIME = 11.0
 FINESTRE_PER_GRUPPO = {"arma": 4000, "scippo": 4000, "violenza": 3000, "normale": 3000,
                        "anomalie_nuove": 4000, "normali_nuove": 3000}   # le ultime due solo in b1a
 FINESTRE_VAL = 2000
-LOTTO = {"b1": 32, "b2": 8, "b3": 8, "b1a": 32}[VARIANTE]   # a 224 px anche 16 va fuori memoria sulle T4 (02/11, b2 v1)
+LOTTO = {"b1": 32, "b2": 8, "b3": 8, "b1a": 32, "b4": 12}[VARIANTE]   # a 224 px anche 16 va fuori memoria sulle T4 (02/11, b2 v1)
 FRAME_PER_BLOCCO = 600   # punteggi finali: le clip lunghe si decodificano a blocchi da 24 s
 CON_ANOMALIE = VARIANTE == "b1a"
 USCITE = ("violenza", "arma", "fuoco", "coltello", "scippo")
@@ -409,7 +410,10 @@ if __name__ == "__main__":
         frame_completi = grezzi.size // byte_per_frame
         return grezzi[: frame_completi * byte_per_frame].reshape(-1, ALTEZZA, LARGHEZZA, 3)
 
-    for nome_pesi in ("migliore", "ultima"):
+    pesi_da_misurare = ("migliore", "ultima")
+    if VARIANTE == "b4":   # notte 03→04/11: quota GPU corta, solo la migliore (b2 era al meglio all'epoca 1)
+        pesi_da_misurare = ("migliore",)
+    for nome_pesi in pesi_da_misurare:
         stato = {}
         for chiave, valore in torch.load(uscita / f"{nome_pesi}.pt", map_location="cpu").items():
             stato[chiave] = valore.float()
