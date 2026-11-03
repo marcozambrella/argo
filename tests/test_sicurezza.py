@@ -12,7 +12,7 @@ import torch
 import yaml
 
 from sicurezza.dati import elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
-from sicurezza.demo import ReteVideoArmiScippi, classe_con_scippo, Pannello, Telecamera, Videoregistratore, crea_server, ingresso_ffmpeg, leggi_telecamera, opzioni_dai_pesi, descrivi_modalita, sorgente_senza_password, AllarmeViolenza, classe_finale_con_pixel, fondi_con_pixel, pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
+from sicurezza.demo import ReteVideoArmiScippi, comando_scarica_pesi, classe_con_scippo, Pannello, Telecamera, Videoregistratore, crea_server, ingresso_ffmpeg, leggi_telecamera, opzioni_dai_pesi, descrivi_modalita, sorgente_senza_password, AllarmeViolenza, classe_finale_con_pixel, fondi_con_pixel, pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import analizza_predizioni, ricuci_tracce, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.strumenti import violenza_per_il_sito, risultati_per_il_sito, scarica_con_riprova, scegli_candidati_scippo_telefono, scegli_immagini_coco
 from sicurezza.visione import mani_di_una_persona, precisione_media, probabilita_armi_in_mano, ritaglio_quadrato, ritagli_per_addestramento, prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
@@ -1450,6 +1450,13 @@ def test_password_della_telecamera_mai_nel_pannello():
     assert sorgente_senza_password("rtsp://10.0.0.2/s1") == "rtsp://10.0.0.2/s1"
     assert leggi_telecamera("ingresso=rtsp://a:b@c/x", 1) == ("ingresso", "rtsp://a:b@c/x")
     assert leggi_telecamera("/dev/video0", 2) == ("cam2", "/dev/video0")
+
+
+def test_scarica_pesi_dice_come_chiederli(capsys):
+    # dal 04/11 i pesi non sono pubblici: il comando non scarica niente
+    with pytest.raises(SystemExit):
+        comando_scarica_pesi([])
+    assert "not public" in capsys.readouterr().out
 
 
 def test_opzioni_dai_pesi_e_modalita_scheletri(tmp_path):

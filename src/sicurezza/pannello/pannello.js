@@ -100,7 +100,7 @@ async function aggiornaStato() {
     const modalita = $("#modalita");
     modalita.textContent = stato.modalita;
     modalita.classList.toggle("scheletri", stato.modalita === "skeletons only");
-    modalita.title = stato.modalita === "skeletons only" ? "Weights not found: uv run argo scarica-pesi" : "";
+    modalita.title = stato.modalita === "skeletons only" ? "Weights not found (they are not public: uv run argo scarica-pesi)" : "";
     for (const telecamera of stato.telecamere) {
       aggiornaRiquadro(riquadri.get(telecamera.nome) || creaRiquadro(telecamera), telecamera);
     }
