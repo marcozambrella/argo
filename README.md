@@ -20,7 +20,9 @@ Everything it sees is also saved to files that other programs can read: keypoint
 |---|---|
 | **Violence yes/no**, 30 s segments | **0.90** accuracy (95% CI 0.84–0.94), 11% false alarms |
 | Violence yes/no, 10 s segments / per 1.6 s window | 0.82 (CI 0.77–0.89) / 0.78 |
-| 4 classes (normal, violence, armed violence, snatching) | macro-F1 0.40: armed violence and snatching are still weak ([limits](#limits)) |
+| **Weapon yes/no** (video network b2, every 4 s), 10 s segments | **0.79** (CI 0.70–0.87); firearms 0.71, knives 0.86 (only 12 clips with a knife) |
+| **Snatching yes/no** (video network b1, every 0.8 s), 10 s segments | **0.82** (CI 0.76–0.89), partly by recognising the snatching dataset ([limits](#limits)) |
+| 4 classes from the skeletons alone (normal, violence, armed violence, snatching) | macro-F1 0.40 |
 
 ## How it works
 
@@ -31,15 +33,17 @@ camera ─ffmpeg 25 fps─► YOLO26s-pose + tracking ─► skeletons (17 point
           40-frame windows (1.6 s), one every 10 frames ─► ST-GCN on each skeleton + weapons ┐
           the same 40 frames ─► R(2+1)D-18 video network fine-tuned on violence ─────────────┤
                                                                                              ▼
-              normal / violence / armed violence / snatching ─► VIOLENCE ALARM after 7 violent windows in a row
-              weapon near a wrist in ≥ 5 of 40 frames (confidence ≥ 0.7) ─► WEAPON WARNING
+              normal / violence / armed violence ─► VIOLENCE ALARM after 7 violent windows in a row
+          the same 40 frames, every 0.8 s ─► video network b1 (112 px) ─► SNATCHING
+          the same 40 frames, every 4 s   ─► video network b2 (224 px) ─► WEAPON WARNING
 ```
 
 1. **Skeletons.** YOLO26s-pose finds people and their 17 keypoints: head, shoulders, elbows, wrists and so on. The tracker (TrackTrack) gives each person an ID that lasts over time.
-2. **Weapons.** A YOLO26s detector trained on CCTV weapon images (Roboflow, US Mock Attack, Sohas) looks for pistols, knives and rifles. A weapon only counts when it is near someone's wrist, so black shoes do not turn into pistols.
+2. **Weapons.** A YOLO26s detector trained on CCTV weapon images (Roboflow, US Mock Attack, Sohas) looks for pistols, knives and rifles. A weapon only counts when it is near someone's wrist, so black shoes do not turn into pistols. Since v1.1 the detector only draws the weapons and feeds the skeletons; the WEAPON WARNING comes from the video network b2 (step 5), which is much better on real CCTV.
 3. **Movement over time.** Every 0.4 s the last 1.6 s of skeletons go to an **ST-GCN**: 10 blocks, each one a convolution on the graph of the bones (every joint gathers information from the joints it is linked to) and then a convolution over time (every joint looks at itself in 9 nearby frames). Each person goes through the same network and the most suspicious one counts; the weapons seen by the detector join through a small separate branch just before the decision. Out come the probabilities of the 4 classes. A Graph-Transformer that links every joint and weapon to all the others was tested too, and discarded (macro-F1 0.29 against 0.40).
 4. **Pixels.** An **R(2+1)D-18** video network, fine-tuned on violence, looks at the same 1.6 s. It only answers violence yes/no: its probability is averaged with the skeletons' one, and the skeletons then pick the class (violence or armed violence; normal or snatching). Together they go from 0.78 to 0.90 on 30 s segments.
-5. **Alarms.** The VIOLENCE ALARM fires after 7 violent windows in a row (they cover 4 s of video). That rule was chosen on the validation set, and it is the one the numbers above are measured with.
+5. **Weapons and snatching from the video (v1.1).** Two more R(2+1)D-18 networks, trained with five yes/no answers (violence, weapon, firearm, knife, snatching): **b2** at 224 px looks for weapons every 4 s (calling it more often does not help: a weapon stays in the scene), **b1** at 112 px looks for snatching every 0.8 s (a snatching lasts 2–3 s). b2 gives the WEAPON WARNING; b1 decides the snatching class, unless the scene is armed violence.
+6. **Alarms.** The VIOLENCE ALARM fires after 7 violent windows in a row (they cover 4 s of video). That rule was chosen on the validation set, and it is the one the numbers above are measured with.
 
 More details in the hackathon slides (*The project journey* and *The system in depth*).
 
@@ -51,7 +55,7 @@ You need **Python 3.12** with [uv](https://docs.astral.sh/uv/) and **ffmpeg**. T
 git clone https://github.com/marcozambrella/argo.git
 cd argo
 uv sync                   # environment and dependencies (CPU torch; with an NVIDIA GPU install torch with CUDA)
-uv run argo scarica-pesi  # ~96 MB into pesi/, from Release v1.0 (research only, see below)
+uv run argo scarica-pesi  # ~220 MB into pesi/, from Release v1.1 (research only, see below)
 ```
 
 Without the weights ARGO still starts, in **skeletons-only mode**: people, keypoints and tracking, with no classes or alarms. The pose model downloads itself the first time.
@@ -97,7 +101,7 @@ Each camera saves a session in `sessioni/<camera>/<date-time>/`. `analizza-video
 | File | Content |
 |---|---|
 | `video_annotato.mp4` | the video with skeletons, IDs and weapons drawn on it |
-| `eventi.jsonl` / `eventi.json` | one line every 0.4 s: `inizio_secondi` (start), `fine_secondi` (end), `classe` (class), `probabilita` of the 4 classes, `warning_arma` (weapon warning), `allarme_violenza` (violence alarm) |
+| `eventi.jsonl` / `eventi.json` | one line every 0.4 s: `inizio_secondi` (start), `fine_secondi` (end), `classe` (class), `probabilita` of the 4 classes, `warning_arma` (weapon warning), `allarme_violenza` (violence alarm); with the v1.1 weights also `probabilita_arma_video` (b2), `probabilita_scippo_video` (b1) and `allarme_scippo` (snatching) |
 | `keypoint.jsonl` | one line per frame: for each person `id`, `box` [x1, y1, x2, y2] and 17 `keypoint` [x, y, confidence] in pixels (COCO order); for each weapon `classe`, `confidenza`, `box` |
 | `probabilita.csv` | the events as a table |
 | `segmenti/` | the original camera recording, in 10 s pieces |
@@ -157,8 +161,9 @@ A bigger detector (YOLO26m at 1280 px) sees more pistols in real CCTV (0.41), bu
 ## Limits
 
 We say them plainly:
-- **Armed violence and snatching are weak** (F1 0.10 and 0.13). There are few public examples: about 600 snatching windows against tens of thousands of normal ones.
-- **The WEAPON WARNING rarely fires**: precision 0.35, recall 0.03. It is tuned not to raise false alarms, and so it misses many real weapons.
+- **From the skeletons alone, armed violence and snatching are weak** (F1 0.10 and 0.13): that is why v1.1 gives them to the video networks.
+- **The video networks are measured on few clips**: 18 armed clips in the test set (38 with the cross measure), so the intervals are wide. The WEAPON WARNING of b2 catches 64% of the armed 10 s segments and fires on 14% of the segments of normal crowds.
+- **Snatching**: b1 is measured mostly on chain-snatching videos, which have no normal videos of their own; inside UCF-Crime it is still at chance. More snatching videos with normal footage from the same cameras are being annotated.
 - **Knives are almost never seen in real CCTV.** They are small, low resolution and often hidden by the hand.
 - **UCF-Crime is the hardest source**: long, low-quality videos with many people.
 - **In very dense crowds** tracking sometimes loses people.
@@ -190,7 +195,7 @@ The code is in [`src/sicurezza/`](src/sicurezza): `dati.py` (videos, labels, spl
 ## Data, weights and licences
 
 - **Code**: [AGPL-3.0](LICENSE), like Ultralytics YOLO, on which it is built.
-- **Weights** (Release v1.0): **research and non-commercial use only**. They are also trained on datasets distributed for academic use only.
+- **Weights** (Release v1.1): **research and non-commercial use only**. They are also trained on datasets distributed for academic use only.
 - **Training datasets** (not included in the repo):
   - [RWF-2000](https://github.com/mchengny/RWF2000-Video-Database-for-Violence-Detection): academic use, the authors ask not to redistribute it;
   - CCTV-Fights (Kaggle copy [`mohamedtariki/vsd-cctv-fights`](https://www.kaggle.com/datasets/mohamedtariki/vsd-cctv-fights));
