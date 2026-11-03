@@ -385,7 +385,7 @@ class ScrittoreVideo:
 
 # Flusso veloce (D71, Marco, dopo gli esperimenti della notte 03→04/11): niente detector (il WARNING ARMA viene da
 # b2, la violenza con arma = violenza + WARNING), violenza degli scheletri fusa con quella di b1 invece della rete
-# violenza, b1 e b2 con ONNX Runtime su CPU. Metà del tempo della v1.1 (8,4 contro 16,6 s di calcolo per secondo di
+# violenza, b1 e b2 con ONNX Runtime su CPU. Metà del tempo della v1.1 (7,6 contro 14,5 s di calcolo per secondo di
 # video, stesse condizioni) e la violenza resta (pezzi da 10 s mai visti: 0,885 contro 0,853, runs/d71). La pose a
 # 480 px o a 12,5 frame/s sarebbe ancora più veloce ma perde violenza (0,79). La v1.1 è in versioni_passate/v1.1.
 
@@ -945,7 +945,7 @@ SECONDI_SEGMENTO = 10
 # di ONNX Runtime (Ultralytics non permette di fermarli) rallentano il resto e il totale sale a 4,87 (runs/d71).
 FILE_PESI = {"classificatore": "stgcn.pt", "rete_scippi": "rete_scippi_b1.pt", "rete_armi": "rete_armi_b2.pt",
              "rete_scippi_onnx": "rete_scippi_b1.onnx", "rete_armi_onnx": "rete_armi_b2.onnx"}
-URL_PESI = "https://github.com/marcozambrella/argo/releases/download/v1.1/"
+URL_PESI = "https://github.com/marcozambrella/argo/releases/download/v1.2/"
 
 
 def ingresso_ffmpeg(sorgente: str, come_telecamera: bool = False) -> list[str]:
