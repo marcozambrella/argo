@@ -1,0 +1,32 @@
+{
+  "id": "KAGGLE_UTENTE/argo-violenza-pixel-SPLIT",
+  "title": "argo violenza pixel SPLIT",
+  "code_file": "violenza_pixel.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": true,
+  "dataset_sources": [
+    "vulamnguyen/rwf2000",
+    "mohamedtariki/vsd-cctv-fights",
+    "toluwaniaremu/smartcity-cctv-violence-detection-dataset-scvd",
+    "bypktt/ucf-crimes",
+    "aniketsahu09/chain-snatching-cctv-dataset",
+    "gauravsingh72509/snatching-datasets",
+    "manutejachindukuru/snatching",
+    "thelarka/weapon-violence-dataset-wvd",
+    "ismailelbouknify/mot-20",
+    "hoangxuanviet/crohd-head-tracking-21",
+    "ahmedsamir1598/mot17challenge",
+    "flowerb123/shanghaitech-campus",
+    "smmohiuddinkhanshiam/ubi-fights",
+    "hihnguynth/cuhk-avenue-dataset",
+    "marcozambrella/argo-snatch10-ridotto"
+  ],
+  "kernel_sources": [
+    "marcozambrella/argo-finestre-v3"
+  ],
+  "competition_sources": [],
+  "model_sources": []
+}
