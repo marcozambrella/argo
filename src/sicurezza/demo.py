@@ -916,7 +916,7 @@ def comando_valuta_allarme(argomenti=None) -> None:
 # Pagina: src/sicurezza/pannello/ (telecamere, registro degli eventi, archivio delle sessioni).
 #
 # Uso:
-#     uv run argo scarica-pesi
+#     (i pesi in pesi/: non sono pubblici, vedi FILE_PESI)
 #     uv run argo pannello --telecamera ingresso=rtsp://utente:password@192.168.1.20:554/stream1 --telecamera webcam=/dev/video0
 #     uv run argo pannello --telecamera prova=video.mp4 --come-telecamera      (un file letto a velocità reale)
 #     poi apri http://127.0.0.1:8765
@@ -937,7 +937,10 @@ FILE_PAGINA = {"/": ("index.html", "text/html; charset=utf-8"), "/pannello.css":
                "/pannello.js": ("pannello.js", "text/javascript"), "/logo.svg": ("logo.svg", "image/svg+xml")}
 FILE_ARCHIVIO = {"video_annotato.mp4": "video/mp4", "eventi.json": "application/json", "probabilita.csv": "text/csv"}
 SECONDI_SEGMENTO = 10
-# I pesi del sistema consegnato (D60): allegati alla Release del repo, si scaricano con `argo scarica-pesi`.
+MESSAGGIO_PESI = ("The trained weights of ARGO are not public. For research access write to the author:\n"
+                  "https://github.com/marcozambrella. Without them ARGO runs in skeletons-only mode.")
+# I pesi del sistema consegnato (D60). Dal 04/11 non sono più pubblici (Marco: il repo è una vetrina, Release
+# cancellate; copia in dati1tb/argo/pesi_release): `argo scarica-pesi` dice solo come chiederli.
 # D70: Release v1.1 = quelli della v1.0 + le reti video b1 (scippi) e b2 (armi). D71: il flusso veloce usa solo lo
 # ST-GCN, b1 e b2 (detector, taratura e rete violenza servono solo a versioni_passate/v1.1).
 # Con i .onnx (Release v1.2, `argo esporta-onnx`) su CPU b1 e b2 girano con ONNX Runtime: 4,40 s di calcolo per
@@ -945,7 +948,6 @@ SECONDI_SEGMENTO = 10
 # di ONNX Runtime (Ultralytics non permette di fermarli) rallentano il resto e il totale sale a 4,87 (runs/d71).
 FILE_PESI = {"classificatore": "stgcn.pt", "rete_scippi": "rete_scippi_b1.pt", "rete_armi": "rete_armi_b2.pt",
              "rete_scippi_onnx": "rete_scippi_b1.onnx", "rete_armi_onnx": "rete_armi_b2.onnx"}
-URL_PESI = "https://github.com/marcozambrella/argo/releases/download/v1.2/"
 
 
 def ingresso_ffmpeg(sorgente: str, come_telecamera: bool = False) -> list[str]:
@@ -1378,7 +1380,7 @@ def comando_pannello(argomenti=None) -> None:
                         help="rtsp://…, http(s)://…, /dev/video0 or a file; repeat for more cameras")
     parser.add_argument("--come-telecamera", action="store_true",
                         help="read files at real speed, like a camera (for testing)")
-    parser.add_argument("--pesi", default="pesi", help="weights folder (`argo scarica-pesi`)")
+    parser.add_argument("--pesi", default="pesi", help="weights folder (not public: see `argo scarica-pesi`)")
     parser.add_argument("--sessioni", default="sessioni", help="where to store camera recordings and analyses")
     parser.add_argument("--archivio", nargs="*", default=[],
                         help="more folders with analyses to review (e.g. runs/demo_finale)")
@@ -1397,7 +1399,7 @@ def comando_pannello(argomenti=None) -> None:
     opzioni["tracker"] = argomenti.tracker
     opzioni["dispositivo"] = argomenti.dispositivo
     if "percorso_classificatore" not in opzioni:
-        print(f"No weights in {argomenti.pesi}/: skeletons-only mode. For the full system: uv run argo scarica-pesi")
+        print(f"No weights in {argomenti.pesi}/: skeletons-only mode (the weights are not public: argo scarica-pesi)")
     if argomenti.host not in ("127.0.0.1", "localhost", "::1"):
         print(f"WARNING: the panel is reachable from other computers on {argomenti.host} (camera images, no password)")
     telecamere = []
@@ -1417,22 +1419,9 @@ def comando_pannello(argomenti=None) -> None:
 
 
 def comando_scarica_pesi(argomenti=None) -> None:
-    from .strumenti import scarica_con_riprova
-    parser = argparse.ArgumentParser(description="Download the trained weights from the repo Release")
-    parser.add_argument("--cartella", default="pesi")
-    parser.add_argument("--url", default=URL_PESI)
-    argomenti = parser.parse_args(argomenti)
-    cartella = Path(argomenti.cartella)
-    cartella.mkdir(parents=True, exist_ok=True)
-    for nome in FILE_PESI.values():
-        if (cartella / nome).exists():
-            print(f"{nome}: already here")
-            continue
-        print(f"{nome}: downloading…", flush=True)
-        parziale = cartella / (nome + ".parziale")
-        scarica_con_riprova(argomenti.url + nome, parziale)
-        parziale.rename(cartella / nome)
-    print(f"Weights in {cartella}/ (research only, non-commercial use: see the README)")
+    """Dal 04/11 i pesi non sono pubblici (Marco): il comando resta per dire come averli."""
+    print(MESSAGGIO_PESI)
+    raise SystemExit(1)
 
 
 def comando_esporta_onnx(argomenti=None) -> None:

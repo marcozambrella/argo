@@ -13,7 +13,7 @@ ARGO connects to cameras (RTSP, webcam, phone, video file) and shows on a web pa
 
 Everything it sees is also saved to files that other programs can read: keypoints, events, annotated video.
 
-**Videos**: [the opening](media/argo_opening.mp4) (48 s, ARGO on public clips) · [the camera panel](media/panel_demo.mp4) (54 s: a metro camera analysed with a delay, then the archive with a VIOLENCE ALARM on an armed robbery, a fight shown as skeletons only and a street snatching) · [the site](https://marcozambrella.github.io/argo/).
+**See it working**: [the site](https://marcozambrella.github.io/argo/).
 
 | | |
 |---|---|
@@ -54,10 +54,9 @@ You need **Python 3.12** with [uv](https://docs.astral.sh/uv/) and **ffmpeg**. T
 git clone https://github.com/marcozambrella/argo.git
 cd argo
 uv sync                   # environment and dependencies (CPU torch; with an NVIDIA GPU install torch with CUDA)
-uv run argo scarica-pesi  # ~390 MB into pesi/, from Release v1.2 (research only, see below)
 ```
 
-Without the weights ARGO still starts, in **skeletons-only mode**: people, keypoints and tracking, with no classes or alarms. The pose model downloads itself the first time.
+The trained weights are **not public** (see [Data, weights and licences](#data-weights-and-licences)). Without them ARGO still starts, in **skeletons-only mode**: people, keypoints and tracking, with no classes or alarms. The pose model downloads itself the first time.
 
 ## Start: the camera panel
 
@@ -179,7 +178,7 @@ We say them plainly:
 
 ## Training from scratch
 
-You do not need this to use ARGO: the weights come from `argo scarica-pesi`.
+The trained weights are not public; these notebooks are how they were made.
 
 The heavy computing was done on **Kaggle** (2× T4). The notebooks that rebuild the delivered weights are in [`training/`](training) and are launched with `training/lancia.sh <name>`. The order is:
 1. weapon detector: `detector_armi`;
@@ -197,7 +196,7 @@ The code is in [`src/sicurezza/`](src/sicurezza): `dati.py` (videos, labels, spl
 ## Data, weights and licences
 
 - **Code**: [AGPL-3.0](LICENSE), like Ultralytics YOLO, on which it is built.
-- **Weights** (Release v1.2): **research and non-commercial use only**. They are also trained on datasets distributed for academic use only.
+- **Weights**: **not public**. On request, for **research and non-commercial use only**: they are also trained on datasets distributed for academic use only.
 - **Training datasets** (not included in the repo):
   - [RWF-2000](https://github.com/mchengny/RWF2000-Video-Database-for-Violence-Detection): academic use, the authors ask not to redistribute it;
   - CCTV-Fights (Kaggle copy [`mohamedtariki/vsd-cctv-fights`](https://www.kaggle.com/datasets/mohamedtariki/vsd-cctv-fights));
