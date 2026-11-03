@@ -1481,14 +1481,13 @@ def test_opzioni_dai_pesi_e_modalita_scheletri(tmp_path):
     assert opzioni["percorso_rete_scippi"].endswith("rete_scippi_b1.pt")
     assert opzioni["percorso_rete_armi"].endswith("rete_armi_b2.pt")
     assert descrivi_modalita(opzioni) == "full system"
-    for nome in ("rete_scippi_b1.onnx", "rete_armi_b2.onnx", "yolo26s-pose.onnx"):   # D71: su CPU gli ONNX
+    for nome in ("rete_scippi_b1.onnx", "rete_armi_b2.onnx"):                   # D71: su CPU gli ONNX
         (tmp_path / nome).write_bytes(b"x")
     opzioni = opzioni_dai_pesi(tmp_path)
     assert opzioni["percorso_rete_scippi"].endswith("rete_scippi_b1.onnx")
     assert opzioni["percorso_rete_armi"].endswith("rete_armi_b2.onnx")
-    assert opzioni["percorso_modello_pose"].endswith("yolo26s-pose.onnx")
     opzioni = opzioni_dai_pesi(tmp_path, "cuda")                               # con la GPU i .pt
-    assert opzioni["percorso_rete_scippi"].endswith("rete_scippi_b1.pt") and "percorso_modello_pose" not in opzioni
+    assert opzioni["percorso_rete_scippi"].endswith("rete_scippi_b1.pt")
     (tmp_path / "stgcn.pt").unlink()
     assert opzioni_dai_pesi(tmp_path) == {}   # senza classificatore niente reti video
 

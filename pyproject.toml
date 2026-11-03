@@ -18,7 +18,6 @@ argo = "sicurezza.demo:main"
 [dependency-groups]
 dev = [
     "onnx>=1.23.2",
-    "onnxslim>=0.1.98",
     "pytest",
 ]
 
