@@ -248,15 +248,22 @@ SOGLIA_ARMA_B2 = 0.3467    # test 0,77, recall 0,64, falsi allarmi sulle folle 1
 
 
 class ReteVideoArmiScippi:
+    """percorso_rete: i pesi del kernel (.pt) oppure la stessa rete esportata con `argo esporta-onnx` (.onnx, D71:
+    con ONNX Runtime su CPU −22% per b1 e −28% per b2, uscite uguali)."""
     def __init__(self, percorso_rete: str, lato: int, dispositivo: str = "cpu"):
-        import torchvision
-        self.rete = torchvision.models.video.r2plus1d_18(weights=None)
-        self.rete.fc = torch.nn.Linear(512, len(USCITE_RETE_VIDEO))
-        stato_float = {}
-        for chiave, valore in torch.load(percorso_rete, map_location="cpu").items():
-            stato_float[chiave] = valore.float()   # il kernel salva in mezza precisione
-        self.rete.load_state_dict(stato_float)
-        self.rete = self.rete.to(dispositivo).eval()
+        self.sessione = None
+        if str(percorso_rete).endswith(".onnx"):
+            import onnxruntime
+            self.sessione = onnxruntime.InferenceSession(str(percorso_rete), providers=["CPUExecutionProvider"])
+        else:
+            import torchvision
+            self.rete = torchvision.models.video.r2plus1d_18(weights=None)
+            self.rete.fc = torch.nn.Linear(512, len(USCITE_RETE_VIDEO))
+            stato_float = {}
+            for chiave, valore in torch.load(percorso_rete, map_location="cpu").items():
+                stato_float[chiave] = valore.float()   # il kernel salva in mezza precisione
+            self.rete.load_state_dict(stato_float)
+            self.rete = self.rete.to(dispositivo).eval()
         self.dispositivo = dispositivo
         self.lato = lato
         self.altezza = lato * 8 // 7                                 # 128 per 112, 256 per 224
@@ -277,8 +284,13 @@ class ReteVideoArmiScippi:
         x = (self.larghezza - self.lato) // 2
         ritagli = np.stack(frame_scelti)[:, y:y + self.lato, x:x + self.lato]
         ingresso = (ritagli.astype(np.float32) / 255 - MEDIA_KINETICS) / DEVIAZIONE_KINETICS
-        ingresso = torch.from_numpy(ingresso).permute(3, 0, 1, 2)[None].to(self.dispositivo)
-        valori = torch.sigmoid(self.rete(ingresso))[0].cpu().numpy()
+        # la rete vuole [lotto, canali, frame, altezza, larghezza]
+        ingresso = np.ascontiguousarray(ingresso.transpose(3, 0, 1, 2)[None])
+        if self.sessione is not None:
+            logit = self.sessione.run(None, {"x": ingresso})[0][0]
+            valori = 1 / (1 + np.exp(-logit))
+        else:
+            valori = torch.sigmoid(self.rete(torch.from_numpy(ingresso).to(self.dispositivo)))[0].cpu().numpy()
         risultato = {}
         for numero, nome in enumerate(USCITE_RETE_VIDEO):
             risultato[nome] = float(valori[numero])
@@ -934,7 +946,10 @@ SECONDI_SEGMENTO = 10
 # I pesi del sistema consegnato (D60): allegati alla Release del repo, si scaricano con `argo scarica-pesi`.
 # D70: Release v1.1 = quelli della v1.0 + le reti video b1 (scippi) e b2 (armi). D71: il flusso veloce usa solo lo
 # ST-GCN, b1 e b2 (detector, taratura e rete violenza servono solo a versioni_passate/v1.1).
-FILE_PESI = {"classificatore": "stgcn.pt", "rete_scippi": "rete_scippi_b1.pt", "rete_armi": "rete_armi_b2.pt"}
+# Con i .onnx (Release v1.2, `argo esporta-onnx`) su CPU b1, b2 e la pose girano con ONNX Runtime.
+FILE_PESI = {"classificatore": "stgcn.pt", "rete_scippi": "rete_scippi_b1.pt", "rete_armi": "rete_armi_b2.pt",
+             "rete_scippi_onnx": "rete_scippi_b1.onnx", "rete_armi_onnx": "rete_armi_b2.onnx",
+             "pose_onnx": "yolo26s-pose.onnx"}
 URL_PESI = "https://github.com/marcozambrella/argo/releases/download/v1.1/"
 
 
@@ -957,16 +972,20 @@ def sorgente_senza_password(sorgente: str) -> str:
     return re.sub(r"(://[^:/@]+):[^@/]*@", r"\1:***@", sorgente)
 
 
-def opzioni_dai_pesi(cartella: Path) -> dict:
-    """Le opzioni di `AnalisiFlusso` per i pesi presenti nella cartella. Senza classificatore: modalità scheletri."""
+def opzioni_dai_pesi(cartella: Path, dispositivo: str = "cpu") -> dict:
+    """Le opzioni di `AnalisiFlusso` per i pesi presenti nella cartella. Senza classificatore: modalità scheletri.
+    Su CPU, se ci sono, le versioni .onnx di b1, b2 e della pose (D71); con la GPU i .pt."""
     opzioni = {}
     if not (cartella / FILE_PESI["classificatore"]).exists():
         return opzioni
     opzioni["percorso_classificatore"] = str(cartella / FILE_PESI["classificatore"])
-    if (cartella / FILE_PESI["rete_scippi"]).exists():
-        opzioni["percorso_rete_scippi"] = str(cartella / FILE_PESI["rete_scippi"])
-    if (cartella / FILE_PESI["rete_armi"]).exists():
-        opzioni["percorso_rete_armi"] = str(cartella / FILE_PESI["rete_armi"])
+    for chiave in ("rete_scippi", "rete_armi"):
+        if dispositivo == "cpu" and (cartella / FILE_PESI[chiave + "_onnx"]).exists():
+            opzioni["percorso_" + chiave] = str(cartella / FILE_PESI[chiave + "_onnx"])
+        elif (cartella / FILE_PESI[chiave]).exists():
+            opzioni["percorso_" + chiave] = str(cartella / FILE_PESI[chiave])
+    if dispositivo == "cpu" and (cartella / FILE_PESI["pose_onnx"]).exists():
+        opzioni["percorso_modello_pose"] = str(cartella / FILE_PESI["pose_onnx"])
     return opzioni
 
 
@@ -1377,11 +1396,13 @@ def comando_pannello(argomenti=None) -> None:
     else:
         dispositivo_predefinito = "cpu"
     parser.add_argument("--dispositivo", default=dispositivo_predefinito)
-    parser.add_argument("--modello-pose", default=MODELLO_POSE_PREDEFINITO)
+    parser.add_argument("--modello-pose", default=None,
+                        help=f"default: yolo26s-pose.onnx of the weights folder on CPU, else {MODELLO_POSE_PREDEFINITO}")
     parser.add_argument("--tracker", default=TRACKER_PREDEFINITO)
     argomenti = parser.parse_args(argomenti)
-    opzioni = opzioni_dai_pesi(Path(argomenti.pesi))
-    opzioni["percorso_modello_pose"] = argomenti.modello_pose
+    opzioni = opzioni_dai_pesi(Path(argomenti.pesi), argomenti.dispositivo)
+    if argomenti.modello_pose:
+        opzioni["percorso_modello_pose"] = argomenti.modello_pose
     opzioni["tracker"] = argomenti.tracker
     opzioni["dispositivo"] = argomenti.dispositivo
     if "percorso_classificatore" not in opzioni:
@@ -1423,10 +1444,30 @@ def comando_scarica_pesi(argomenti=None) -> None:
     print(f"Weights in {cartella}/ (research only, non-commercial use: see the README)")
 
 
+def comando_esporta_onnx(argomenti=None) -> None:
+    """D71: b1, b2 e la pose in ONNX, per ONNX Runtime su CPU (i file della Release v1.2). Serve il pacchetto onnx
+    (`uv sync`: è nel gruppo dev)."""
+    parser = argparse.ArgumentParser(description="Export b1, b2 and the pose model to ONNX (faster on CPU)")
+    parser.add_argument("--pesi", default="pesi")
+    argomenti = parser.parse_args(argomenti)
+    cartella = Path(argomenti.pesi)
+    for chiave, lato in (("rete_scippi", 112), ("rete_armi", 224)):
+        rete = ReteVideoArmiScippi(str(cartella / FILE_PESI[chiave]), lato)
+        esempio = torch.zeros(1, 3, FRAME_PIXEL, lato, lato)
+        torch.onnx.export(rete.rete, esempio, str(cartella / FILE_PESI[chiave + "_onnx"]), input_names=["x"],
+                          output_names=["y"], dynamo=False)
+        print(f"{FILE_PESI[chiave + '_onnx']}: done")
+    from ultralytics import YOLO
+    # dynamic: l'immagine resta rettangolare come con il .pt (a 640×640 fissi è più lenta e i riquadri cambiano)
+    esportato = YOLO(MODELLO_POSE_PREDEFINITO).export(format="onnx", dynamic=True, imgsz=LATO_POSE)
+    Path(esportato).replace(cartella / FILE_PESI["pose_onnx"])
+    print(f"{FILE_PESI['pose_onnx']}: done")
+
+
 # ==============================================================================================================
 # riga di comando: python -m sicurezza.demo <comando> [opzioni]
 # ==============================================================================================================
-COMANDI = {"pannello": comando_pannello, "scarica-pesi": comando_scarica_pesi,
+COMANDI = {"pannello": comando_pannello, "scarica-pesi": comando_scarica_pesi, "esporta-onnx": comando_esporta_onnx,
            "analizza-video": comando_analizza_video, "tara-warning": comando_tara_warning,
            "valuta-sistema": comando_valuta_sistema, "valuta-allarme": comando_valuta_allarme}
 
@@ -1434,7 +1475,7 @@ COMANDI = {"pannello": comando_pannello, "scarica-pesi": comando_scarica_pesi,
 def main(argomenti=None) -> None:
     argomenti = sys.argv[1:] if argomenti is None else argomenti
     if not argomenti or argomenti[0] not in COMANDI:
-        print("usage: argo {pannello,scarica-pesi,analizza-video} [options]  (--help after the command)")
+        print("usage: argo {pannello,scarica-pesi,analizza-video,esporta-onnx} [options]  (--help after the command)")
         raise SystemExit(2)
     COMANDI[argomenti[0]](argomenti[1:])
 

@@ -9,13 +9,18 @@ dependencies = [
     "torch",
     "torchvision",
     "lap",  # richiesto dal tracker di Ultralytics
+    "onnxruntime>=1.23.2",  # D71: b1, b2 e pose più veloci su CPU
 ]
 
 [project.scripts]
 argo = "sicurezza.demo:main"
 
 [dependency-groups]
-dev = ["pytest"]
+dev = [
+    "onnx>=1.23.2",
+    "onnxslim>=0.1.98",
+    "pytest",
+]
 
 [build-system]
 requires = ["hatchling"]

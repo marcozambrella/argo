@@ -1358,6 +1358,23 @@ def test_rete_video_armi_scippi_come_nel_kernel(tmp_path, lato, misura):
     np.testing.assert_allclose(list(probabilita.values()), attese, atol=1e-5)
 
 
+def test_rete_video_onnx_uguale_al_pt(tmp_path):
+    """D71: la stessa rete esportata in ONNX (come `argo esporta-onnx`) dà le stesse probabilità del .pt."""
+    salva_rete_video_finta(tmp_path / "rete.pt")
+    rete_pt = ReteVideoArmiScippi(str(tmp_path / "rete.pt"), 112)
+    torch.onnx.export(rete_pt.rete, torch.zeros(1, 3, 16, 112, 112), str(tmp_path / "rete.onnx"), input_names=["x"],
+                      output_names=["y"], dynamo=False)
+    rete_onnx = ReteVideoArmiScippi(str(tmp_path / "rete.onnx"), 112)
+    generatore = np.random.default_rng(0)
+    frame = []
+    for numero in range(40):
+        frame.append(rete_pt.riduci(generatore.integers(0, 256, (240, 320, 3), dtype=np.uint8)))
+    attese = rete_pt.probabilita(frame)
+    ottenute = rete_onnx.probabilita(frame)
+    assert list(ottenute) == list(attese)
+    np.testing.assert_allclose(list(ottenute.values()), list(attese.values()), atol=1e-5)
+
+
 def test_classe_con_scippo():
     """D70: lo scippo di b1 vince su normale e violenza, non sulla violenza con arma."""
     assert classe_con_scippo("normale", True) == "scippo"
@@ -1464,6 +1481,14 @@ def test_opzioni_dai_pesi_e_modalita_scheletri(tmp_path):
     assert opzioni["percorso_rete_scippi"].endswith("rete_scippi_b1.pt")
     assert opzioni["percorso_rete_armi"].endswith("rete_armi_b2.pt")
     assert descrivi_modalita(opzioni) == "full system"
+    for nome in ("rete_scippi_b1.onnx", "rete_armi_b2.onnx", "yolo26s-pose.onnx"):   # D71: su CPU gli ONNX
+        (tmp_path / nome).write_bytes(b"x")
+    opzioni = opzioni_dai_pesi(tmp_path)
+    assert opzioni["percorso_rete_scippi"].endswith("rete_scippi_b1.onnx")
+    assert opzioni["percorso_rete_armi"].endswith("rete_armi_b2.onnx")
+    assert opzioni["percorso_modello_pose"].endswith("yolo26s-pose.onnx")
+    opzioni = opzioni_dai_pesi(tmp_path, "cuda")                               # con la GPU i .pt
+    assert opzioni["percorso_rete_scippi"].endswith("rete_scippi_b1.pt") and "percorso_modello_pose" not in opzioni
     (tmp_path / "stgcn.pt").unlink()
     assert opzioni_dai_pesi(tmp_path) == {}   # senza classificatore niente reti video
 
