@@ -58,7 +58,7 @@ class Estrattore:
                  percorso_modello_armi=None, dispositivo=None,
                  tracker: str = TRACKER_PREDEFINITO, confidenza_minima_persone: float = 0.1,
                  confidenza_minima_armi: float = 0.25, mezza_precisione: bool = False, dimensione_lotto: int = 8,
-                 percorso_modello_mani=None, lato_immagine: int = 640):
+                 percorso_modello_mani=None):
         from ultralytics import YOLO
 
         self.modello_pose = YOLO(percorso_modello_pose)
@@ -77,7 +77,6 @@ class Estrattore:
         self.confidenza_minima_armi = confidenza_minima_armi
         self.mezza_precisione = mezza_precisione  # D18 rivista: FP16 più lento (limite CPU), spento di default
         self.dimensione_lotto = dimensione_lotto
-        self.lato_immagine = lato_immagine   # lato lungo per la pose: 640 nell'estrazione, 480 nel flusso (D71)
         self.tracker = None
 
     def nuovo_video(self, telecamera_mobile: bool = False) -> None:
@@ -99,8 +98,7 @@ class Estrattore:
         if self.tracker is None:
             self.nuovo_video()
         risultati_pose = self.modello_pose.predict(frame, device=self.dispositivo, conf=self.confidenza_minima_persone,
-                                                   imgsz=self.lato_immagine, half=self.mezza_precisione,
-                                                   verbose=False)
+                                                   half=self.mezza_precisione, verbose=False)
         if self.modello_armi is not None:
             risultati_armi = self.modello_armi.predict(frame, device=self.dispositivo,
                                                        conf=self.confidenza_minima_armi,

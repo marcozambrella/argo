@@ -331,45 +331,6 @@ def costruisci_finestra(timeline: TimelineVideo, inizio_finestra: int,
     return nodi, maschera, classe_arma
 
 
-def pose_a_meta_frame(nodi: np.ndarray, maschera: np.ndarray, classe_arma: np.ndarray) -> tuple:
-    """Pose a 12,5 frame/s (un frame su due, D71; nella notte 03→04/11 serviva a simularla): nei frame dispari le
-    persone sono la media dei due frame pari vicini (o quello visibile dei due), le armi quelle del frame prima;
-    poi le velocità si rifanno. nodi [N, T, 70, 5], maschera [N, T, 70], classe_arma [N, T, 2]; ritorna copie."""
-    nodi = nodi.copy()
-    maschera = maschera.copy()
-    classe_arma = classe_arma.copy()
-    frame_totali = nodi.shape[1]
-    persone = slice(0, NODI_PERSONE)
-    for frame in range(1, frame_totali, 2):
-        prima = frame - 1
-        dopo = frame + 1
-        if dopo >= frame_totali:
-            dopo = prima
-        valori_prima = nodi[:, prima, persone, 0:3]
-        valori_dopo = nodi[:, dopo, persone, 0:3]
-        visibile_prima = valori_prima[..., 2] > 0
-        visibile_dopo = valori_dopo[..., 2] > 0
-        nuovi = np.zeros_like(valori_prima)
-        entrambi = visibile_prima & visibile_dopo
-        nuovi[entrambi] = (valori_prima[entrambi] + valori_dopo[entrambi]) / 2
-        solo_prima = visibile_prima & ~visibile_dopo
-        nuovi[solo_prima] = valori_prima[solo_prima]
-        solo_dopo = ~visibile_prima & visibile_dopo
-        nuovi[solo_dopo] = valori_dopo[solo_dopo]
-        nodi[:, frame, persone, 0:3] = nuovi
-        maschera[:, frame, persone] = maschera[:, prima, persone] | maschera[:, dopo, persone]
-        nodi[:, frame, NODI_PERSONE:] = nodi[:, prima, NODI_PERSONE:]
-        maschera[:, frame, NODI_PERSONE:] = maschera[:, prima, NODI_PERSONE:]
-        classe_arma[:, frame] = classe_arma[:, prima]
-    # velocità delle persone come in costruisci_finestra: solo dove il punto è visibile in due frame di fila
-    visibile = nodi[:, :, persone, 2] > 0
-    posizione = nodi[:, :, persone, 0:2]
-    visibile_anche_prima = visibile[:, 1:] & visibile[:, :-1]
-    nodi[:, 1:, persone, 3:5] = np.where(visibile_anche_prima[..., None], np.diff(posizione, axis=1), 0.0)
-    nodi[:, 0, persone, 3:5] = 0
-    return nodi, maschera, classe_arma
-
-
 # ==============================================================================================================
 # dataset_finestre
 # Dalle estrazioni (.npz) e dalle annotazioni (ClipAnnotata) al dataset di finestre etichettate.

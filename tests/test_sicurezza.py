@@ -13,7 +13,7 @@ import yaml
 
 from sicurezza.dati import elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
 from sicurezza.demo import ReteVideoArmiScippi, classe_con_scippo, Pannello, Telecamera, Videoregistratore, crea_server, ingresso_ffmpeg, leggi_telecamera, opzioni_dai_pesi, descrivi_modalita, sorgente_senza_password, AllarmeViolenza, classe_finale_con_pixel, fondi_con_pixel, pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
-from sicurezza.modelli import pose_a_meta_frame, analizza_predizioni, ricuci_tracce, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
+from sicurezza.modelli import analizza_predizioni, ricuci_tracce, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.strumenti import violenza_per_il_sito, risultati_per_il_sito, scarica_con_riprova, scegli_candidati_scippo_telefono, scegli_immagini_coco
 from sicurezza.visione import mani_di_una_persona, precisione_media, probabilita_armi_in_mano, ritaglio_quadrato, ritagli_per_addestramento, prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
 
@@ -1308,21 +1308,6 @@ def test_allarme_violenza_come_la_misura(con_pixel):
     assert regola is None or regola["falsi_allarmi"] == float(any(attesi))   # un video normale: allarme sì/no
 
 
-def test_pose_a_meta_frame_interpola_e_rifà_le_velocità():
-    nodi = np.zeros((1, 5, NODI_PER_FRAME, CARATTERISTICHE_PER_NODO), np.float32)
-    maschera = np.ones((1, 5, NODI_PER_FRAME), bool)
-    for frame in range(5):
-        nodi[0, frame, 0, 0:3] = (frame * 2.0, 0.0, 0.9)    # il nodo 0 si muove di 2 a frame
-    nodi[0, 1, 0, 0:3] = (99.0, 99.0, 0.9)                   # frame dispari rumoroso: viene rifatto
-    nodi[0, 2, 1, 0:3] = (5.0, 5.0, 0.8)                     # nodo 1 visibile solo nel frame 2
-    nodi[0, 1, NODI_PERSONE, 0:3] = (7.0, 7.0, 0.5)          # arma nel frame 1: diventa quella del frame 0 (vuota)
-    nuovi, nuova_maschera, _ = pose_a_meta_frame(nodi, maschera, np.zeros((1, 5, 2), np.int8))
-    assert nuovi[0, 1, 0, 0] == 2.0 and nuovi[0, 3, 0, 0] == 6.0      # media dei frame pari vicini
-    assert nuovi[0, 1, 1, 0] == 5.0 and nuovi[0, 3, 1, 0] == 5.0      # visibile da un solo lato: si copia
-    assert nuovi[0, 1, NODI_PERSONE].sum() == 0
-    assert nuovi[0, 2, 0, 3] == 2.0 and nuovi[0, 0, 0, 3] == 0        # velocità rifatte dalle nuove posizioni
-
-
 def salva_rete_video_finta(percorso):
     """Una R(2+1)D-18 a 5 uscite con pesi a caso, salvata in mezza precisione come fa il kernel rete_video (D70)."""
     import torchvision
@@ -1385,8 +1370,8 @@ def test_classe_con_scippo():
 
 @pytest.mark.skipif(not PESI_POSE.exists(), reason="pesi della pose mancanti")
 def test_demo_reti_video_ogni_quanto(tmp_path, monkeypatch):
-    """D70: b1 ogni 20 frame, b2 ogni 100; in mezzo vale l'ultimo valore; campi nuovi negli eventi. D71: la pose
-    un frame su due a 480 px, niente detector, violenza degli scheletri fusa con quella di b1."""
+    """D70: b1 ogni 20 frame, b2 ogni 100; in mezzo vale l'ultimo valore; campi nuovi negli eventi. D71: niente
+    detector, violenza degli scheletri fusa con quella di b1."""
     import sicurezza.demo as demo
     iperparametri = {"dimensione": 32, "blocchi": 1}
     torch.save({"nome_modello": "graph_transformer", "iperparametri_modello": iperparametri,
@@ -1406,7 +1391,7 @@ def test_demo_reti_video_ogni_quanto(tmp_path, monkeypatch):
     analizza_frame_vera = demo.Estrattore.analizza_frame
 
     def analizza_frame_contata(estrattore, frame, primo_frame_del_video):
-        pose.append((estrattore.lato_immagine, estrattore.modello_armi))
+        pose.append(estrattore.modello_armi)
         return analizza_frame_vera(estrattore, frame, primo_frame_del_video)
     monkeypatch.setattr(demo.Estrattore, "analizza_frame", analizza_frame_contata)
     eventi = analizza_video(str(VIDEO_PERSONE), str(tmp_path / "c.pt"), tmp_path / "demo",
@@ -1414,9 +1399,7 @@ def test_demo_reti_video_ogni_quanto(tmp_path, monkeypatch):
                             percorso_rete_armi=str(tmp_path / "rete.pt"))
     assert len(eventi) == 2                     # finestre che cominciano ai frame 0 e 10
     assert sorted(chiamate) == [112, 224]       # una chiamata ciascuna, alla finestra 0
-    assert pose == [(480, None)] * 25           # 50 frame: la pose sui 25 pari, a 480 px e senza detector
-    righe = (tmp_path / "demo" / "keypoint.jsonl").read_text().splitlines()
-    assert len(righe) == 50 and json.loads(righe[1])["persone"] == json.loads(righe[0])["persone"]
+    assert pose == [None] * 50                  # la pose su tutti i 50 frame, senza detector
     for evento in eventi:
         assert not evento["warning_arma"] and evento["allarme_scippo"]   # il WARNING viene da b2, non dal detector
         assert evento["probabilita_arma_video"] == 0.2 and evento["probabilita_scippo_video"] == 0.9

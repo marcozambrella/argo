@@ -25,7 +25,9 @@ sys.stdout.reconfigure(line_buffering=True)
 su clip di val e test v3 mai viste (Marco: "un po' più di 60, così diversifichi"): CLIP_PER_CLASSE per classe
 (la più grave tra le sue finestre) e per split, alternando le sorgenti, al più 30 s ciascuna. Il flusso gira con
 il solo ST-GCN consegnato (pesi/stgcn.pt della Release v1.1): b1 e b2 non cambiano rispetto a D70 e i loro punteggi
-ci sono già, la fusione con b1 si fa dopo in locale. Le clip sono divise in PARTI kernel (stesso seme in tutti)."""
+ci sono già, la fusione con b1 si fa dopo in locale. Le clip sono divise in PARTI kernel (stesso seme in tutti).
+Girato sul commit e7f43f3 del branch flusso-veloce (LATO_POSE e PASSO_POSE ci sono solo lì). Esito (runs/d71):
+violenza 10 s incrociata d71 0,794, s480-25 0,794, s640-25 0,885 (oggi 0,853) → in main il flusso s640-25."""
 import json
 import time
 from pathlib import Path

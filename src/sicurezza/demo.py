@@ -20,8 +20,7 @@ import torch
 
 from .dati import CLASSI, FPS_ANALISI, FRAME_PER_FINESTRA, INDICE_CLASSE, OSSA, PASSO_FINESTRE, POLSI
 from .dati import leggi_frame, leggi_info_video, nome_file_estratto
-from .modelli import TimelineVideo, carica_timeline, costruisci_finestra, crea_modello, metriche, pose_a_meta_frame
-from .modelli import timeline_da_dati
+from .modelli import TimelineVideo, carica_timeline, costruisci_finestra, crea_modello, metriche, timeline_da_dati
 from .visione import MODELLO_POSE_PREDEFINITO, TRACKER_PREDEFINITO, Estrattore, impacchetta_estrazione
 
 
@@ -384,13 +383,11 @@ class ScrittoreVideo:
         self.processo.wait()
 
 
-# Flusso veloce (D71, scelta di Marco dopo gli esperimenti della notte 03→04/11, runs/notte_0311/RIEPILOGO.md): la pose
-# a 480 px e un frame su due (12,5 frame/s; i frame in mezzo si rifanno per interpolazione nella finestra), niente
-# detector (il WARNING ARMA viene da b2, la violenza con arma = violenza + WARNING), violenza degli scheletri fusa con
-# quella di b1 invece della rete violenza. ~4 s di calcolo per secondo di video su CPU invece di 14,9.
-# Il flusso v1.1 resta in versioni_passate/v1.1.
-LATO_POSE = 480
-PASSO_POSE = 2
+# Flusso veloce (D71, Marco, dopo gli esperimenti della notte 03→04/11): niente detector (il WARNING ARMA viene da
+# b2, la violenza con arma = violenza + WARNING), violenza degli scheletri fusa con quella di b1 invece della rete
+# violenza, b1 e b2 con ONNX Runtime su CPU. Metà del tempo della v1.1 (8,4 contro 16,6 s di calcolo per secondo di
+# video, stesse condizioni) e la violenza resta (pezzi da 10 s mai visti: 0,885 contro 0,853, runs/d71). La pose a
+# 480 px o a 12,5 frame/s sarebbe ancora più veloce ma perde violenza (0,79). La v1.1 è in versioni_passate/v1.1.
 
 
 class AnalisiFlusso:
@@ -411,8 +408,7 @@ class AnalisiFlusso:
                  percorso_rete_scippi=None, percorso_rete_armi=None):
         self.dispositivo = dispositivo
         self.estrattore = Estrattore(percorso_modello_pose, None, dispositivo, tracker=tracker,
-                                     percorso_modello_mani=percorso_modello_mani,   # D44: anche le mani, se c'è
-                                     lato_immagine=LATO_POSE)
+                                     percorso_modello_mani=percorso_modello_mani)   # D44: anche le mani, se c'è
 
         # percorso_classificatore: nessuno, un file, oppure una lista di file
         if percorso_classificatore is None:
@@ -441,17 +437,13 @@ class AnalisiFlusso:
         self.solo_scheletri = solo_scheletri
         self.pannello_nel_frame = pannello_nel_frame
         self.ultimi_frame = deque(maxlen=FRAME_PER_FINESTRA)   # (persone, armi) degli ultimi 40 frame
-        self.ultima_pose = None
         self.indice_frame = 0
         self.decisione = {"probabilita": None, "classe": None, "warning": False, "allarme": False}
 
     @torch.no_grad()
     def analizza(self, frame: np.ndarray):
         """→ (frame annotato, persone, armi, evento della finestra appena conclusa oppure None)."""
-        # D71: la pose un frame su due; negli altri resta l'ultima (nella finestra si rifanno per interpolazione)
-        if self.indice_frame % PASSO_POSE == 0:
-            self.ultima_pose = self.estrattore.analizza_frame(frame, primo_frame_del_video=self.indice_frame == 0)
-        persone, armi = self.ultima_pose
+        persone, armi = self.estrattore.analizza_frame(frame, primo_frame_del_video=self.indice_frame == 0)
         self.ultimi_frame.append((persone, armi))
         if self.rete_scippi:
             self.ridotti_scippi.append(self.rete_scippi.riduci(frame))
@@ -491,9 +483,7 @@ class AnalisiFlusso:
             righe_armi.append((numero, dati_armi))
         dati = impacchetta_estrazione(righe_persone, righe_armi, FRAME_PER_FINESTRA, larghezza, altezza, 0.0)
         nodi, maschera, classe_arma = costruisci_finestra(timeline_da_dati(dati), 0)
-        # le finestre cominciano a frame pari (passo 10): i frame dispari sono quelli senza pose, da interpolare
-        nodi, maschera, classe_arma = pose_a_meta_frame(nodi[None], maschera[None], classe_arma[None])
-        probabilita = probabilita_media(self.classificatori, nodi[0], maschera[0], classe_arma[0], self.dispositivo)
+        probabilita = probabilita_media(self.classificatori, nodi, maschera, classe_arma, self.dispositivo)
         # D70: b2 ogni 4 s e b1 ogni 0,8 s; tra una chiamata e l'altra vale l'ultimo risultato
         if self.rete_armi and inizio_finestra % PASSO_RETE_ARMI == 0:
             self.ultima_armi = self.rete_armi.probabilita(list(self.ridotti_armi))
