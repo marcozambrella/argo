@@ -1,0 +1,24 @@
+{
+  "id": "KAGGLE_UTENTE/argo-pose-ridotta-VARIANTE",
+  "title": "argo pose ridotta VARIANTE",
+  "code_file": "pose_ridotta.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": true,
+  "dataset_sources": [
+    "vulamnguyen/rwf2000",
+    "mohamedtariki/vsd-cctv-fights",
+    "toluwaniaremu/smartcity-cctv-violence-detection-dataset-scvd",
+    "bypktt/ucf-crimes",
+    "aniketsahu09/chain-snatching-cctv-dataset",
+    "gauravsingh72509/snatching-datasets",
+    "manutejachindukuru/snatching"
+  ],
+  "kernel_sources": [
+    "marcozambrella/argo-finestre-v3"
+  ],
+  "competition_sources": [],
+  "model_sources": []
+}
