@@ -50,7 +50,8 @@ ALTEZZA = LATO * 8 // 7          # 128 per 112, 256 per 224: margine per il rita
 LARGHEZZA = ALTEZZA * 4 // 3 + (ALTEZZA * 4 // 3) % 2   # 4:3 come la maggior parte delle CCTV (171 → 170 per 112)
 ORE_MASSIME = 11.0
 FINESTRE_PER_GRUPPO = {"arma": 4000, "scippo": 4000, "violenza": 3000, "normale": 3000,
-                       "anomalie_nuove": 4000, "normali_nuove": 3000}   # le ultime due solo in b1a
+                       "anomalie_nuove": 4000, "normali_nuove": 5000}   # le ultime due solo in b1a
+# D69: normali_nuove 5000 e non 3000: con i video normali di CHAD (corse senza motivo, come in metro) NWPU ne avrebbe ~700
 FINESTRE_VAL = 2000
 LOTTO = {"b1": 32, "b2": 8, "b3": 8, "b1a": 32}[VARIANTE]   # a 224 px anche 16 va fuori memoria sulle T4 (02/11, b2 v1)
 FRAME_PER_BLOCCO = 600   # punteggi finali: le clip lunghe si decodificano a blocchi da 24 s
