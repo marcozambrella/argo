@@ -44,7 +44,7 @@ FRAME_SCELTI = (4, 14, 24, 34)
 FINESTRE_PER_GRUPPO = {"arma": 8000, "scippo": 8000, "violenza": 6000, "normale": 8000,
                        "anomalie_nuove": 6000, "normali_nuove": 6000}
 FRAME_PER_BLOCCO = 600
-MODELLI = (("ViT-L-14-336", "openai", 336), ("ViT-B-16", "openai", 224))
+MODELLI = (("ViT-L-14-336-quickgelu", "openai", 336), ("ViT-B-16-quickgelu", "openai", 224))   # i pesi OpenAI usano QuickGELU
 ETICHETTA_DEL_TIPO = {"normale": INDICE_CLASSE["normale"], "violenza": INDICE_CLASSE["violenza"],
                       "arma": INDICE_CLASSE["violenza_con_arma"], "scippo": INDICE_CLASSE["scippo"],
                       "furto": -1, "altra": -1}
