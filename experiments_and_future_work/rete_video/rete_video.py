@@ -42,10 +42,13 @@ from sicurezza.dati import ClipAnnotata, categoria_ucf
 from sicurezza.demo import tipi_della_clip, salva_punteggi
 
 VARIANTE = "b1"
-LATI = {"b1": 112, "b2": 224, "b3": 224, "b1a": 112}
+LATI = {"b1": 112, "b2": 224, "b3": 224, "b1a": 112, "b5": 192}
 LATO = LATI[VARIANTE]
+LATO_X = LATO
+if VARIANTE == "b5":   # goal 80% G4: tutto il fotogramma in 4:3 (192×256), non il quadrato centrale; stessi pixel di b2
+    LATO_X = LATO * 4 // 3
 GRIGIO = VARIANTE == "b3"
-EPOCHE = {"b1": 8, "b2": 5, "b3": 5, "b1a": 8}[VARIANTE]
+EPOCHE = {"b1": 8, "b2": 5, "b3": 5, "b1a": 8, "b5": 5}[VARIANTE]
 ALTEZZA = LATO * 8 // 7          # 128 per 112, 256 per 224: margine per il ritaglio a caso
 LARGHEZZA = ALTEZZA * 4 // 3 + (ALTEZZA * 4 // 3) % 2   # 4:3 come la maggior parte delle CCTV (171 → 170 per 112)
 ORE_MASSIME = 11.0
@@ -53,7 +56,7 @@ FINESTRE_PER_GRUPPO = {"arma": 4000, "scippo": 4000, "violenza": 3000, "normale"
                        "anomalie_nuove": 4000, "normali_nuove": 5000}   # le ultime due solo in b1a
 # D69: normali_nuove 5000 e non 3000: con i video normali di CHAD (corse senza motivo, come in metro) NWPU ne avrebbe ~700
 FINESTRE_VAL = 2000
-LOTTO = {"b1": 32, "b2": 8, "b3": 8, "b1a": 32}[VARIANTE]   # a 224 px anche 16 va fuori memoria sulle T4 (02/11, b2 v1)
+LOTTO = {"b1": 32, "b2": 8, "b3": 8, "b1a": 32, "b5": 8}[VARIANTE]   # a 224 px anche 16 va fuori memoria sulle T4 (02/11, b2 v1)
 FRAME_PER_BLOCCO = 600   # punteggi finali: le clip lunghe si decodificano a blocchi da 24 s
 CON_ANOMALIE = VARIANTE == "b1a"
 USCITE = ("violenza", "arma", "fuoco", "coltello", "scippo")
@@ -83,14 +86,14 @@ def ritaglia(finestre: np.ndarray, allena: bool, generatore) -> torch.Tensor:
     for finestra in finestre:
         if allena:
             y = generatore.integers(0, ALTEZZA - LATO + 1)
-            x = generatore.integers(0, LARGHEZZA - LATO + 1)
-            pezzo = finestra[:, y:y + LATO, x:x + LATO]
+            x = generatore.integers(0, LARGHEZZA - LATO_X + 1)
+            pezzo = finestra[:, y:y + LATO, x:x + LATO_X]
             if generatore.random() < 0.5:
                 pezzo = pezzo[:, :, ::-1]
         else:
             y = (ALTEZZA - LATO) // 2
-            x = (LARGHEZZA - LATO) // 2
-            pezzo = finestra[:, y:y + LATO, x:x + LATO]
+            x = (LARGHEZZA - LATO_X) // 2
+            pezzo = finestra[:, y:y + LATO, x:x + LATO_X]
         pezzi.append(pezzo)
     lotto = torch.from_numpy(np.ascontiguousarray(np.stack(pezzi))).permute(0, 4, 1, 2, 3).float() / 255
     if GRIGIO:
