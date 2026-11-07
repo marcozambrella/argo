@@ -413,7 +413,8 @@ if __name__ == "__main__":
         frame_completi = grezzi.size // byte_per_frame
         return grezzi[: frame_completi * byte_per_frame].reshape(-1, ALTEZZA, LARGHEZZA, 3)
 
-    for nome_pesi in ("migliore", "ultima"):
+    # goal 80% (07/11): solo la migliore; con Kaggle lento anche i punteggi dell'ultima sforavano le 12 h
+    for nome_pesi in ("migliore",):
         stato = {}
         for chiave, valore in torch.load(uscita / f"{nome_pesi}.pt", map_location="cpu").items():
             stato[chiave] = valore.float()
