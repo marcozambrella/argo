@@ -300,6 +300,113 @@ class ReteVideoArmiScippi:
         return risultato
 
 
+# Goal 80% (08/11, esperimenti G3, G8, G9 in esperimenti-armi-scippi): WARNING ARMA e SCIPPO da CLIP ViT-B/16
+# congelato (OpenAI) con due teste piccole addestrate sulle sue feature, al posto di b2 e dello scippo di b1.
+# Il costo si conta per frame: servono solo i frame 4 e 24 di ogni finestra (passo 20), cioè un frame ogni 0,8 s,
+# visto 3 volte (intero schiacciato in un quadrato, quadrato a sinistra, quadrato a destra: il doppio della
+# risoluzione per le armi piccole) → ~1,6 s di calcolo per secondo di video sul portatile.
+# Pezzi da 10 s mai visti (test / incrociata): arma 0,89/0,91, fuoco 0,90/0,91, coltello 0,90/0,86 (testa armi ogni
+# 4 s); scippo 0,95/0,89 e sui dataset nuovi di argo-anomalie 0,82/0,84 (testa scippo, con le differenze fra i due
+# frame, ogni 0,8 s). Prima: b2 0,77/0,79, 0,76/0,71, 0,86/0,86; b1 0,91/0,82.
+# Preparazione identica al kernel clip_video: frame 640×480, viste ridotte a 224 px con antialias, normalizzazione
+# di CLIP. Le teste e le soglie (scelte sul val) stanno in pesi/clip_teste.pt.
+LARGHEZZA_CLIP = 640
+ALTEZZA_CLIP = 480
+LATO_CLIP = 224
+FRAME_CLIP = (4, 24)   # dentro la finestra
+MEDIA_CLIP = torch.tensor([0.48145466, 0.4578275, 0.40821073]).view(1, 3, 1, 1)
+DEVIAZIONE_CLIP = torch.tensor([0.26862954, 0.26130258, 0.27577711]).view(1, 3, 1, 1)
+USCITE_TESTA_CLIP = ("violenza", "arma", "fuoco", "coltello", "scippo", "anomalia")
+NASCOSTI_TESTA_CLIP = 256
+
+
+class TestaClip(torch.nn.Module):
+    """La testa di runs/analisi_script/teste_clip.py: lo stesso MLP su ogni token (2 frame × 3 viste), massimo e
+    media; con le differenze anche un MLP sulle differenze fra i due frame della stessa vista (il movimento)."""
+    def __init__(self, dimensione: int, differenze: bool):
+        super().__init__()
+        self.token = torch.nn.Sequential(torch.nn.LayerNorm(dimensione), torch.nn.Linear(dimensione, NASCOSTI_TESTA_CLIP),
+                                         torch.nn.GELU(), torch.nn.Dropout(0.2))
+        self.con_differenze = differenze
+        ingresso_uscita = 2 * NASCOSTI_TESTA_CLIP
+        if differenze:
+            self.differenze = torch.nn.Sequential(torch.nn.LayerNorm(dimensione),
+                                                  torch.nn.Linear(dimensione, NASCOSTI_TESTA_CLIP), torch.nn.GELU(),
+                                                  torch.nn.Dropout(0.2))
+            ingresso_uscita = 4 * NASCOSTI_TESTA_CLIP
+        self.uscita = torch.nn.Linear(ingresso_uscita, len(USCITE_TESTA_CLIP))
+
+    def forward(self, token):   # [B, 2 frame × 3 viste, D]: prima le 3 viste del primo frame, poi del secondo
+        nascosti = self.token(token)
+        parti = [nascosti.max(dim=1).values, nascosti.mean(dim=1)]
+        if self.con_differenze:
+            per_frame = token.view(token.shape[0], len(FRAME_CLIP), 3, token.shape[-1])
+            salti = (per_frame[:, 1:] - per_frame[:, :-1]).reshape(token.shape[0], -1, token.shape[-1])
+            nascosti_salti = self.differenze(salti)
+            parti.append(nascosti_salti.max(dim=1).values)
+            parti.append(nascosti_salti.mean(dim=1))
+        return self.uscita(torch.cat(parti, dim=1))
+
+
+class ReteClipArmiScippi:
+    """CLIP B/16 sui frame che servono (uno ogni 0,8 s) e le due teste (3 semi ciascuna, media delle probabilità).
+    modello_clip: per i test si può passare un encoder finto (immagini → feature)."""
+    def __init__(self, percorso_teste: str, dispositivo: str = "cpu", modello_clip=None):
+        pacchetto = torch.load(percorso_teste, map_location="cpu")
+        if modello_clip is None:
+            import open_clip
+            # come nel kernel (senza -quickgelu): le teste sono addestrate su queste feature
+            modello_clip = open_clip.create_model(pacchetto["modello_clip"], pretrained=pacchetto["pesi_clip"])
+            modello_clip = modello_clip.eval().to(dispositivo)
+        self.modello_clip = modello_clip
+        self.soglie = pacchetto["soglie"]
+        self.dispositivo = dispositivo
+        self.teste_armi = []
+        self.teste_scippo = []
+        for stato in pacchetto["armi"]:
+            testa = TestaClip(stato["token.1.weight"].shape[1], False)
+            testa.load_state_dict(stato)
+            self.teste_armi.append(testa.eval())
+        for stato in pacchetto["scippo"]:
+            testa = TestaClip(stato["token.1.weight"].shape[1], True)
+            testa.load_state_dict(stato)
+            self.teste_scippo.append(testa.eval())
+        self.feature_per_frame = {}   # indice del frame → [3 viste, D]
+
+    @torch.no_grad()
+    def aggiungi_frame(self, frame: np.ndarray, indice_frame: int) -> None:
+        """Calcola le feature solo dei frame che serviranno (4 e 24 di una finestra a passo 20)."""
+        if indice_frame % PASSO_RETE_SCIPPI != FRAME_CLIP[0]:
+            return
+        ridotto = cv2.resize(frame, (LARGHEZZA_CLIP, ALTEZZA_CLIP), interpolation=cv2.INTER_CUBIC)
+        immagine = torch.from_numpy(cv2.cvtColor(ridotto, cv2.COLOR_BGR2RGB)).permute(2, 0, 1)[None].float() / 255
+        intero = torch.nn.functional.interpolate(immagine, size=(LATO_CLIP, LATO_CLIP), mode="bilinear", antialias=True)
+        sinistra = torch.nn.functional.interpolate(immagine[:, :, :, :ALTEZZA_CLIP], size=(LATO_CLIP, LATO_CLIP),
+                                                   mode="bilinear", antialias=True)
+        destra = torch.nn.functional.interpolate(immagine[:, :, :, LARGHEZZA_CLIP - ALTEZZA_CLIP:],
+                                                 size=(LATO_CLIP, LATO_CLIP), mode="bilinear", antialias=True)
+        viste = (torch.cat([intero, sinistra, destra]) - MEDIA_CLIP) / DEVIAZIONE_CLIP
+        feature = self.modello_clip.encode_image(viste.to(self.dispositivo)).float().cpu()
+        self.feature_per_frame[indice_frame] = feature / feature.norm(dim=-1, keepdim=True)
+        for vecchio in list(self.feature_per_frame):
+            if vecchio < indice_frame - 3 * PASSO_RETE_SCIPPI:   # bastano gli ultimi frame
+                del self.feature_per_frame[vecchio]
+
+    @torch.no_grad()
+    def probabilita(self, inizio_finestra: int, teste: list) -> dict:
+        token = []
+        for posizione in FRAME_CLIP:
+            token.append(self.feature_per_frame[inizio_finestra + posizione])
+        ingresso = torch.cat(token)[None]   # [1, 6, D]
+        media = np.zeros(len(USCITE_TESTA_CLIP))
+        for testa in teste:
+            media = media + torch.sigmoid(testa(ingresso))[0].numpy() / len(teste)
+        risultato = {}
+        for numero, nome in enumerate(USCITE_TESTA_CLIP):
+            risultato[nome] = float(media[numero])
+        return risultato
+
+
 def classe_con_scippo(classe: str, allarme_scippo: bool) -> str:
     """D70: lo scippo lo decide b1; la violenza con arma resta (è più grave)."""
     if allarme_scippo and classe != "violenza_con_arma":
@@ -399,13 +506,14 @@ class AnalisiFlusso:
     media_mobile_allarme: regola dell'ALLARME VIOLENZA (D52). solo_scheletri: disegno su fondo nero (video pubblici
     dei dataset, D58). pannello_nel_frame: False nel pannello web, che mostra le classi per conto suo.
     percorso_rete_scippi, percorso_rete_armi: le reti video b1 e b2 (D70, D71): b1 decide lo scippo e dà la violenza
-    dei pixel, b2 dà il WARNING ARMA."""
+    dei pixel, b2 dà il WARNING ARMA. percorso_clip: le teste CLIP (goal 80%, 08/11): se ci sono, WARNING ARMA e
+    SCIPPO vengono da CLIP (b2 non serve; di b1 resta la violenza)."""
 
     def __init__(self, percorso_classificatore=None, percorso_modello_pose: str = MODELLO_POSE_PREDEFINITO,
                  dispositivo: str = "cpu", percorso_modello_mani=None, tracker: str = TRACKER_PREDEFINITO,
                  finestre_di_fila: int = FINESTRE_DI_FILA_ALLARME, media_mobile_allarme: int = MEDIA_MOBILE_ALLARME,
                  solo_scheletri: bool = False, pannello_nel_frame: bool = True,
-                 percorso_rete_scippi=None, percorso_rete_armi=None):
+                 percorso_rete_scippi=None, percorso_rete_armi=None, percorso_clip=None):
         self.dispositivo = dispositivo
         self.estrattore = Estrattore(percorso_modello_pose, None, dispositivo, tracker=tracker,
                                      percorso_modello_mani=percorso_modello_mani)   # D44: anche le mani, se c'è
@@ -432,6 +540,12 @@ class AnalisiFlusso:
         self.ridotti_armi = deque(maxlen=FRAME_PER_FINESTRA)
         self.ultima_scippi = None
         self.ultima_armi = None
+        self.rete_clip = None
+        if percorso_clip and len(self.classificatori) > 0:
+            self.rete_clip = ReteClipArmiScippi(percorso_clip, dispositivo)
+            self.rete_armi = None   # il WARNING viene da CLIP
+        self.ultima_clip_armi = None
+        self.ultima_clip_scippo = None
         self.allarme_violenza = AllarmeViolenza(finestre_di_fila, media_mobile_allarme,
                                                 con_pixel=self.rete_scippi is not None)
         self.solo_scheletri = solo_scheletri
@@ -449,6 +563,8 @@ class AnalisiFlusso:
             self.ridotti_scippi.append(self.rete_scippi.riduci(frame))
         if self.rete_armi:
             self.ridotti_armi.append(self.rete_armi.riduci(frame))
+        if self.rete_clip:
+            self.rete_clip.aggiungi_frame(frame, self.indice_frame)
         inizio_finestra = self.indice_frame - FRAME_PER_FINESTRA + 1
         evento = None
         if inizio_finestra >= 0 and inizio_finestra % PASSO_FINESTRE == 0:
@@ -491,6 +607,15 @@ class AnalisiFlusso:
             self.ultima_scippi = self.rete_scippi.probabilita(list(self.ridotti_scippi))
         warning = self.ultima_armi is not None and self.ultima_armi["arma"] >= SOGLIA_ARMA_B2
         allarme_scippo = self.ultima_scippi is not None and self.ultima_scippi["scippo"] >= SOGLIA_SCIPPO_B1
+        if self.rete_clip:
+            # goal 80%: armi ogni 4 s e scippo ogni 0,8 s da CLIP, con le soglie scelte sul val
+            if inizio_finestra % PASSO_RETE_ARMI == 0:
+                self.ultima_clip_armi = self.rete_clip.probabilita(inizio_finestra, self.rete_clip.teste_armi)
+            if inizio_finestra % PASSO_RETE_SCIPPI == 0:
+                self.ultima_clip_scippo = self.rete_clip.probabilita(inizio_finestra, self.rete_clip.teste_scippo)
+            soglie = self.rete_clip.soglie
+            warning = self.ultima_clip_armi is not None and self.ultima_clip_armi["arma"] >= soglie["arma"]
+            allarme_scippo = self.ultima_clip_scippo is not None and self.ultima_clip_scippo["scippo"] >= soglie["scippo"]
         if self.rete_scippi:
             # D71: la violenza degli scheletri fusa con quella di b1 (prima con la rete violenza, D52/D53)
             probabilita = fondi_con_pixel(probabilita, self.ultima_scippi["violenza"])
@@ -500,6 +625,8 @@ class AnalisiFlusso:
             classe = classe_con_scippo(classe_finale_con_pixel(per_la_classe, warning), allarme_scippo)
         else:
             classe = classe_finale(probabilita, warning)
+            if self.rete_clip:
+                classe = classe_con_scippo(classe, allarme_scippo)
         allarme = self.allarme_violenza.aggiorna(probabilita)
         self.decisione = {"probabilita": probabilita, "classe": classe, "warning": warning, "allarme": allarme}
         arrotondate = np.round(probabilita, 4).tolist()
@@ -514,6 +641,12 @@ class AnalisiFlusso:
             evento["allarme_scippo"] = allarme_scippo
             evento["probabilita_violenza_video"] = round(self.ultima_scippi["violenza"], 4)
             evento["probabilita_scippo_video"] = round(self.ultima_scippi["scippo"], 4)
+        if self.rete_clip:
+            evento["allarme_scippo"] = allarme_scippo
+            if self.ultima_clip_armi is not None:
+                evento["probabilita_arma_video"] = round(self.ultima_clip_armi["arma"], 4)
+            if self.ultima_clip_scippo is not None:
+                evento["probabilita_scippo_video"] = round(self.ultima_clip_scippo["scippo"], 4)
         return evento
 
 
@@ -553,14 +686,14 @@ def analizza_video(percorso_video: str, percorso_classificatore, cartella_uscita
                    percorso_modello_mani=None, tracker: str = TRACKER_PREDEFINITO,
                    finestre_di_fila: int = FINESTRE_DI_FILA_ALLARME, media_mobile_allarme: int = MEDIA_MOBILE_ALLARME,
                    solo_scheletri: bool = False, pannello_nel_frame: bool = True,
-                   percorso_rete_scippi=None, percorso_rete_armi=None) -> list:
+                   percorso_rete_scippi=None, percorso_rete_armi=None, percorso_clip=None) -> list:
     """Un video → video_annotato.mp4, eventi.json, probabilita.csv e keypoint.jsonl (opzioni come `AnalisiFlusso`)."""
     cartella_uscita = Path(cartella_uscita)
     cartella_uscita.mkdir(parents=True, exist_ok=True)
     info = leggi_info_video(percorso_video)
     analisi = AnalisiFlusso(percorso_classificatore, percorso_modello_pose, dispositivo, percorso_modello_mani, tracker,
                             finestre_di_fila, media_mobile_allarme, solo_scheletri, pannello_nel_frame,
-                            percorso_rete_scippi, percorso_rete_armi)
+                            percorso_rete_scippi, percorso_rete_armi, percorso_clip)
     scrittore = ScrittoreVideo(cartella_uscita / "video_annotato.mp4", info.larghezza, info.altezza)
     eventi = []
     with open(cartella_uscita / "keypoint.jsonl", "w") as file_keypoint:
@@ -588,6 +721,8 @@ def comando_analizza_video(argomenti=None) -> None:
     parser.add_argument("--rete-scippi", default=None,
                         help="rete_scippi_b1.pt: decide lo scippo e dà la violenza dei pixel (D70, D71)")
     parser.add_argument("--rete-armi", default=None, help="rete_armi_b2.pt: WARNING ARMA (D70)")
+    parser.add_argument("--clip", default=None,
+                        help="clip_teste.pt: WARNING ARMA e SCIPPO da CLIP B/16 (goal 80%%, al posto di b2 e dello scippo di b1)")
     parser.add_argument("--finestre-di-fila", type=int, default=FINESTRE_DI_FILA_ALLARME,
                         help="ALLARME VIOLENZA dopo tante finestre violente di fila (D52)")
     parser.add_argument("--media-mobile", type=int, default=MEDIA_MOBILE_ALLARME,
@@ -600,7 +735,7 @@ def comando_analizza_video(argomenti=None) -> None:
     eventi = analizza_video(argomenti.video, argomenti.classificatore, argomenti.uscita, argomenti.modello_pose,
                             argomenti.dispositivo, argomenti.modello_mani, argomenti.tracker,
                             argomenti.finestre_di_fila, argomenti.media_mobile, argomenti.solo_scheletri,
-                            not argomenti.senza_pannello, argomenti.rete_scippi, argomenti.rete_armi)
+                            not argomenti.senza_pannello, argomenti.rete_scippi, argomenti.rete_armi, argomenti.clip)
     print(f"{len(eventi)} finestre analizzate → {argomenti.uscita}")
 
 
@@ -947,7 +1082,7 @@ MESSAGGIO_PESI = ("The trained weights of ARGO are not public. For research acce
 # secondo di video invece di 4,78. La pose resta in PyTorch: in ONNX da sola è più veloce, ma nel flusso i thread
 # di ONNX Runtime (Ultralytics non permette di fermarli) rallentano il resto e il totale sale a 4,87 (runs/d71).
 FILE_PESI = {"classificatore": "stgcn.pt", "rete_scippi": "rete_scippi_b1.pt", "rete_armi": "rete_armi_b2.pt",
-             "rete_scippi_onnx": "rete_scippi_b1.onnx", "rete_armi_onnx": "rete_armi_b2.onnx"}
+             "rete_scippi_onnx": "rete_scippi_b1.onnx", "rete_armi_onnx": "rete_armi_b2.onnx", "clip": "clip_teste.pt"}
 
 
 def ingresso_ffmpeg(sorgente: str, come_telecamera: bool = False) -> list[str]:
@@ -981,13 +1116,17 @@ def opzioni_dai_pesi(cartella: Path, dispositivo: str = "cpu") -> dict:
             opzioni["percorso_" + chiave] = str(cartella / FILE_PESI[chiave + "_onnx"])
         elif (cartella / FILE_PESI[chiave]).exists():
             opzioni["percorso_" + chiave] = str(cartella / FILE_PESI[chiave])
+    if (cartella / FILE_PESI["clip"]).exists():   # goal 80%: armi e scippo da CLIP, b2 non serve
+        opzioni["percorso_clip"] = str(cartella / FILE_PESI["clip"])
+        if "percorso_rete_armi" in opzioni:
+            del opzioni["percorso_rete_armi"]
     return opzioni
 
 
 def descrivi_modalita(opzioni: dict) -> str:
     if "percorso_classificatore" not in opzioni:
         return "skeletons only"
-    if "percorso_rete_scippi" in opzioni and "percorso_rete_armi" in opzioni:
+    if "percorso_rete_scippi" in opzioni and ("percorso_rete_armi" in opzioni or "percorso_clip" in opzioni):
         return "full system"
     return "skeletons + ST-GCN"
 

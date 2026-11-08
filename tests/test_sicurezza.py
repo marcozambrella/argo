@@ -12,7 +12,7 @@ import torch
 import yaml
 
 from sicurezza.dati import elenca_clip_normali_folla, prepara_normali, gruppi_visti_dal_detector, ClipAnnotata, INDICE_CLASSE, VideoDaEstrarre, classe_da_frase, dividi_per_gruppi, elenca_clip_cctv_fights, elenca_clip_chain_snatching, elenca_clip_phone_snatching, elenca_clip_rwf2000, elenca_clip_scvd, elenca_clip_ucf_uca, etichetta_finestra, inizi_finestre, leggi_annotazioni, leggi_elenco, leggi_frame, leggi_info_video, nome_file_estratto, prepara, scrivi_annotazioni, scrivi_elenco
-from sicurezza.demo import ReteVideoArmiScippi, comando_scarica_pesi, classe_con_scippo, Pannello, Telecamera, Videoregistratore, crea_server, ingresso_ffmpeg, leggi_telecamera, opzioni_dai_pesi, descrivi_modalita, sorgente_senza_password, AllarmeViolenza, classe_finale_con_pixel, fondi_con_pixel, pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
+from sicurezza.demo import ReteVideoArmiScippi, ReteClipArmiScippi, TestaClip, comando_scarica_pesi, classe_con_scippo, Pannello, Telecamera, Videoregistratore, crea_server, ingresso_ffmpeg, leggi_telecamera, opzioni_dai_pesi, descrivi_modalita, sorgente_senza_password, AllarmeViolenza, classe_finale_con_pixel, fondi_con_pixel, pezzi_di_video, allarmi_per_video, finestre_di_fila_massime, media_mobile, tara_allarme, probabilita_media, valuta_sistema, arma_vicina, persone_nel_frame, confidenza_arma_per_frame, tara_warning_arma, analizza_video, arma_vicina_a_persona, classe_finale, frame_con_arma, warning_arma
 from sicurezza.modelli import analizza_predizioni, ricuci_tracce, armi_non_piu_grandi_della_persona, timeline_da_dati, ARCO_ARMA_POLSO, ARCO_OSSO, ARCO_PERSONE_DIVERSE, CARATTERISTICHE_PER_NODO, MODELLI, NODI_PERSONE, NODI_PER_FRAME, addestra, carica_timeline, conta_parametri, costruisci_dataset, costruisci_finestra, crea_modello, matrice_tipi_arco, riepilogo
 from sicurezza.strumenti import violenza_per_il_sito, risultati_per_il_sito, scarica_con_riprova, scegli_candidati_scippo_telefono, scegli_immagini_coco
 from sicurezza.visione import mani_di_una_persona, precisione_media, probabilita_armi_in_mano, ritaglio_quadrato, ritagli_per_addestramento, prepara_sohas, conta_falsi_allarmi, converti_mock_attack, sequenza_del_frame, Estrattore, estrai_elenco, impacchetta_estrazione, unisci
@@ -1478,8 +1478,44 @@ def test_opzioni_dai_pesi_e_modalita_scheletri(tmp_path):
     assert opzioni["percorso_rete_armi"].endswith("rete_armi_b2.onnx")
     opzioni = opzioni_dai_pesi(tmp_path, "cuda")                               # con la GPU i .pt
     assert opzioni["percorso_rete_scippi"].endswith("rete_scippi_b1.pt")
+    (tmp_path / "clip_teste.pt").write_bytes(b"x")                    # goal 80%: armi e scippo da CLIP, b2 non serve
+    opzioni = opzioni_dai_pesi(tmp_path)
+    assert opzioni["percorso_clip"].endswith("clip_teste.pt")
+    assert "percorso_rete_armi" not in opzioni
+    assert opzioni["percorso_rete_scippi"].endswith("rete_scippi_b1.onnx")   # di b1 resta la violenza
+    assert descrivi_modalita(opzioni) == "full system"
     (tmp_path / "stgcn.pt").unlink()
     assert opzioni_dai_pesi(tmp_path) == {}   # senza classificatore niente reti video
+
+
+class EncoderFinto(torch.nn.Module):
+    """Al posto di CLIP nei test: immagini [N, 3, 224, 224] → feature [N, 8] (medie di canale ripetute)."""
+    def encode_image(self, immagini):
+        medie = immagini.mean(dim=(2, 3))
+        return torch.cat([medie, medie, medie[:, :2]], dim=1) + 1
+
+
+def test_rete_clip_frame_giusti_e_probabilita(tmp_path):
+    teste_armi = []
+    teste_scippo = []
+    for seme in range(2):
+        torch.manual_seed(seme)
+        teste_armi.append(TestaClip(8, False).state_dict())
+        teste_scippo.append(TestaClip(8, True).state_dict())
+    torch.save({"modello_clip": "finto", "pesi_clip": "finto", "armi": teste_armi, "scippo": teste_scippo,
+                "soglie": {"arma": 0.5, "scippo": 0.5}}, tmp_path / "clip_teste.pt")
+    rete = ReteClipArmiScippi(str(tmp_path / "clip_teste.pt"), modello_clip=EncoderFinto())
+    generatore = np.random.default_rng(0)
+    for indice in range(120):
+        rete.aggiungi_frame(generatore.integers(0, 256, (90, 160, 3), dtype=np.uint8), indice)
+    # solo i frame 4 e 24 delle finestre a passo 20, e solo gli ultimi
+    assert sorted(rete.feature_per_frame) == [44, 64, 84, 104]
+    assert rete.feature_per_frame[104].shape == (3, 8)                        # 3 viste
+    armi = rete.probabilita(80, rete.teste_armi)                              # usa i frame 84 e 104
+    scippo = rete.probabilita(80, rete.teste_scippo)
+    assert set(armi) == {"violenza", "arma", "fuoco", "coltello", "scippo", "anomalia"}
+    for valore in list(armi.values()) + list(scippo.values()):
+        assert 0 <= valore <= 1
 
 
 def test_videoregistratore_segmenti_chiusi_in_ordine(tmp_path):

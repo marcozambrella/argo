@@ -19,11 +19,13 @@ Everything it sees is also saved to files that other programs can read: keypoint
 |---|---|
 | **Violence yes/no**, 30 s segments | **0.90** accuracy (95% CI 0.84–0.94), 11% false alarms |
 | Violence yes/no, 10 s segments / per 1.6 s window | 0.82 (CI 0.77–0.89) / 0.78 |
-| **Weapon yes/no** (video network b2, every 4 s), 10 s segments | **0.79** (CI 0.70–0.87); firearms 0.71, knives 0.86 (only 12 clips with a knife) |
-| **Snatching yes/no** (video network b1, every 0.8 s), 10 s segments | **0.82** (CI 0.76–0.89), partly by recognising the snatching dataset ([limits](#limits)) |
+| **Weapon yes/no** (CLIP, every 4 s), 10 s segments | **0.89** (CI 0.81–0.96); firearms 0.90, knives 0.90 (only 4 test clips with a knife) |
+| **Snatching yes/no** (CLIP, every 0.8 s), 10 s segments | **0.95** (CI 0.91–0.97); on cameras never seen in training 0.82 (only 6 clips) |
 | 4 classes from the skeletons alone (normal, violence, armed violence, snatching) | macro-F1 0.40 |
 
-**v1.2 is twice as fast on a CPU** (7.6 instead of 14.5 seconds of computing per second of video, same laptop, one right after the other) with the same accuracy: it drops the weapon detector and the separate violence network, and takes the violence from the video network b1, which was already running. On 128 never-seen clips (10 s segments) violence is 0.885 against 0.853 of v1.1; weapons and snatching do not change. v1.1 is kept in [`versioni_passate/v1.1`](versioni_passate/v1.1). The numbers above were measured with v1.1.
+**v1.3 recognises weapons and snatching much better.** A frozen CLIP ViT-B/16 looks at one frame every 0.8 s and two small heads trained on what it sees give the WEAPON WARNING and the snatching, in place of the video network b2 and of b1's snatching; b1 still gives the violence. On the same test, with thresholds chosen on the validation set, weapons go from 0.75 to 0.89, firearms from 0.73 to 0.90, knives from 0.80 to 0.90, snatching from 0.87 to 0.95 and, on cameras never seen in training (NWPU, CHAD, ATMA-V), from 0.77 to 0.82. It takes about 7% more time on a CPU (9.9 against 9.0–9.5 seconds of computing per second of video, one right after the other). The weights of v1.2 still work: with `rete_armi_b2` instead of `clip_teste` ARGO runs as v1.2.
+
+**v1.2 is twice as fast on a CPU** (7.6 instead of 14.5 seconds of computing per second of video, same laptop, one right after the other) with the same accuracy: it drops the weapon detector and the separate violence network, and takes the violence from the video network b1, which was already running. On 128 never-seen clips (10 s segments) violence is 0.885 against 0.853 of v1.1; weapons and snatching do not change. v1.1 is kept in [`versioni_passate/v1.1`](versioni_passate/v1.1). The violence numbers above were measured with v1.1, the weapon and snatching ones with v1.3.
 
 ## How it works
 
@@ -34,15 +36,16 @@ camera ─ffmpeg 25 fps─► YOLO26s-pose + tracking ─► skeletons (17 point
           the same 40 frames, every 0.8 s ─► video network b1 (112 px) ─► violence ─┤
                                                                                      ▼
               normal / violence / armed violence ─► VIOLENCE ALARM after 7 violent windows in a row
-                                     b1 (the same call) ─► SNATCHING
-          the same 40 frames, every 4 s ─► video network b2 (224 px) ─► WEAPON WARNING
+          one frame every 0.8 s, 3 views ─► CLIP ViT-B/16 (frozen) ─► head ─► SNATCHING
+                                                  └─ every 4 s ─► head ─► WEAPON WARNING
 ```
 
 1. **Skeletons.** YOLO26s-pose finds people and their 17 keypoints: head, shoulders, elbows, wrists and so on. The tracker (TrackTrack) gives each person an ID that lasts over time.
 2. **Movement over time.** Every 0.4 s the last 1.6 s of skeletons go to an **ST-GCN**: 10 blocks, each one a convolution on the graph of the bones (every joint gathers information from the joints it is linked to) and then a convolution over time (every joint looks at itself in 9 nearby frames). Each person goes through the same network and the most suspicious one counts. Out come the probabilities of the 4 classes. A Graph-Transformer that links every joint to all the others was tested too, and discarded (macro-F1 0.29 against 0.40).
-3. **Pixels.** Two **R(2+1)D-18** video networks, fine-tuned with five yes/no answers (violence, weapon, firearm, knife, snatching), look at the same 40 frames. **b1** at 112 px runs every 0.8 s (a snatching lasts 2–3 s): its violence is averaged with the skeletons' one, and the skeletons then pick the class (violence or armed violence; normal or snatching); its snatching decides the snatching class, unless the scene is armed violence. **b2** at 224 px runs every 4 s (calling it more often does not help: a weapon stays in the scene) and gives the WEAPON WARNING; violence plus WEAPON WARNING is armed violence. On a CPU both run with ONNX Runtime (20% faster, same outputs).
-4. **Up to v1.1** a YOLO26s weapon detector (trained on Roboflow, US Mock Attack and Sohas) drew the weapons and fed the skeletons, and a separate video network gave the violence. Without them the accuracy stays the same and the system takes half the time.
-5. **Alarms.** The VIOLENCE ALARM fires after 7 violent windows in a row (they cover 4 s of video). That rule was chosen on the validation set, and it is the one the numbers above are measured with.
+3. **Pixels.** The **R(2+1)D-18** video network **b1**, fine-tuned with five yes/no answers (violence, weapon, firearm, knife, snatching), looks at the same 40 frames at 112 px every 0.8 s: its violence is averaged with the skeletons' one, and the skeletons then pick the class (violence or armed violence). On a CPU it runs with ONNX Runtime (20% faster, same outputs).
+4. **Weapons and snatching (v1.3).** **CLIP ViT-B/16** (OpenAI, frozen: it is not retrained) turns one frame every 0.8 s into three descriptions: the whole frame and its left and right squares, which see people at twice the resolution. Two small heads trained on these descriptions look at two frames 0.8 s apart: the **weapon head** runs every 4 s (a weapon stays in the scene) and gives the WEAPON WARNING; the **snatching head** also looks at the difference between the two frames (the movement) and runs every 0.8 s (a snatching lasts 2–3 s). Each head is the average of 3 trainings with different seeds. Violence plus WEAPON WARNING is armed violence; the snatching decides the snatching class, unless the scene is armed violence. CLIP was chosen because it already knows what a pistol or a knife looks like: on the same test it beat every video network we trained (b2, b5 on the whole frame, ensembles of b1–b4).
+5. **Up to v1.2** the video network **b2** (224 px, every 4 s) gave the WEAPON WARNING and b1 the snatching. **Up to v1.1** a YOLO26s weapon detector (trained on Roboflow, US Mock Attack and Sohas) drew the weapons and fed the skeletons, and a separate video network gave the violence. Without them the accuracy stays the same and the system takes half the time.
+6. **Alarms.** The VIOLENCE ALARM fires after 7 violent windows in a row (they cover 4 s of video). That rule was chosen on the validation set, and it is the one the numbers above are measured with.
 
 More details in the hackathon slides (*The project journey* and *The system in depth*).
 
@@ -88,10 +91,10 @@ To analyse a single video, without the panel:
 
 ```bash
 uv run argo analizza-video --video video.mp4 --classificatore pesi/stgcn.pt \
-  --rete-scippi pesi/rete_scippi_b1.onnx --rete-armi pesi/rete_armi_b2.onnx --uscita output/
+  --rete-scippi pesi/rete_scippi_b1.onnx --clip pesi/clip_teste.pt --uscita output/
 ```
 
-(With a GPU use the `.pt` files of b1 and b2 and `--dispositivo cuda`.)
+(With a GPU use `rete_scippi_b1.pt` and `--dispositivo cuda`. CLIP ViT-B/16 downloads itself the first time, about 600 MB.)
 
 ## What comes out on your computer
 
@@ -100,7 +103,7 @@ Each camera saves a session in `sessioni/<camera>/<date-time>/`. `analizza-video
 | File | Content |
 |---|---|
 | `video_annotato.mp4` | the video with skeletons, IDs and the class panel drawn on it |
-| `eventi.jsonl` / `eventi.json` | one line every 0.4 s: `inizio_secondi` (start), `fine_secondi` (end), `classe` (class), `probabilita` of the 4 classes, `warning_arma` (weapon warning), `allarme_violenza` (violence alarm); with the video networks also `probabilita_arma_video` (b2), `probabilita_violenza_video` and `probabilita_scippo_video` (b1) and `allarme_scippo` (snatching) |
+| `eventi.jsonl` / `eventi.json` | one line every 0.4 s: `inizio_secondi` (start), `fine_secondi` (end), `classe` (class), `probabilita` of the 4 classes, `warning_arma` (weapon warning), `allarme_violenza` (violence alarm); with the full system also `probabilita_arma_video` and `probabilita_scippo_video` (CLIP), `probabilita_violenza_video` (b1) and `allarme_scippo` (snatching) |
 | `keypoint.jsonl` | one line per frame: for each person `id`, `box` [x1, y1, x2, y2] and 17 `keypoint` [x, y, confidence] in pixels (COCO order); `armi` (weapons) stays empty since v1.2, which has no weapon detector |
 | `probabilita.csv` | the events as a table |
 | `segmenti/` | the original camera recording, in 10 s pieces |
@@ -148,6 +151,16 @@ Skeletons only: 0.78. Video network only: 0.84. Together: 0.90.
 
 Macro-F1 0.40. For comparison, the Graph-Transformer reaches 0.29.
 
+**Weapons and snatching yes/no (v1.3, CLIP)**, 10 s segments of never-seen videos, threshold chosen on the validation set; in brackets the cross measure (validation and test swapped) and v1.2:
+
+| | Test clips | Accuracy | Cross measure | v1.2 |
+|---|---|---|---|---|
+| Weapon (any) | 18 | **0.89** | 0.91 | 0.75 |
+| Firearm | 15 | **0.90** | 0.91 | 0.73 |
+| Knife | 4 | **0.90** | 0.86 | 0.80 |
+| Snatching | 32 | **0.95** | 0.89 | 0.87 |
+| Snatching, cameras never seen in training (NWPU, CHAD, ATMA-V) | 6 | **0.82** | 0.84 | 0.77 |
+
 **Weapon detector (v3, used up to v1.1)**, mAP50:
 - 0.77 on the hand-held weapons of Sohas;
 - 0.20 on the real CCTV of US Mock Attack (pistols 0.32, rifles 0.28, knives ~0);
@@ -161,15 +174,15 @@ A bigger detector (YOLO26m at 1280 px) sees more pistols in real CCTV (0.41), bu
 
 We say them plainly:
 - **From the skeletons alone, armed violence and snatching are weak** (F1 0.10 and 0.13): that is why v1.1 gives them to the video networks.
-- **The video networks are measured on few clips**: 18 armed clips in the test set (38 with the cross measure), so the intervals are wide. The WEAPON WARNING of b2 catches 64% of the armed 10 s segments and fires on 14% of the segments of normal crowds.
-- **Snatching**: b1 is measured mostly on chain-snatching videos, which have no normal videos of their own; inside UCF-Crime it is still at chance. More snatching videos with normal footage from the same cameras are being annotated.
+- **Weapons and snatching are measured on few clips**: 18 armed clips in the test set, only 4 with a knife, and 6 snatchings from cameras never seen in training, so the intervals are wide. Some variants were tried while also looking at the test, so the real numbers may be a little lower.
+- **Snatching**: it is measured mostly on chain-snatching videos, which have no normal videos of their own. CLIP's snatching gives **false alarms on ordinary street scenes filmed with a hand-held camera** (people walking in an alley in Rome: 48 windows out of 64), far from the fixed CCTV it was trained on.
 - **Knives are almost never seen in real CCTV.** They are small, low resolution and often hidden by the hand.
 - **UCF-Crime is the hardest source**: long, low-quality videos with many people.
 - **In very dense crowds** tracking sometimes loses people.
 - **Without a GPU** the panel works delayed, not in real time.
 - **On real videos never seen before**, taken from YouTube under CC BY:
   - metro, escalators and carriages always stay normal, with no false alarms;
-  - an armed robbery is recognised as violence, with an ALARM, but without a WEAPON WARNING;
+  - an armed robbery is recognised as violence, with an ALARM; with v1.3 also with the WEAPON WARNING (52 windows out of 72; v1.2 never gave it);
   - a street snatching where the victim fights back is recognised as violence, with an ALARM;
   - a fight filmed vertically with a phone and two real snatchings (a bag pulled away, a snatching at gunpoint) are not recognised.
 
@@ -185,7 +198,10 @@ The heavy computing was done on **Kaggle** (2× T4). The notebooks that rebuild 
 2. skeleton and weapon extraction from all videos: `estrazione`, `aggiungi_armi`;
 3. windows: `finestre`;
 4. 4-class training: `addestramento`;
-5. video network fine-tuning: `finetune_rgb` (the violence network of v1.1); b1 and b2 come from [`experiments_and_future_work/rete_video`](experiments_and_future_work/rete_video).
+5. video network fine-tuning: `finetune_rgb` (the violence network of v1.1); b1 and b2 come from `experiments_and_future_work/rete_video`;
+6. CLIP heads (v1.3): the features come from the Kaggle kernel `experiments_and_future_work/clip_video`, the heads from `teste_clip.py` next to it, the thresholds and the weights file from `misura_vecchi_e_nuovi.py` and `impacchetta_teste_clip.py`.
+
+`rete_video` and `clip_video` are on the branch [`esperimenti-armi-scippi`](https://github.com/marcozambrella/argo/tree/esperimenti-armi-scippi), with the measures they use.
 
 The weapon detector is still needed for the extraction (steps 2–3), because the ST-GCN was trained with the weapons as extra nodes; at analysis time v1.2 leaves them empty, which does not change its answers.
 
