@@ -2,16 +2,17 @@
 // a 0,8 s, tutta l'immagine), al grafo delle ossa (ST-GCN), alla pila di 40 frame, alla convoluzione nel tempo e al
 // WARNING ARMA di CLIP (v1.3, 08/11: CLIP al posto di b2; niente detector, quindi niente pistola).
 // Gli archi tutti-con-tutti del Graph-Transformer scartato restano come confronto,
-// spenti all'inizio. I punti sono REALI (dati/esempio-finestra.json: YOLO26s-pose + TrackTrack su clip Pexels), come le
-// decisioni (dati/esempio-decisione.json); la profondità del manichino è ILLUSTRATIVA e lo dice la didascalia.
+// spenti all'inizio. I punti sono REALI (dati/esempio-finestra.json: YOLO26s-pose + TrackTrack sulla rapina di Sunnybank,
+// dall'08/11), come le decisioni (dati/esempio-decisione.json); la profondità del manichino è ILLUSTRATIVA e lo dice la
+// didascalia. Il cerchio sulla mano armata è segnato a mano (ARGO non localizza l'arma) e lo dice la didascalia.
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { coloreCss, movimentoRidotto } from "./comune.js?v=20261108100558";
-import { PASSI } from "./passi-modello.js?v=20261108100558";
+import { coloreCss, movimentoRidotto } from "./comune.js?v=20261108165744";
+import { PASSI } from "./passi-modello.js?v=20261108165744";
 
 const OSSA = [[15,13],[13,11],[16,14],[14,12],[11,12],[5,11],[6,12],[5,6],[5,7],[6,8],[7,9],[8,10],[1,2],[0,1],[0,2],[1,3],[2,4],[3,5],[4,6]];
 const SOGLIA_VISIBILITA = 0.3;
-const LARGO = 38.4, ALTO = 21.6;                // piano del fotogramma (1280×720 a scala di scena)
+const ALTO = 21.6;                // piano del fotogramma a scala di scena; la larghezza segue le proporzioni del video
 const FRAME_PER_FINESTRA = 40, PASSO = 10, FPS = 25;
 const PASSO_PILA = 0.12, PASSO_TEMPO = 0.45, RAGGIO_PUNTO = 0.13;
 // reti video (src/sicurezza/demo.py, ReteVideoArmiScippi): 16 dei 40 frame, schiacciati a 4:3 alti lato·8/7 (b1 170×128),
@@ -29,21 +30,21 @@ const SOGLIA_ARMA_CLIP = 0.16;   // soglia dell'arma in pesi/clip_teste.pt (0,15
 const SMORZAMENTO = 4.4;       // al secondo: le opacità e la camera fanno il 63% della strada in ~0,23 s
 
 const STATI = {   // opacità dei livelli; camera = spostamento dal fuoco (centro delle persone), "intero" = tutta l'immagine
-  fotogramma: { immagine: 1, punti2d: 1, intero: true, camera: [0, -2, 36] },
+  fotogramma: { immagine: 1, punti2d: 1, arma: 1, intero: true, camera: [0, -2, 36] },
   punti: { immagine: .25, punti3d: 1, ossa: .5, camera: [4, -4, 12] },
   manichino: { immagine: .08, manichini: 1, punti3d: .6, camera: [11, -2.5, 8] },
-  pixel: { immagine: .3, ritaglio: 1, reti: 1, intero: true, camera: [12, -9, 25], guarda: [0, 0, 4] },
+  pixel: { immagine: .45, ritaglio: 1, viste: 1, reti: 1, intero: true, camera: [12, -9, 25], guarda: [0, 0, 4] },
   grafo: { punti3d: 1, archi: 1, camera: [0, -8, 11] },
   pila: { pila: 1, camera: [26, 4, 8], guarda: [0, 0, 0] },
   tempo: { scie: 1, punti3d: .4, camera: [20, -3, 6], guarda: [0, 0, 0] },
   classi: { punti3d: .5, ossa: .5, camera: [0, -3, 14] },
-  warning: { immagine: .2, reti: 1, intero: true, camera: [13, -5, 17], guarda: [5.5, 0, 5] },
+  warning: { immagine: .35, reti: 1, intero: true, camera: [10, -4, 20], guarda: [4.5, 0, 5] },
 };
 
 export async function avviaModello() {
-  const dati = await fetch("dati/esempio-finestra.json?v=20261108100558").then((r) => r.json());
+  const dati = await fetch("dati/esempio-finestra.json?v=20261108165744").then((r) => r.json());
   // probabilità VERE del sistema consegnato per le finestre di questa clip (argo analizza-video, D49 + D53)
-  const decisioni = await fetch("dati/esempio-decisione.json?v=20261108100558").then((r) => r.json()).catch(() => null);
+  const decisioni = await fetch("dati/esempio-decisione.json?v=20261108165744").then((r) => r.json()).catch(() => null);
   const tela = document.getElementById("modello-3d");
   const renderer = new THREE.WebGLRenderer({ canvas: tela, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -56,7 +57,8 @@ export async function avviaModello() {
 
   const colore = (nome) => new THREE.Color(coloreCss(nome));
   const COLORI_ID = ["--furti", "--aggressioni", "--rapine", "--metro-c"].map(colore);
-  const ultimo = dati.frame.length - 1;                       // il fotogramma mostrato è l'ultimo dei 160
+  const LARGO = ALTO * dati.larghezza / dati.altezza;
+  const ultimo = dati.indice_fotogramma ?? dati.frame.length - 1;   // il fotogramma mostrato (l'immagine)
   const persone = dati.frame[ultimo].persone.slice(0, 4);
   const posizione = ([x, y], z = 0) => new THREE.Vector3((x - 0.5) * LARGO, (0.5 - y) * ALTO, z);
   // profondità illustrativa del manichino: chi ha il box più basso nell'immagine è più vicino
@@ -66,6 +68,10 @@ export async function avviaModello() {
   let contati = 0;
   for (const p of persone) for (const k of p.keypoint) if (k[2] >= SOGLIA_VISIBILITA) { fuoco.add(posizione(k)); contati++; }
   fuoco.divideScalar(Math.max(1, contati));
+  // le distanze della camera sono pensate per persone alte ~4 unità (il vicolo): con persone più grandi si allontana
+  let altezzaPersone = 0;
+  for (const p of persone) altezzaPersone += (p.box[3] - p.box[1]) * ALTO / persone.length;
+  const scalaPersone = Math.max(1, altezzaPersone / 4);
   const livelli = {};
   // etichetta sotto un cubo: canvas grande (nitida anche su schermi ad alta densità), sprite largo 3,6 unità
   const etichetta = (testo, mezzaMisura) => {
@@ -89,7 +95,7 @@ export async function avviaModello() {
 
   // 1. immagine del fotogramma
   const immagine = nuovoLivello("immagine");
-  const trama = new THREE.TextureLoader().load("immagini/fotogramma-vicolo.jpg");
+  const trama = new THREE.TextureLoader().load(dati.immagine);
   trama.colorSpace = THREE.SRGBColorSpace;
   immagine.add(new THREE.Mesh(new THREE.PlaneGeometry(LARGO, ALTO), new THREE.MeshBasicMaterial({ map: trama, transparent: true })));
 
@@ -136,10 +142,33 @@ export async function avviaModello() {
     new THREE.LineBasicMaterial({ color: colore("--luce"), transparent: true }));
   bordoRitaglio.position.z = 0.05;
   ritaglio.add(bordoRitaglio);
+  // le 3 viste di CLIP sul fotogramma (ReteClipArmiScippi, a 640×480): tutto, il quadrato a sinistra, quello a destra
+  const viste = nuovoLivello("viste");
+  const materialeViste = new THREE.LineBasicMaterial({ color: colore("--gesso"), transparent: true });
+  for (const [sinistra, destra, z] of [[0, 1, 0.07], [0, 0.75, 0.09], [0.25, 1, 0.11]]) {
+    const bordo = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry((destra - sinistra) * LARGO * 0.995, ALTO * 0.995)), materialeViste);
+    bordo.position.set(((sinistra + destra) / 2 - 0.5) * LARGO, 0, z);
+    viste.add(bordo);
+  }
+  const testoViste = etichetta("CLIP views: whole, left, right", 0);
+  testoViste.position.set(0, -ALTO / 2 - 0.6, 0.1);
+  viste.add(testoViste);
+  // la mano che tiene l'arma (segnata a mano sul fotogramma): un anello che diventa rosso quando scatta il WARNING
+  const arma = nuovoLivello("arma");
+  const personaArmata = persone.find((p) => p.id === dati.arma?.id);
+  if (personaArmata) {
+    const anelloArma = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.1, 48), new THREE.MeshBasicMaterial({ color: colore("--luce"), transparent: true }));
+    anelloArma.position.copy(posizione(personaArmata.keypoint[dati.arma.keypoint], 0.15));
+    arma.add(anelloArma);
+    const testoArma = etichetta("weapon", 0);
+    testoArma.position.copy(anelloArma.position).add(new THREE.Vector3(0, 1.6, 0));
+    arma.add(testoArma);
+  }
   const reti = nuovoLivello("reti");
   const cornici = {};
+  let anelloClip = null;   // la stessa mano sulla fetta davanti di CLIP (vista intera schiacciata nel quadrato)
   const immagineFotogramma = new Image();
-  immagineFotogramma.src = "immagini/fotogramma-vicolo.jpg";
+  immagineFotogramma.src = dati.immagine;
   await immagineFotogramma.decode().catch(() => null);
   for (const [nome, rete] of Object.entries(RETI_VIDEO)) {
     const tela = Object.assign(document.createElement("canvas"), { width: rete.lato, height: rete.lato });
@@ -168,6 +197,13 @@ export async function avviaModello() {
     cornice.position.z = -profonditaCubo / 2 + PASSO_FETTE / 2;
     cubo.add(cornice);
     cubo.add(etichetta(`${rete.nome} · ${rete.lato} px · every ${rete.secondi} s`, rete.misura / 2));
+    if (rete.intero && personaArmata) {
+      const [x, y] = personaArmata.keypoint[dati.arma.keypoint];
+      anelloClip = new THREE.Mesh(new THREE.RingGeometry(0.45, 0.58, 48), new THREE.MeshBasicMaterial({ color: colore("--luce"), transparent: true, depthWrite: false }));
+      anelloClip.position.set((x - 0.5) * rete.misura, (0.5 - y) * rete.misura, 0.05);
+      anelloClip.renderOrder = 11;   // sopra la fetta davanti
+      cubo.add(anelloClip);
+    }
     cornici[nome] = cornice;
     reti.add(cubo);
   }
@@ -211,11 +247,11 @@ export async function avviaModello() {
   geometriaPila.setAttribute("position", new THREE.Float32BufferAttribute(puntiPila, 3));
   geometriaPila.setAttribute("color", new THREE.Float32BufferAttribute(coloriPila, 3));
   pila.add(new THREE.Points(geometriaPila, new THREE.PointsMaterial({ size: .12, vertexColors: true, transparent: true })));
-  const cornice = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(9, 7, FRAME_PER_FINESTRA * PASSO_PILA)),
+  const cornice = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(9 * scalaPersone, 7 * scalaPersone, FRAME_PER_FINESTRA * PASSO_PILA)),
     new THREE.LineBasicMaterial({ color: colore("--rosso"), transparent: true }));
   cornice.position.x = fuoco.x; cornice.position.y = fuoco.y;
   pila.add(cornice);
-  let finestraScelta = 12;
+  let finestraScelta = Math.max(0, Math.round((ultimo + 1 - FRAME_PER_FINESTRA) / PASSO));   // la finestra che finisce sul fotogramma
   function aggiornaFinestra() {
     const primo = finestraScelta * PASSO, ultimoFrame = primo + FRAME_PER_FINESTRA - 1;
     const acceso = colore("--luce"), spento = colore("--linea");
@@ -230,8 +266,14 @@ export async function avviaModello() {
   }
   // pannello "classi": la decisione vera per la finestra scelta (se il file delle decisioni c'è)
   const righeClassi = new Map();
+  let uscitaWarning = null;   // la riga del WEAPON WARNING: armed violence = violence + WARNING
   function scriviClassi() {
     const decisione = decisioni?.finestre?.[finestraScelta];
+    if (uscitaWarning && decisione) {
+      const percentuale = Math.round((decisione.probabilita_arma_video ?? 0) * 100);
+      uscitaWarning.textContent = `${decisione.warning_arma ? "on" : "off"} (CLIP ${percentuale}%)`;
+      uscitaWarning.classList.toggle("allarme", decisione.warning_arma);
+    }
     for (const [classe, uscita] of righeClassi) {
       // v1.3: lo scippo lo decide CLIP, quindi la riga mostra la sua probabilità (quella dello ST-GCN non sceglie più)
       let valore = decisione?.probabilita?.[classe.replaceAll(" ", "_")];
@@ -242,14 +284,14 @@ export async function avviaModello() {
   }
   aggiornaFinestra();
 
-  // scie: il movimento vero di ogni punto nei 40 frame dell'ultima finestra
+  // scie: il movimento vero di ogni punto nei 40 frame della finestra che finisce sul fotogramma mostrato
   const scie = nuovoLivello("scie");
-  const primoScie = dati.frame.length - FRAME_PER_FINESTRA;
+  const primoScie = Math.max(0, ultimo + 1 - FRAME_PER_FINESTRA);
   persone.forEach((persona, indicePersona) => {
     const materiale = new THREE.LineBasicMaterial({ color: COLORI_ID[indicePersona], transparent: true });
     for (let k = 0; k < 17; k++) {
       const punti = [];
-      for (let f = primoScie; f < dati.frame.length; f++) {
+      for (let f = primoScie; f <= ultimo; f++) {
         const p = dati.frame[f].persone.find((q) => q.id === persona.id);
         if (p && p.keypoint[k][2] >= SOGLIA_VISIBILITA) punti.push(posizione(p.keypoint[k], -(f - primoScie) * PASSO_TEMPO + 9));
       }
@@ -300,6 +342,11 @@ export async function avviaModello() {
         righeClassi.set(classe, uscita);
         comandi.appendChild(riga);
       }
+      const rigaWarning = document.createElement("span");
+      rigaWarning.className = "riga";
+      uscitaWarning = document.createElement("output");
+      rigaWarning.append("weapon warning", " ", uscitaWarning);
+      comandi.appendChild(rigaWarning);
       scriviClassi();
     } else if (tipo === "warning") {
       armaClip = decisioni?.finestre?.[finestraScelta]?.probabilita_arma_video ?? 0;
@@ -378,6 +425,7 @@ export async function avviaModello() {
       for (const materiale of materialiDeiLivelli[nome]) materiale.opacity = gruppo.userData.opacita * (materiale.userData.opacitaBase ?? 1);
     }
     for (const [tipo, linee] of Object.entries(lineeArco)) linee.visible = visibilitaArchi[gruppoDi[tipo]];
+    if (anelloClip) anelloClip.material.color.copy(chiaveCorrente === "warning" && armaClip >= SOGLIA_ARMA_CLIP ? COLORE_ALLARME : COLORE_CHIAMATA);
     // le reti video "chiamate" alla loro cadenza: la cornice si accende e si spegne in 0,4 s
     for (const [nome, rete] of Object.entries(RETI_VIDEO)) {
       const materiale = cornici[nome].material;
@@ -390,7 +438,7 @@ export async function avviaModello() {
     }
     if (!interazioneUtente) {
       const centro = statoCorrente.intero ? ORIGINE : fuoco;
-      versoCamera.set(...statoCorrente.camera).add(centro);
+      versoCamera.set(...statoCorrente.camera).multiplyScalar(statoCorrente.intero ? 1 : scalaPersone).add(centro);
       posizioneCamera.lerp(versoCamera, passo);
       camera.position.copy(posizioneCamera);
       versoBersaglio.set(...(statoCorrente.guarda ?? [0, 0, 0])).add(centro);
