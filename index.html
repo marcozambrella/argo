@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Megrim&family=Alegreya:ital,wght@0,400;0,700;1,400&family=Alegreya+Sans+SC:wght@500;700;800&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="stile.css?v=20261103232018">
+  <link rel="stylesheet" href="stile.css?v=20261108100558">
   <script type="importmap">{ "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
     "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }</script>
@@ -109,7 +109,7 @@
       <div class="testa-modello">
         <p class="numero-sezione sc">IV</p>
         <h2 id="titolo-come">How it works</h2>
-        <p class="testo-sezione">ARGO does not watch pixels the way a person does. It turns every frame into skeletons, reads 1.6 seconds of movement at a time, and asks a skeleton network and two video networks the same question: is someone in danger right now?</p>
+        <p class="testo-sezione">ARGO does not watch pixels the way a person does. It turns every frame into skeletons, reads 1.6 seconds of movement at a time, and asks a skeleton network, a video network and CLIP, a model that knows what weapons look like, the same question: is someone in danger right now?</p>
       </div>
       <div class="racconto-modello">
         <div class="scena-modello">
@@ -139,7 +139,7 @@
       <h2 id="titolo-futuro">Who would use it</h2>
       <p class="testo-sezione">ARGO is built for law enforcement and for whoever sits in front of the camera wall: metro and station control rooms, local police, private security. Instead of searching dozens of feeds, the operator receives the event: which camera, what is happening, how confident the system is. The same alert can be pushed by software to officers in the field, so the patrol closest to the platform knows before anyone calls. ARGO does not decide and does not intervene: every alarm is checked by a person.</p>
       <h2 class="titolo-secondario">Limits and next steps</h2>
-      <p class="testo-sezione">Fights are ARGO’s strength: 90% accuracy on 30-second clips it has never seen. Weapons and snatching are measured on few public clips, so their numbers have wide margins: the WEAPON WARNING catches about two thirds of armed segments, and snatching is measured mostly on one dataset. On a laptop the panel runs with a delay. Next: real footage from a transport operator, more snatchings and anomalies annotated on real cameras, and alerts delivered straight to officers’ devices.</p>
+      <p class="testo-sezione">Fights are ARGO’s strength: 90% accuracy on 30-second clips it has never seen. Since version 1.3 weapons and snatching come from CLIP, a vision model that already knows what a pistol or a knife looks like: 89% on weapons and 95% on snatching, but measured on few public clips (only 4 with a knife), so the margins are wide. Snatching still gives false alarms on ordinary street scenes filmed with a hand-held camera. On a laptop the panel runs with a delay. Next: real footage from a transport operator, more snatchings and anomalies annotated on real cameras, and alerts delivered straight to officers’ devices.</p>
       <div class="scheda-misura">
         <b class="sc">Measured during development</b>
         <p>On a frame of Largo Argentina filmed from above, the YOLO26s detector finds 22 people and the YOLO26s-pose model 0: with small, distant people the pipeline can lose them.</p>
@@ -148,7 +148,7 @@
       <p class="testo-sezione">Trained on Kaggle’s free GPUs, on public datasets only. Built with Claude Code as programming assistant: every design choice was made, measured and logged by the author, and every number on this page comes from a test the code can repeat.</p>
       <ul class="elenco-strumenti">
         <li><b>Vision</b>Ultralytics YOLO26s-pose, TrackTrack tracker</li>
-        <li><b>Models</b>PyTorch: ST-GCN (chosen) and Graph-Transformer; torchvision R(2+1)D-18 (Kinetics-400) fine-tuned on the pixels at 112 and 224 px; ONNX Runtime on CPU</li>
+        <li><b>Models</b>PyTorch: ST-GCN (chosen) and Graph-Transformer; torchvision R(2+1)D-18 (Kinetics-400) fine-tuned on the pixels at 112 px; OpenAI CLIP ViT-B/16 (open_clip), frozen, with small heads for weapons and snatching; ONNX Runtime on CPU</li>
         <li><b>Compute</b>Kaggle, 2 T4 GPUs</li>
         <li><b>Maps</b>OpenStreetMap (ODbL)</li>
       </ul>
@@ -173,6 +173,6 @@
     </div>
     <p class="codice"><a href="https://github.com/marcozambrella/argo">Code on GitHub</a></p>
   </footer>
-  <script type="module" src="app.js?v=20261103232018"></script>
+  <script type="module" src="app.js?v=20261108100558"></script>
 </body>
 </html>

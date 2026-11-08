@@ -1,12 +1,13 @@
-// "Come funziona" in 3D: dal fotogramma vero al manichino, alle reti video b1 e b2 (due cubi di 16 fette), al grafo
-// delle ossa (ST-GCN), alla pila di 40 frame, alla convoluzione nel tempo e al WARNING ARMA di b2 (v1.2, 04/11: niente
-// detector, quindi niente pistola). Gli archi tutti-con-tutti del Graph-Transformer scartato restano come confronto,
+// "Come funziona" in 3D: dal fotogramma vero al manichino, alla rete video b1 (cubo di 16 fette) e a CLIP (2 fotogrammi
+// a 0,8 s, tutta l'immagine), al grafo delle ossa (ST-GCN), alla pila di 40 frame, alla convoluzione nel tempo e al
+// WARNING ARMA di CLIP (v1.3, 08/11: CLIP al posto di b2; niente detector, quindi niente pistola).
+// Gli archi tutti-con-tutti del Graph-Transformer scartato restano come confronto,
 // spenti all'inizio. I punti sono REALI (dati/esempio-finestra.json: YOLO26s-pose + TrackTrack su clip Pexels), come le
 // decisioni (dati/esempio-decisione.json); la profondità del manichino è ILLUSTRATIVA e lo dice la didascalia.
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { coloreCss, movimentoRidotto } from "./comune.js?v=20261103232018";
-import { PASSI } from "./passi-modello.js?v=20261103232018";
+import { coloreCss, movimentoRidotto } from "./comune.js?v=20261108100558";
+import { PASSI } from "./passi-modello.js?v=20261108100558";
 
 const OSSA = [[15,13],[13,11],[16,14],[14,12],[11,12],[5,11],[6,12],[5,6],[5,7],[6,8],[7,9],[8,10],[1,2],[0,1],[0,2],[1,3],[2,4],[3,5],[4,6]];
 const SOGLIA_VISIBILITA = 0.3;
@@ -17,12 +18,14 @@ const PASSO_PILA = 0.12, PASSO_TEMPO = 0.45, RAGGIO_PUNTO = 0.13;
 // poi il quadrato centrale di lato×lato: sul fotogramma originale è il centro largo 0,66 e alto 0,875.
 const FRAME_RETE_VIDEO = 16, PASSO_FETTE = 0.22;
 const ORIGINE = new THREE.Vector3();
+// CLIP (ReteClipArmiScippi): un frame ogni 0,8 s, le teste ne guardano 2; nel cubo la vista intera schiacciata a 224×224
+// (le altre due viste, i quadrati a sinistra e a destra, sono nella didascalia)
 const RETI_VIDEO = {
-  b1: { lato: 112, secondi: 0.8, misura: 3.2, centro: [-6.5, -1, 6] },
-  b2: { lato: 224, secondi: 4, misura: 6.4, centro: [5.5, 0, 6] },
+  b1: { nome: "b1", lato: 112, secondi: 0.8, misura: 3.2, centro: [-6.5, -1, 6], fette: FRAME_RETE_VIDEO, intero: false },
+  clip: { nome: "CLIP", lato: 224, secondi: 0.8, misura: 6.4, centro: [5.5, 0, 6], fette: 2, intero: true },
 };
 const RITAGLIO = { larghezza: 112 / 170, altezza: 112 / 128 };
-const SOGLIA_ARMA_B2 = 0.35;   // SOGLIA_ARMA_B2 = 0.3467 in demo.py, scelta sul val (D70)
+const SOGLIA_ARMA_CLIP = 0.16;   // soglia dell'arma in pesi/clip_teste.pt (0,1573), scelta sul val (goal 80%)
 const SMORZAMENTO = 4.4;       // al secondo: le opacità e la camera fanno il 63% della strada in ~0,23 s
 
 const STATI = {   // opacità dei livelli; camera = spostamento dal fuoco (centro delle persone), "intero" = tutta l'immagine
@@ -38,9 +41,9 @@ const STATI = {   // opacità dei livelli; camera = spostamento dal fuoco (centr
 };
 
 export async function avviaModello() {
-  const dati = await fetch("dati/esempio-finestra.json?v=20261103232018").then((r) => r.json());
+  const dati = await fetch("dati/esempio-finestra.json?v=20261108100558").then((r) => r.json());
   // probabilità VERE del sistema consegnato per le finestre di questa clip (argo analizza-video, D49 + D53)
-  const decisioni = await fetch("dati/esempio-decisione.json?v=20261103232018").then((r) => r.json()).catch(() => null);
+  const decisioni = await fetch("dati/esempio-decisione.json?v=20261108100558").then((r) => r.json()).catch(() => null);
   const tela = document.getElementById("modello-3d");
   const renderer = new THREE.WebGLRenderer({ canvas: tela, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -125,8 +128,8 @@ export async function avviaModello() {
     }
   });
 
-  // le reti video: il ritaglio centrale sul fotogramma e, davanti, un cubo di 16 fette per rete. Le fette usano il
-  // fotogramma mostrato (l'unico che abbiamo come immagine) alla risoluzione vera della rete: b1 si vede a quadretti.
+  // le reti video: il ritaglio centrale di b1 sul fotogramma e, davanti, un cubo per rete (16 fette b1, 2 CLIP). Le fette
+  // usano il fotogramma mostrato (l'unico che abbiamo come immagine) alla risoluzione vera della rete: b1 si vede a quadretti.
   const ritaglio = nuovoLivello("ritaglio");
   const bordoRitaglio = new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.PlaneGeometry(RITAGLIO.larghezza * LARGO, RITAGLIO.altezza * ALTO)),
@@ -140,8 +143,8 @@ export async function avviaModello() {
   await immagineFotogramma.decode().catch(() => null);
   for (const [nome, rete] of Object.entries(RETI_VIDEO)) {
     const tela = Object.assign(document.createElement("canvas"), { width: rete.lato, height: rete.lato });
-    const larghezzaRitaglio = RITAGLIO.larghezza * immagineFotogramma.naturalWidth;
-    const altezzaRitaglio = RITAGLIO.altezza * immagineFotogramma.naturalHeight;
+    const larghezzaRitaglio = (rete.intero ? 1 : RITAGLIO.larghezza) * immagineFotogramma.naturalWidth;
+    const altezzaRitaglio = (rete.intero ? 1 : RITAGLIO.altezza) * immagineFotogramma.naturalHeight;
     tela.getContext("2d").drawImage(immagineFotogramma, (immagineFotogramma.naturalWidth - larghezzaRitaglio) / 2,
       (immagineFotogramma.naturalHeight - altezzaRitaglio) / 2, larghezzaRitaglio, altezzaRitaglio, 0, 0, rete.lato, rete.lato);
     const trama = new THREE.CanvasTexture(tela);
@@ -150,19 +153,21 @@ export async function avviaModello() {
     const cubo = new THREE.Group();
     cubo.position.set(...rete.centro);
     const fetta = new THREE.PlaneGeometry(rete.misura, rete.misura);
-    for (let i = 0; i < FRAME_RETE_VIDEO; i++) {
+    // CLIP: 2 fette distanti come 0,8 s su 1,6 s di finestra (8 passi di b1)
+    const passoFette = rete.fette === 2 ? PASSO_FETTE * 8 : PASSO_FETTE;
+    for (let i = 0; i < rete.fette; i++) {
       const materiale = new THREE.MeshBasicMaterial({ map: trama, transparent: true, depthWrite: false });
-      materiale.userData.opacitaBase = i === FRAME_RETE_VIDEO - 1 ? 1 : 0.1 + 0.25 * i / FRAME_RETE_VIDEO;
+      materiale.userData.opacitaBase = i === rete.fette - 1 ? 1 : 0.1 + 0.25 * i / rete.fette;
       const piano = new THREE.Mesh(fetta, materiale);
-      piano.position.z = (i - FRAME_RETE_VIDEO + 1) * PASSO_FETTE;
+      piano.position.z = (i - rete.fette + 1) * passoFette;
       cubo.add(piano);
     }
-    const profonditaCubo = FRAME_RETE_VIDEO * PASSO_FETTE;
+    const profonditaCubo = (rete.fette - 1) * passoFette + PASSO_FETTE;
     const cornice = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(rete.misura, rete.misura, profonditaCubo)),
       new THREE.LineBasicMaterial({ color: colore("--gesso"), transparent: true }));
     cornice.position.z = -profonditaCubo / 2 + PASSO_FETTE / 2;
     cubo.add(cornice);
-    cubo.add(etichetta(`${nome} · ${rete.lato} px · every ${rete.secondi} s`, rete.misura / 2));
+    cubo.add(etichetta(`${rete.nome} · ${rete.lato} px · every ${rete.secondi} s`, rete.misura / 2));
     cornici[nome] = cornice;
     reti.add(cubo);
   }
@@ -228,7 +233,9 @@ export async function avviaModello() {
   function scriviClassi() {
     const decisione = decisioni?.finestre?.[finestraScelta];
     for (const [classe, uscita] of righeClassi) {
-      const valore = decisione?.probabilita?.[classe.replaceAll(" ", "_")];
+      // v1.3: lo scippo lo decide CLIP, quindi la riga mostra la sua probabilità (quella dello ST-GCN non sceglie più)
+      let valore = decisione?.probabilita?.[classe.replaceAll(" ", "_")];
+      if (classe === "scippo" && decisione?.probabilita_scippo_video !== undefined) valore = decisione.probabilita_scippo_video;
       uscita.textContent = valore === undefined ? "— waiting for results" : `${Math.round(valore * 100)}%`;
       uscita.parentElement.classList.toggle("scelta", decisione?.classe === classe.replaceAll(" ", "_"));
     }
@@ -258,8 +265,8 @@ export async function avviaModello() {
     scartato: { nome: "All-to-all links: Graph-Transformer (discarded)", tipi: ["stessa", "diverse"] } };
   const gruppoDi = Object.fromEntries(Object.entries(GRUPPI_ARCO).flatMap(([gruppo, { tipi }]) => tipi.map((tipo) => [tipo, gruppo])));
   const visibilitaArchi = { ossa: true, scartato: false };
-  // WARNING ARMA: si parte dalla risposta vera di b2 nella finestra scelta, il cursore la simula
-  let armaB2 = decisioni?.finestre?.[finestraScelta]?.probabilita_arma_video ?? 0;
+  // WARNING ARMA: si parte dalla risposta vera di CLIP nella finestra scelta, il cursore la simula
+  let armaClip = decisioni?.finestre?.[finestraScelta]?.probabilita_arma_video ?? 0;
   function mostraComandi(tipo) {
     comandi.replaceChildren();
     comandi.hidden = !tipo;
@@ -295,19 +302,19 @@ export async function avviaModello() {
       }
       scriviClassi();
     } else if (tipo === "warning") {
-      armaB2 = decisioni?.finestre?.[finestraScelta]?.probabilita_arma_video ?? 0;
+      armaClip = decisioni?.finestre?.[finestraScelta]?.probabilita_arma_video ?? 0;
       const etichetta = document.createElement("label");
-      const cursore = Object.assign(document.createElement("input"), { type: "range", min: 0, max: 100, value: Math.round(armaB2 * 100) });
-      cursore.setAttribute("aria-label", "b2 weapon probability (simulation)");
+      const cursore = Object.assign(document.createElement("input"), { type: "range", min: 0, max: 100, value: Math.round(armaClip * 100) });
+      cursore.setAttribute("aria-label", "CLIP weapon probability (simulation)");
       const uscita = document.createElement("output");
       const scrivi = () => {
-        const scatta = armaB2 >= SOGLIA_ARMA_B2;
-        uscita.textContent = `b2 weapon ${Math.round(armaB2 * 100)}% · threshold 35% → ${scatta ? "WEAPON WARNING" : "no warning"}`;
+        const scatta = armaClip >= SOGLIA_ARMA_CLIP;
+        uscita.textContent = `CLIP weapon ${Math.round(armaClip * 100)}% · threshold 16% → ${scatta ? "WEAPON WARNING" : "no warning"}`;
         uscita.classList.toggle("allarme", scatta);
       };
-      cursore.addEventListener("input", () => { armaB2 = Number(cursore.value) / 100; scrivi(); });
+      cursore.addEventListener("input", () => { armaClip = Number(cursore.value) / 100; scrivi(); });
       scrivi();
-      etichetta.append("b2", cursore, uscita);
+      etichetta.append("CLIP", cursore, uscita);
       comandi.appendChild(etichetta);
     }
   }
@@ -374,8 +381,8 @@ export async function avviaModello() {
     // le reti video "chiamate" alla loro cadenza: la cornice si accende e si spegne in 0,4 s
     for (const [nome, rete] of Object.entries(RETI_VIDEO)) {
       const materiale = cornici[nome].material;
-      if (chiaveCorrente === "warning" && nome === "b2") {
-        materiale.color.copy(armaB2 >= SOGLIA_ARMA_B2 ? COLORE_ALLARME : COLORE_CORNICE);
+      if (chiaveCorrente === "warning" && nome === "clip") {
+        materiale.color.copy(armaClip >= SOGLIA_ARMA_CLIP ? COLORE_ALLARME : COLORE_CORNICE);
         continue;
       }
       const accensione = movimentoRidotto() ? 0 : Math.max(0, 1 - (t % rete.secondi) / 0.4);

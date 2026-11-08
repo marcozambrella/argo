@@ -1,5 +1,5 @@
 {
- "_nota": "Numeri che non escono da `strumenti esporta-risultati-sito`: presi dal DIARIO (D37, D48-D54) e da runs/argo_casi_uso/*/eventi.json (23/10/2026). Nessun numero inventato. Reti video (04/11): dal README v1.2.",
+ "_nota": "Numeri che non escono da `strumenti esporta-risultati-sito`: presi dal DIARIO (D37, D48-D54) e da runs/argo_casi_uso/*/eventi.json (23/10/2026). Nessun numero inventato. Armi e scippo (08/11): v1.3, teste su CLIP ViT-B/16, dal README v1.3 e da runs/esperimenti_armi_scippi/misura_clipB_*.json (soglia scelta sul val).",
  "test": {
   "quota_video": 0.15,
   "fonti": [
@@ -150,26 +150,30 @@
   }
  ],
  "reti_video": {
-  "_nota": "Dal README (D70, rete video b1 e b2: pezzi da 10 s, misura incrociata val↔test) e dai limiti del README.",
+  "_nota": "v1.3 (goal 80%, 08/11): pezzi da 10 s del test, soglia sul val unito; arma/fuoco/coltello ogni 4 s (misura_clipB_2frame.json, clipB_2frame_4s), scippo ogni 0,8 s (misura_clipB_diff.json, clipB_diff2f_0.8s). WARNING: recall e 1 - specificità dell'arma sul test vecchio.",
   "prove": [
    {
     "prova": "Weapon",
-    "accuratezza": 0.79
+    "accuratezza": 0.89
    },
    {
     "prova": "Firearm",
-    "accuratezza": 0.71
+    "accuratezza": 0.9
    },
    {
-    "prova": "Knife (only 12 clips)",
-    "accuratezza": 0.86
+    "prova": "Knife (only 4 clips)",
+    "accuratezza": 0.9
    },
    {
     "prova": "Snatching",
+    "accuratezza": 0.95
+   },
+   {
+    "prova": "Snatching, cameras never seen in training (6 clips)",
     "accuratezza": 0.82
    }
   ],
-  "warning_recall_armati": 0.64,
-  "warning_falsi_folle": 0.14
+  "warning_recall_armati": 0.86,
+  "warning_falsi": 0.09
  }
 }
